@@ -167,6 +167,15 @@
 .imp .tabla-datos tbody tr:last-child td { border-bottom: 0; }
 .imp .tabla-datos td.n, .imp .tabla-datos th.n { text-align: right; white-space: nowrap; }
 .imp .tabla-datos tr[data-caja]:hover, .imp .tabla-datos tr[data-ir]:hover { background: var(--surface-2); }
+/* Cajas → Todos los locales: el local con días sin cargar, en rojo (4/11/2026); la caja de hoy que no venció, en gris. */
+.imp .tabla-datos tr.falta-caja { background: var(--bad-soft); background: color-mix(in srgb, var(--bad) 9%, var(--surface)); }
+.imp .tabla-datos tr.falta-caja td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.imp .tabla-datos tr.falta-caja td:first-child b { color: var(--bad-txt); }
+.imp .tabla-datos tr.falta-caja .est.vencido { background: var(--bad-txt); color: var(--surface); }
+.imp .tabla-datos .caja-hoy { font-size: 11.5px; font-weight: 500; color: var(--txt-3); white-space: nowrap; }
+.imp .tabla-datos .est + .caja-hoy { display: block; margin-top: 3px; }
+.imp .numero.es-mal { box-shadow: inset 3px 0 0 #FF9AA0; }
+.imp .numero.es-mal b { color: #FF9AA0; }
 
 /* ── Panorama: los locales semana a semana ── */
 .imp-pano th:first-child, .imp-pano td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 150px; }

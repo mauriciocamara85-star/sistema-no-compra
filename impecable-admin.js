@@ -1844,6 +1844,60 @@ function engancharReleer(v, k) {
   });
 }
 
+/* (4/11/2026) Los locales sin cargar, en rojo. Mauricio, con la foto de Todos los locales: "que el que esté sin cargar
+   aparezca en rojo, como una alerta", y arriba una tarjeta "Locales sin cargar". La caja de HOY no es una alerta
+   mientras el local está abierto (a las 21:55 DOT y Parque Brown, que cierran a las 22, ya figuraban sin cargar): pasa a
+   rojo con la misma regla del aviso «no cargó la caja» (orden_tick_cajas), la hora de cierre del local más los minutos
+   de Ajustes → El local (60 de entrada). Si no se pueden leer los horarios, todo lo que no se cargó queda en rojo. */
+function cajasDeHoy() {
+  var ahora = function (zona) {
+    var p = {};
+    new Intl.DateTimeFormat('en-CA', { timeZone: zona || 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date()).forEach(function (x) { p[x.type] = x.value; });
+    return { fecha: p.year + '-' + p.month + '-' + p.day, min: Number(p.hour) * 60 + Number(p.minute) };
+  };
+  var minutos = function (h) { var m = /^(\d{1,2}):(\d{2})/.exec(h || ''); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  var hora = function (m) { m = m % 1440; return (m < 600 ? '0' : '') + Math.floor(m / 60) + ':' + (m % 60 < 10 ? '0' : '') + (m % 60); };
+  var diaAntes = function (f) { var d = new Date(f + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+  return Promise.all([
+    leer('/orden_locales?select=id,zona_horaria,dias_abiertos,hora_apertura,hora_cierre&activo=is.true'),
+    leer('/orden_config?select=local_id,caja_minutos_tolerancia'),
+    leer('/orden_v_cajas?select=local_id,fecha,estado&fecha=gte.' + diaAntes(ahora().fecha))
+  ]).then(function (r) {
+    var tol = {}, estado = {}, hoy = {};
+    (r[1] || []).forEach(function (x) { tol[x.local_id] = x.caja_minutos_tolerancia; });
+    (r[2] || []).forEach(function (x) { estado[x.local_id + '|' + String(x.fecha).slice(0, 10)] = x.estado; });
+    (r[0] || []).forEach(function (l) {
+      var a = ahora(l.zona_horaria), abre = minutos(l.hora_apertura), cierra = minutos(l.hora_cierre);
+      if (abre == null || cierra == null) return;
+      /* Como orden_dia_caja: antes de abrir todavía es el día anterior. */
+      var antes = a.min < abre, dia = antes ? diaAntes(a.fecha) : a.fecha;
+      var ya = a.min + (antes ? 1440 : 0), cierre = cierra + (cierra <= abre ? 1440 : 0);
+      var limite = cierre + (tol[l.id] != null ? Number(tol[l.id]) : 60);
+      var est = estado[l.id + '|' + dia];
+      /* Cuenta como "sin cargar" en orden_v_cajas_mes si ese día el local abre y la caja no se guardó. */
+      var cuenta = (l.dias_abiertos || []).map(Number).indexOf(new Date(dia + 'T12:00:00Z').getUTCDay() || 7) > -1 && (!est || est === 'pendiente');
+      hoy[l.id] = { dia: dia, espera: cuenta && ya < limite, abierto: ya < cierre, cierra: hora(cierre), limite: hora(limite) };
+    });
+    return hoy;
+  }).catch(function () { return {}; });
+}
+/** La celda "Sin cargar" de Todos los locales: los días atrasados en rojo; la caja de hoy, si todavía no venció, en gris. */
+function celdaSinCargar(n, h) {
+  var nota = h ? '<small class="caja-hoy">' + (h.abierto ? 'Hoy cierra a las ' + h.cierra : 'Tiene hasta las ' + h.limite) + '</small>' : '';
+  return '<td class="n">' + (n > 0 ? '<span class="est vencido">' + n + (n === 1 ? ' día' : ' días') + '</span>' + nota : nota || '0') + '</td>';
+}
+/** La tarjeta "Locales sin cargar": cuántos y cuáles (o cuántos todavía no cerraron). */
+function tarjetaSinCargar(atrasados, esperan) {
+  var n = atrasados.map(function (l) { return l.nombre; });
+  var pie = n.length > 3 ? n.slice(0, 2).join(', ') + ' y ' + (n.length - 2) + ' más'
+    : n.length > 1 ? n.slice(0, -1).join(', ') + ' y ' + n[n.length - 1]
+    : n.length ? n[0]
+    : esperan.length ? (esperan.length === 1 ? esperan[0].nombre + ' todavía no cerró' : esperan.length + ' todavía no cerraron')
+    : 'Todas las cajas cargadas';
+  return '<div class="numero' + (n.length ? ' es-mal' : '') + '"><span>Locales sin cargar</span><b>' + n.length + '</b><span>' + esc(pie) + '</span></div>';
+}
+
 /* Todos los locales en un mes: los desvíos y si está cerrado. Tocar uno abre sus días. */
 function verCajasTodos(meses) {
   if (_cajasRango) { verCajasTodosRango(); return; }
@@ -1852,10 +1906,11 @@ function verCajasTodos(meses) {
     leer('/orden_v_cajas_mes?select=*&mes=eq.' + _mes),
     leerCierres('/orden_v_cajas_meses?select=*&mes=eq.' + _mes),
     /* El mes del día de caja de cada local (el día 1 antes de que abra, el mes pasado sigue en curso). */
-    Promise.all(_locales.map(function (l) { return llamar('orden_caja_mes_actual', { p_local: l.id }).catch(function () { return null; }); }))
+    Promise.all(_locales.map(function (l) { return llamar('orden_caja_mes_actual', { p_local: l.id }).catch(function () { return null; }); })),
+    cajasDeHoy()
   ]).then(function (r) {
     if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango) return;
-    var porLocal = {}, cierres = {}, mesCaja = {};
+    var porLocal = {}, cierres = {}, mesCaja = {}, hoy = r[3];
     (r[0] || []).forEach(function (x) { porLocal[x.local_id] = x; });
     r[1].filas.forEach(function (x) { cierres[x.local_id] = x; });
     _locales.forEach(function (l, i) { mesCaja[l.id] = /^\d{4}-\d{2}$/.test(r[2][i] || '') ? r[2][i] : hoyMes; });
@@ -1864,22 +1919,27 @@ function verCajasTodos(meses) {
     var terminado = conCajas.some(terminoEn);
     var falta = conCajas.filter(function (l) { return terminoEn(l) && !(cierres[l.id] && cierres[l.id].estado === 'controlado'); }).length;
     var efvo = conCajas.reduce(function (a, l) { return a + Number(porLocal[l.id].desvio_efectivo || 0); }, 0);
+    /* La caja de hoy que todavía no venció no es un día atrasado. */
+    var espera = function (l) { var h = hoy[l.id]; return h && h.espera && h.dia.slice(0, 7) === _mes ? h : null; };
+    var sinCargar = function (l) { return Math.max(0, Number(porLocal[l.id].dias_sin_cargar || 0) - (espera(l) ? 1 : 0)); };
+    var atrasados = conCajas.filter(function (l) { return sinCargar(l) > 0; });
     var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
     var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">Un local</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
       periodoCajasHTML() +
       (r[1].falta ? '<div class="nota">Para dar los meses por controlados falta correr el SQL 115 en Supabase.</div>' : '') +
       '<div class="numeros"><div class="numero"><span>Locales con cajas</span><b>' + conCajas.length + '</b></div>' +
         '<div class="numero"><span>' + (terminado ? 'Falta cerrar' : 'El mes sigue en curso') + '</span><b>' + (terminado ? falta : '—') + '</b></div>' +
-        '<div class="numero"><span>Desvío del mes (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div></div>';
+        '<div class="numero"><span>Desvío del mes (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div>' +
+        tarjetaSinCargar(atrasados, conCajas.filter(espera)) + '</div>';
     if (!conCajas.length) html += '<div class="vacio">Ningún local tiene cajas en este mes.</div>';
     else {
       html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Local</th><th class="n">Mercado Pago</th><th class="n">Tarjeta</th><th class="n">Go Cuotas</th><th class="n">Efectivo</th>' +
         '<th class="n">Sin cargar</th><th class="n">Sin controlar</th><th>Cierre del mes</th></tr></thead><tbody>' +
         conCajas.map(function (l) {
-          var t = porLocal[l.id], ci = cierres[l.id];
+          var t = porLocal[l.id], ci = cierres[l.id], n = sinCargar(l);
           var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span>' : terminoEn(l) ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
-          return '<tr data-ir="' + esc(l.id) + '" style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
-            '<td class="n">' + Number(t.dias_sin_cargar || 0) + '</td><td class="n">' + Number(t.dias_sin_controlar || 0) + '</td><td>' + est + '</td></tr>';
+          return '<tr data-ir="' + esc(l.id) + '"' + (n > 0 ? ' class="falta-caja"' : '') + ' style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
+            celdaSinCargar(n, espera(l)) + '<td class="n">' + Number(t.dias_sin_controlar || 0) + '</td><td>' + est + '</td></tr>';
         }).join('') +
         '</tbody></table></div><p class="bajada" style="margin-top:8px">Los desvíos del mes (cierre − real; positivo: falta plata). Tocá un local para ver sus días y darlo por controlado.</p>';
     }
@@ -1894,23 +1954,30 @@ function verCajasTodos(meses) {
 /* Todos los locales en un rango que no es un mes: los desvíos de esos días, por local. */
 function verCajasTodosRango() {
   var rg = _cajasRango, K = ['desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'];
-  leerTodas('/orden_v_cajas?select=local_id,estado,diferencia_persona,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc').then(function (filas) {
+  Promise.all([
+    leerTodas('/orden_v_cajas?select=local_id,fecha,estado,diferencia_persona,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc'),
+    cajasDeHoy()
+  ]).then(function (r) {
     if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango !== rg) return;
-    var porLocal = {};
+    var filas = r[0], hoy = r[1], porLocal = {};
     (filas || []).forEach(function (x) {
       var t = porLocal[x.local_id] = porLocal[x.local_id] || { desvio_mp: 0, desvio_tarjeta: 0, desvio_gocuotas: 0, desvio_efectivo: 0, dias_sin_cargar: 0, dias_sin_controlar: 0 };
       /* (SQL 213) Como los del mes: sin los días a cargo y, en efectivo, sólo lo que faltó. */
       K.forEach(function (k) { t[k] += desvioDelMes(x, k); });
-      if (x.estado === 'pendiente') t.dias_sin_cargar++;
+      /* La caja de hoy que todavía no venció no es un día atrasado (cajasDeHoy). */
+      var h = hoy[x.local_id];
+      if (x.estado === 'pendiente') { if (h && h.espera && String(x.fecha).slice(0, 10) === h.dia) t.espera = h; else t.dias_sin_cargar++; }
       if (x.estado === 'cargada') t.dias_sin_controlar++;
     });
     var conCajas = _locales.filter(function (l) { return porLocal[l.id]; });
     var efvo = conCajas.reduce(function (a, l) { return a + porLocal[l.id].desvio_efectivo; }, 0);
+    var atrasados = conCajas.filter(function (l) { return porLocal[l.id].dias_sin_cargar > 0; });
     var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
     var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">Un local</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
       periodoCajasHTML() +
       '<div class="numeros"><div class="numero"><span>Locales con cajas</span><b>' + conCajas.length + '</b></div>' +
-        '<div class="numero"><span>Desvío (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div></div>' +
+        '<div class="numero"><span>Desvío (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div>' +
+        tarjetaSinCargar(atrasados, conCajas.filter(function (l) { return porLocal[l.id].espera; })) + '</div>' +
       '<p class="bajada">El cierre se da por mes: para ver cuáles faltan cerrar, elegí un mes.</p>';
     if (!conCajas.length) html += '<div class="vacio">Ningún local tiene cajas en este período.</div>';
     else {
@@ -1918,8 +1985,8 @@ function verCajasTodosRango() {
         '<th class="n">Sin cargar</th><th class="n">Sin controlar</th></tr></thead><tbody>' +
         conCajas.map(function (l) {
           var t = porLocal[l.id];
-          return '<tr data-ir="' + esc(l.id) + '" style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
-            '<td class="n">' + t.dias_sin_cargar + '</td><td class="n">' + t.dias_sin_controlar + '</td></tr>';
+          return '<tr data-ir="' + esc(l.id) + '"' + (t.dias_sin_cargar > 0 ? ' class="falta-caja"' : '') + ' style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
+            celdaSinCargar(t.dias_sin_cargar, t.espera) + '<td class="n">' + t.dias_sin_controlar + '</td></tr>';
         }).join('') +
         '</tbody></table></div><p class="bajada" style="margin-top:8px">Los desvíos de esos días (cierre − real; positivo: falta plata). Tocá un local para ver sus días.</p>';
     }
