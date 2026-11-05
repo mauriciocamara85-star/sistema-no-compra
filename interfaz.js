@@ -316,7 +316,7 @@
         if (caja.getBoundingClientRect().top - rc.height - 16 >= 0) pop.classList.add('arriba');
         else if (pop.scrollIntoView) pop.scrollIntoView({ block: 'nearest' });
       }
-      var p = pop.querySelector('[aria-pressed="true"]') || pop.querySelector('.per-dia.inicio') || pop.querySelector('button');
+      var p = pop.querySelector('[aria-pressed="true"]') || pop.querySelector('.per-dia.per-ini') || pop.querySelector('button');
       if (p) p.focus({ preventScroll: true });
     }
     function cerrar(devolverFoco) { if (pop.hidden) return; pop.hidden = true; boton.setAttribute('aria-expanded', 'false'); if (devolverFoco) boton.focus(); }
@@ -331,12 +331,14 @@
       for (var i = 0; i < 42; i++) {
         var d = sumar(arranque, i);
         if (i >= 35 && d.getMonth() !== vista.getMonth()) break;
+        /* Las marcas de cada día van con el prefijo per-: con 'inicio' a secas, la regla de la pantalla de Inicio del
+           sistema (estilos.css, .inicio { visibility: hidden }) escondía el primer día del rango (Mauricio, 5/11). */
         var cls = ['per-dia'];
-        if (d.getMonth() !== vista.getMonth()) cls.push('otro-mes');
-        if (igual(d, h)) cls.push('hoy');
-        if (a && igual(d, a)) cls.push('inicio');
-        if ((b && igual(d, b)) || (!b && a && igual(d, a))) cls.push('fin');
-        if (a && b && d > a && d < b) cls.push('en-rango');
+        if (d.getMonth() !== vista.getMonth()) cls.push('per-otro-mes');
+        if (igual(d, h)) cls.push('per-hoy');
+        if (a && igual(d, a)) cls.push('per-ini');
+        if ((b && igual(d, b)) || (!b && a && igual(d, a))) cls.push('per-fin');
+        if (a && b && d > a && d < b) cls.push('per-en-rango');
         /* Con hastaHoy, los días que todavía no pasaron no se eligen. */
         var futuro = !!op.hastaHoy && d > h;
         celdas += '<button type="button" class="' + cls.join(' ') + '" data-d="' + aTexto(d) + '"' + (futuro ? ' disabled' : '') +

@@ -1888,13 +1888,15 @@ body.sin-barra { --nav: 0px; }
 .per-dia:hover span { background: var(--surface-2); }
 .per-dia:disabled { opacity: .3; cursor: default; }
 .per-dia:disabled:hover span { background: none; }
-.per-dia.otro-mes { color: var(--txt-3); opacity: .65; }
-.per-dia.en-rango { background: var(--surface-3); }
-.per-dia.inicio { background: linear-gradient(90deg, transparent 50%, var(--surface-3) 50%); }
-.per-dia.fin { background: linear-gradient(90deg, var(--surface-3) 50%, transparent 50%); }
-.per-dia.inicio.fin { background: none; }
-.per-dia.inicio span, .per-dia.fin span { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
-.per-dia.hoy span { box-shadow: inset 0 0 0 1.5px var(--cobre); }
+/* Las marcas van con el prefijo per- (5/11): con «inicio» a secas, la regla de la pantalla de Inicio
+   (.inicio { visibility: hidden }, más arriba) dejaba invisible el primer día del rango. */
+.per-dia.per-otro-mes { color: var(--txt-3); opacity: .65; }
+.per-dia.per-en-rango { background: var(--surface-3); }
+.per-dia.per-ini { background: linear-gradient(90deg, transparent 50%, var(--surface-3) 50%); }
+.per-dia.per-fin { background: linear-gradient(90deg, var(--surface-3) 50%, transparent 50%); }
+.per-dia.per-ini.per-fin { background: none; }
+.per-dia.per-ini span, .per-dia.per-fin span { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
+.per-dia.per-hoy span { box-shadow: inset 0 0 0 1.5px var(--cobre); }
 .per-pie {
   grid-column: 1 / -1;
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
