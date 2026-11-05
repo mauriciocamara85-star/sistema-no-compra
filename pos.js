@@ -82,9 +82,12 @@
   var MODO = document.body.getAttribute('data-pos') === 'gestion' ? 'gestion' : 'mostrador';
   var PAGINA = { mostrador: 'pos.html', gestion: 'gestion.html' };
 
-  var K_MENU = MODO === 'gestion' ? 'nc_panel_gestion' : 'nc_panel_pos';   // el menú achicado (interfaz.js), menos en la venta
+  /* El menú (5/11): achicado salvo que lo dejen abierto con el botón de arriba; al pasar el mouse se abre por encima.
+     Antes (nc_panel_pos / nc_panel_gestion) arrancaba abierto: la clave es otra para que arranque achicado en todas. */
+  var K_FIJO = MODO === 'gestion' ? 'nc_menu_gestion_fijo' : 'nc_menu_pos_fijo';   // '1': lo dejaron abierto (menos en la venta)
   var K_MENU_VENTA = 'nc_panel_pos_venta'; // en la venta arranca achicado: necesita el ancho, como el ticket de BlueSoft
-  var K_GRUPOS = 'nc_gestion_grupos';      // los grupos de Gestión que se abrieron o se cerraron a mano
+  /* Los grupos que se abrieron o se cerraron a mano: cada pantalla los suyos (las dos tienen un grupo «Caja»). */
+  var K_GRUPOS = MODO === 'gestion' ? 'nc_gestion_grupos' : 'nc_pos_grupos';
   var K_RECUERDO = 'pos_recuerdo';         // la sucursal y el vendedor de cada una
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
   var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
@@ -666,8 +669,8 @@
   /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. Tickets también
      (SQL 171): con el panel de la derecha, la lista entra entera en la PC del local. */
   function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets'; }
-  function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : Interfaz.panelChico(K_MENU); }
-  function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else Interfaz.panelChico(K_MENU, ch); }
+  function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : leer(K_FIJO) !== '1'; }
+  function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else guardar(K_FIJO, ch ? '0' : '1'); }
 
   function item(it) {
     var activa = it[0] === S.vista || it[0] === DENTRO[MODO][S.vista];
@@ -696,11 +699,31 @@
     cuentaDif();
     if (window.persona && persona.avisoDiferencias) persona.avisoDiferencias();
   }
-  /* Gestión: cada grupo se despliega y se pliega (Mauricio, 20/10: "que se despliegue… si en algún
-     momento tenemos más"). Arranca abierto el de la sección en la que está; lo demás, como lo dejó. */
+  /* Cada grupo se despliega y se pliega (Gestión, Mauricio, 20/10: "que se despliegue… si en algún momento tenemos
+     más"; el mostrador desde el 5/11). Arranca abierto el de la sección en la que está; lo demás, como lo dejó. */
   function grupoAbierto(g) {
     if (g[1].some(function (it) { return it[0] === S.vista || it[0] === DENTRO[MODO][S.vista]; })) return true;
-    return (leerJSON(K_GRUPOS, {}) || {})[g[0]] === 1;
+    return +(leerJSON(K_GRUPOS, {}) || {})[g[0]] > 0;   // 1 (antes) o la hora en que la abrió
+  }
+  /* Que el menú abierto entre sin deslizar (Mauricio, 5/11: "no me gusta que tengas que deslizar"): si con las secciones
+     abiertas no entra (la PC del local tiene 657 de alto), se cierra sola la que se abrió hace más tiempo. Nunca la de
+     la pantalla en la que está ni la que se acaba de abrir. Achicado no hace falta: son sólo los íconos y entran. */
+  function queEntre(recien) {
+    var nav = app.querySelector('.pos-menu'), g = app.querySelector('.pos-grid');
+    if (!nav || !g || g.classList.contains('menu-chico') || !compuGrande()) return;
+    var e = leerJSON(K_GRUPOS, {}) || {}, cambio = false;
+    while (nav.scrollHeight > nav.clientHeight + 1) {
+      var abiertos = [].filter.call(nav.querySelectorAll('.pos-grupo-btn[aria-expanded="true"]'), function (b) {
+        return b.getAttribute('data-grupo') !== recien && !b.nextElementSibling.querySelector('.activa');
+      });
+      if (!abiertos.length) break;
+      abiertos.sort(function (a, b) { return (+e[a.getAttribute('data-grupo')] || 0) - (+e[b.getAttribute('data-grupo')] || 0); });
+      abiertos[0].nextElementSibling.classList.add('cerrado');
+      abiertos[0].setAttribute('aria-expanded', 'false');
+      e[abiertos[0].getAttribute('data-grupo')] = 0;
+      cambio = true;
+    }
+    if (cambio) guardarJSON(K_GRUPOS, e);
   }
   /** Adónde vuelve "‹ Sistema": a la última pantalla con la barra (interfaz.js; 31/10, Gestión también va sin la barra). */
   function volverAlSistema() { return Interfaz.volverAlSistema(); }
@@ -718,14 +741,17 @@
       ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>'
       : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>') +
       '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
-    var cuerpo = MODO === 'gestion'
-      ? menuVisible().map(function (g) {
-          var ab = grupoAbierto(g);
-          return '<button type="button" class="pos-grupo pos-grupo-btn" data-grupo="' + esc(g[0]) + '" aria-expanded="' + ab + '">' +
-            '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
-            '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
-        }).join('')
-      : menuVisible().map(function (g) { return '<div class="pos-grupo" aria-hidden="true"></div>' + g[1].map(item).join(''); }).join('') +
+    /* Las secciones se despliegan y se pliegan, en Gestión (20/10) y desde el 5/11 también en el mostrador (Mauricio:
+       "BlueSoft tenía también secciones y dentro de cada sección cosas adentro … no me gusta que tengas que deslizar …
+       se podría tocar un botón y que se despliegue cada sección"; se pueden abrir varias a la vez). */
+    var grupos = menuVisible().map(function (g) {
+      var ab = grupoAbierto(g);
+      return '<button type="button" class="pos-grupo pos-grupo-btn" data-grupo="' + esc(g[0]) + '" aria-expanded="' + ab + '">' +
+        '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
+        '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
+    }).join('');
+    var cuerpo = MODO === 'gestion' ? grupos
+      : grupos +
         /* Abajo: sin internet y las ventas sin mandar (SQL 212), el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
         '<div class="pos-menu-pie">' +
           '<button type="button" class="pos-item pos-red" id="posRed" hidden>' + icono('nube') + '<span id="posRedTxt"></span></button>' +
@@ -739,11 +765,35 @@
       '<section class="pos-cuerpo" id="cuerpo"></section></div>';
   }
 
+  /* El menú achicado se abre por encima al pasar el mouse y se achica solo al salir (Mauricio, 5/11: "que se agrande si
+     vos te ponés sobre la barra y se achique si vos te alejás, como hicimos con la barra del sistema"). Como en
+     interfaz.js: un cuarto de segundo de demora, para que no salte cada vez que el mouse cruza, y por encima: la pantalla
+     no se mueve. menu-flota = abierto por encima (las columnas siguen las del achicado). El botón de arriba lo deja fijo. */
+  var _tFlota = null;
+  function compuGrande() { return !window.matchMedia || matchMedia('(min-width: 1000px)').matches; }
+  function flotar(si) {
+    var g = app.querySelector('.pos-grid'), pl = app.querySelector('.pos-menu .plegar-panel');
+    if (!g || (si ? !g.classList.contains('menu-chico') : !g.classList.contains('menu-flota'))) return;
+    g.classList.toggle('menu-chico', !si);
+    g.classList.toggle('menu-flota', si);
+    if (pl) pl.setAttribute('aria-expanded', String(si));
+    if (si) queEntre();
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { clearTimeout(_tFlota); flotar(false); } });
+
   /** El botón de achicar: se busca cada vez el que está (al tocarlo se rehace con el texto contrario). */
   function engancharMenu() {
-    var pl = app.querySelector('.pos-menu .plegar-panel');
+    clearTimeout(_tFlota);   // la pantalla se rehízo (se tocó una sección): no se abre sola por un mouse de antes
+    var pl = app.querySelector('.pos-menu .plegar-panel'), grid = app.querySelector('.pos-grid'), nav = app.querySelector('.pos-menu');
+    if (pl && grid && grid.classList.contains('menu-chico')) {
+      /* Achicado, el botón lo deja abierto fijo (al pasar el mouse ya se abre solo). */
+      pl.title = 'Dejar el panel abierto';
+      pl.setAttribute('aria-label', 'Dejar el panel abierto');
+    }
     if (pl) pl.onclick = function () {
-      var g = app.querySelector('.pos-grid'), ch = !g.classList.contains('menu-chico');
+      var g = app.querySelector('.pos-grid'), ch = g.classList.contains('menu-flota') ? false : !g.classList.contains('menu-chico');
+      clearTimeout(_tFlota);
+      g.classList.remove('menu-flota');
       guardarMenu(ch);
       g.classList.toggle('menu-chico', ch);
       pl.outerHTML = Interfaz.botonPanel(ch, '', 'menuPos');
@@ -751,6 +801,28 @@
       var nuevo = app.querySelector('.pos-menu .plegar-panel');
       if (nuevo) nuevo.focus();
     };
+    if (nav && !nav._mouse) {   // el botón de arriba vuelve a llamar a engancharMenu con el mismo menú: una sola vez
+      nav._mouse = true;
+      nav.addEventListener('mouseenter', function () {
+        clearTimeout(_tFlota);
+        var g = app.querySelector('.pos-grid');
+        if (!compuGrande() || !g || !g.classList.contains('menu-chico')) return;
+        _tFlota = setTimeout(function () { flotar(true); }, 250);
+      });
+      nav.addEventListener('mouseleave', function () {
+        clearTimeout(_tFlota);
+        _tFlota = setTimeout(function () { flotar(false); }, 150);
+      });
+      /* Con el teclado (Tab) también se abre, y se cierra al salir del foco. Con el mouse no: al achicarlo con el botón, el
+         foco queda en el botón y se volvería a abrir. */
+      nav.addEventListener('focusin', function (e) {
+        var visible = true;
+        try { visible = e.target.matches(':focus-visible'); } catch (x) {}
+        var g = app.querySelector('.pos-grid');
+        if (visible && compuGrande() && g && g.classList.contains('menu-chico')) { clearTimeout(_tFlota); flotar(true); }
+      });
+      nav.addEventListener('focusout', function (e) { if (!nav.contains(e.relatedTarget) && !nav.matches(':hover')) { clearTimeout(_tFlota); flotar(false); } });
+    }
     app.querySelectorAll('.pos-menu [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
     app.querySelectorAll('.pos-menu [data-grupo]').forEach(function (b) {
       b.onclick = function () {
@@ -758,10 +830,12 @@
         cont.classList.toggle('cerrado', !ab);
         b.setAttribute('aria-expanded', String(ab));
         var e = leerJSON(K_GRUPOS, {}) || {};
-        e[b.getAttribute('data-grupo')] = ab ? 1 : 0;
+        e[b.getAttribute('data-grupo')] = ab ? Date.now() : 0;
         guardarJSON(K_GRUPOS, e);
+        if (ab) queEntre(b.getAttribute('data-grupo'));
       };
     });
+    queEntre();   // fijo abierto: lo que quedó guardado de una pantalla más alta puede no entrar en esta
     var pr = $('posPrueba');
     if (pr) pr.onchange = function () { ponerPrueba(pr.checked); };
     var yo = $('posYo');

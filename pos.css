@@ -79,7 +79,7 @@ body.pos-sin-barra { padding-left: 0; }
 .pos-marca svg { width: 17px; height: 17px; }
 .pos-marca + span { flex: 1; color: var(--txt); font-size: 13px; letter-spacing: .8px; }
 .pos-volver { color: var(--txt-3); }
-[data-pos="mostrador"] .pos-menu > .pos-grupo { height: 1px; padding: 0; margin: 6px 10px; background: var(--line); }
+/* Las secciones del mostrador son botones que se despliegan, como en Gestión (5/11): ya no hay rayitas entre grupos. */
 .pos-menu-pie { display: flex; flex-direction: column; gap: 1px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
 label.pos-item { margin: 0; }
 .pos-modo .pos-switch { margin-left: auto; }
@@ -98,7 +98,7 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 /* La PC del local (657 de alto): con el Stock general (SQL 222) son 18 secciones y el pie tiene que entrar sin deslizar el menú. */
 @media (min-width: 1000px) and (max-height: 720px) {
   [data-pos="mostrador"] .pos-item { min-height: 25px; }
-  [data-pos="mostrador"] .pos-menu > .pos-grupo { margin: 4px 10px; }
+  [data-pos="mostrador"] .menu-chico .pos-grupo { margin: 4px 6px; }
   /* Gestión achicada: con el Stock general son 20 íconos, y todos tienen que entrar sin deslizar.
      31/10: con "‹ Sistema" (Gestión va sin la barra, como el POS) son 21: 23 px cada uno. */
   [data-pos="gestion"] .menu-chico .pos-item { min-height: 23px; }
@@ -117,16 +117,36 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .pos-grupo-btn:hover { color: var(--txt); background: var(--surface-2); }
 .pos-grupo-btn svg { width: 14px; height: 14px; flex: none; transition: transform .15s var(--curva); }
 .pos-grupo-btn[aria-expanded="false"] svg { transform: rotate(-90deg); }
-.pos-grupo-items { display: flex; flex-direction: column; gap: 1px; }
+/* Los renglones de cada sección van sueltos en el menú (5/11), así el menú los achica parejo para que entren. */
+.pos-grupo-items { display: contents; }
 .pos-grupo-items.cerrado { display: none; }
+/* Abierto por encima al pasar el mouse por el achicado (5/11): las columnas siguen las del achicado, así la pantalla no
+   se mueve, y el menú se sale de su columna por encima de la pantalla, con sombra. */
+@media (min-width: 1000px) {
+  .pos-grid.menu-flota { grid-template-columns: var(--panel-chico) minmax(0, 1fr); }
+  .menu-flota .pos-menu { width: var(--panel-ancho); z-index: 60; box-shadow: 0 22px 60px -14px rgba(0, 0, 0, .38), var(--sombra); }
+}
 @media (min-width: 1000px) {
   /* Achicado: todos los íconos a la vista (con 1 px de alto el grupo no se puede tocar). */
   .menu-chico .pos-grupo-btn { pointer-events: none; }
   .menu-chico .pos-grupo-btn svg { display: none; }
-  .menu-chico .pos-grupo-items.cerrado { display: flex; }
+  .menu-chico .pos-grupo-items.cerrado { display: contents; }
+  .menu-chico .pos-grupo { flex: none; }
+  /* Que entre sin deslizar (5/11: arranca achicado en todas las pantallas): si no entra, los renglones se achican parejo,
+     hasta 20 px achicado (sólo los íconos) y hasta 25 px abierto, como en la PC del local. Con todas las secciones
+     abiertas en una pantalla baja puede no alcanzar: ahí el menú se desliza, como antes. */
+  .pos-menu > .pos-item, .pos-grupo-items > .pos-item { flex: 0 1 32px; min-height: 25px; }
+  .menu-chico .pos-menu > .pos-item, .menu-chico .pos-grupo-items > .pos-item { min-height: 20px; }
+}
+/* En la PC del local (657 de alto), los títulos de las secciones más finos, así entran dos secciones grandes abiertas.
+   Si igual no entra, se cierra sola la que se abrió hace más tiempo (queEntre, en pos.js). */
+@media (min-width: 1000px) and (max-height: 720px) {
+  .pos-grid:not(.menu-chico) .pos-grupo-btn { margin-top: 2px; padding-top: 5px; padding-bottom: 5px; }
 }
 @media (max-width: 999px) {
   .pos-grupo-items, .pos-grupo-items.cerrado { display: contents; }
+  /* En la tira del celular, los títulos de las secciones sobran (estaban saliendo en Gestión). */
+  .pos-grupo-btn { display: none; }
 }
 
 /* ── La cabecera de cada pantalla ── */
