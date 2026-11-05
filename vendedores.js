@@ -2875,7 +2875,7 @@ function engancharAtrasadas() {
 
 /* corrige (SQL 124): el supervisor corrige (o carga) la caja de un día desde Revisar → Cajas:
    la misma pantalla, con "‹ Volver a la caja" y, al guardar, vuelve al día.
-   (SQL 244, 5/11) "Que sea a prueba de tontos": con la IA de la caja prendida los números salen de las fotos y están
+   (SQL 244, 5/11) La caja paso a paso: con la IA de la caja prendida los números salen de las fotos y están
    trabados. Arriba, los pasos (1 Sacá las fotos · 2 Guardá · 3 Lista); abajo, fija y siempre a la vista, una barra con
    lo que hay que hacer ahora: la foto que sigue, «Guardar la caja» (con el porqué si no se guardó sola) o cómo quedó.
    Para escribir un número: «✎ Editar a mano», con el porqué; lo que escriben sin una foto que lo respalde lo marca la

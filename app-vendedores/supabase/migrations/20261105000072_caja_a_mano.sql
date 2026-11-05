@@ -19,7 +19,7 @@
 --   Hasta ahora «Guardar» mandaba los 8 números y la base no distinguía lo escrito de lo leído: la regla de arriba no
 --   depende de eso, así que anda igual con la app vieja que todavía no se actualizó.
 -- Pedido de Mauricio (5/11): "un chico antes de cargar la foto editó manualmente los números… ¿un botoncito chiquito
--- 'edición manual'?" → "dale, hagamos eso" (y "que sea a prueba de tontos").
+-- 'edición manual'?" → "dale, hagamos eso" (y que sea simple, paso a paso).
 
 alter table public.orden_cajas add column if not exists mano_motivo text;
 alter table public.orden_cajas add column if not exists mano_ok text[] not null default '{}';

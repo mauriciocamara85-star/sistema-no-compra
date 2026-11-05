@@ -747,7 +747,7 @@ select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
 .campo.papel-de-ia > span::after { content: 'IA'; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--lima); color: var(--sobre-lima); font-size: 11px; font-weight: 800; vertical-align: 1px; }
 .campo.papel-de-ia input, .campo.papel-de-ia textarea, .campo.papel-de-ia select { border-color: var(--lima); }
 
-/* (SQL 244, 5/11) La caja «a prueba de tontos»: los pasos arriba, la foto que sigue con borde verde, los números trabados
+/* (SQL 244, 5/11) La caja paso a paso: los pasos arriba, la foto que sigue con borde verde, los números trabados
    (salen de la foto; «Editar a mano» con su porqué) y abajo, fija, la barra con lo que hay que hacer ahora. */
 /* 200: la barra más alta (dos renglones arriba y la sugerencia abajo) mide ~175 px. */
 .app:has(> .caja-pie) { padding-bottom: calc(200px + env(safe-area-inset-bottom)); }
