@@ -943,7 +943,8 @@
     host.querySelectorAll('button').forEach(function (b) { b.disabled = true; b.title = 'Sólo hoy: para ver otros días, el permiso lo da la oficina en Config → Usuarios.'; });
     return sel;
   }
-  function localInicial() {
+  /** El local de esta compu: el último que se eligió, el del enlace del local (nc_local) o el de la persona. null si no se sabe. */
+  function localSabido() {
     var r = recuerdo(), ls = localesMios();
     var x = localMio(r.local);
     if (!x) {
@@ -951,9 +952,39 @@
       x = ls.filter(function (l) { return nc && (String(l.codigo || '').toLowerCase() === nc || String(l.nombre || '').toLowerCase() === nc); })[0];
     }
     if (!x && S.ini.yo) x = localMio(S.ini.yo.local_id);
-    return x || ls[0] || S.ini.locales[0];
+    return x || null;
+  }
+  function localInicial() { return localSabido() || localesMios()[0] || S.ini.locales[0]; }
+  /** Dónde arranca un listado del mostrador (Tickets, Ventas fallidas): en el local de la compu; si no se sabe y puede ver
+      todos, en «Todas» (null). En Gestión, en «Todas». */
+  function localListado() {
+    if (puede('locales')) return MODO === 'gestion' ? null : localSabido();
+    return localInicial();
   }
   function vendedoresDe(localId) { return ((S.ini.vendedores || {})[localId] || []).slice(); }
+  /** El filtro «Vendedor» de un listado (Tickets, Ventas fallidas): los de la sucursal elegida (con «Todas», los de todas)
+      más los que ya aparecieron en sus ventas (quien vino de otro local y se escribió con «Otro»). Si el elegido sigue, queda.
+      Mauricio (5/11): "si estoy en Rivadavia, tendría que aparecer solo los vendedores de Rivadavia". */
+  function llenarFiltroVend(sel, loc, vistos) {
+    var antes = String(sel.value || '').toLowerCase(), ns = {};
+    function suma(n) { n = String(n || '').trim(); if (n && !ns[n.toLowerCase()]) ns[n.toLowerCase()] = n; }
+    (loc ? [loc] : Object.keys(S.ini.vendedores || {})).forEach(function (k) { vendedoresDe(k).forEach(suma); });
+    Object.keys(vistos || {}).forEach(suma);
+    var lista = Object.keys(ns).map(function (k) { return ns[k]; }).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+    sel.innerHTML = '<option value="">Todos</option>' + opciones(lista.map(function (n) { return [n, n]; }), ns[antes] || '');
+  }
+  /** Anota los vendedores de las filas que trajo la base; si alguno no estaba en el filtro, lo vuelve a armar. */
+  function sumarVistos(sel, loc, vistos, filas) {
+    var hay = {}, falta = false;
+    [].forEach.call(sel.options, function (o) { hay[o.value.toLowerCase()] = 1; });
+    (filas || []).forEach(function (f) {
+      var n = String(f.vendedor || '').trim();
+      if (!n) return;
+      vistos[n] = 1;
+      if (!hay[n.toLowerCase()]) falta = true;
+    });
+    if (falta) llenarFiltroVend(sel, loc, vistos);
+  }
   function vendedorInicial(l) {
     if (!l) return '';
     var r = recuerdo(), vs = vendedoresDe(l.id), nc = leer('nc_vendedor');
@@ -2755,15 +2786,14 @@
   }
 
   function verTickets() {
-    var c = $('cuerpo'), todos = {}, prueba = enPrueba();
-    Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
+    var c = $('cuerpo'), prueba = enPrueba(), vistos = {}, l = localListado();
     c.classList.add('lleno');
     c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de todas las sucursales.',
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
-        campo('', 'Sucursal', '<select id="tkLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
+        campo('', 'Sucursal', '<select id="tkLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Vendedor', '<select id="tkVend"></select>') +
         campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
         campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }), '') + '</select>') +
         campo('', 'Estado', '<select id="tkEstado"><option value="">Todos</option><option value="cobrada">Cobradas</option><option value="anulada">Anuladas</option></select>') +
@@ -2784,7 +2814,10 @@
       '<div class="tkl-pie" id="tkPie"></div>';
     c.querySelectorAll('.pos-acciones [data-ir], .tkl-panel [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
     var per = periodoPos($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
-    ['tkLocal', 'tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    llenarFiltroVend($('tkVend'), $('tkLocal').value, vistos);
+    ['tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    /* Otra sucursal: sus vendedores (el elegido queda si también es de ésa). */
+    $('tkLocal').onchange = function () { vistos = {}; llenarFiltroVend($('tkVend'), this.value, vistos); cargar(); };
     $('tkBorrar').onclick = function () { borrarPruebas($('tkLocal').value, this, cargar); };
     $('tkFallida').onclick = function () { abrirFallida({ local: $('tkLocal').value, alGuardar: cargar }); };
     var pedido = 0;
@@ -2797,6 +2830,7 @@
                               p_medio: $('tkMedio').value || null, p_estado: $('tkEstado').value || null,
                               p_letra: $('tkLetra').value || null, p_prueba: deLaPrueba() }).then(function (d) {
         if (n !== pedido || !$('tkLista')) return;
+        sumarVistos($('tkVend'), $('tkLocal').value, vistos, d.filas);
         pintarTickets(d);
       }).catch(function (e) {
         if (!$('tkLista')) return;
@@ -4044,20 +4078,21 @@
 
   /* La lista de las ventas fallidas: con qué motivo se fueron y cuánta plata se perdió. Se borra la que se cargó mal. */
   function verFallidas() {
-    var c = $('cuerpo'), prueba = enPrueba(), todos = {};
-    Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
+    var c = $('cuerpo'), prueba = enPrueba(), vistos = {}, l = localListado();
     c.innerHTML = cabeza('Ventas fallidas' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Los clientes que se fueron sin comprar y no dejaron su WhatsApp. Los que lo dejan van al No Compra.',
         '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El cliente dejó su WhatsApp">No Compra</a>' +
         '<button type="button" class="btn btn-chico btn-fallida" id="vfNueva">Nueva venta fallida</button>') +
       '<div class="pos-filtros"><div id="vfPer"></div>' +
-        campo('', 'Sucursal', '<select id="vfFLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Vendedor', '<select id="vfFVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
+        campo('', 'Sucursal', '<select id="vfFLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Vendedor', '<select id="vfFVend"></select>') +
         campo('', 'Motivo', '<select id="vfFMotivo"><option value="">Todos</option>' + opciones(MOTIVOS, '') + '</select>') +
         campo('', 'Ventas fallidas', '<select id="vfFPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="vfLista"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('vfPer'), { inicial: 'hoy', guardar: 'pos_fallidas_periodo', hastaHoy: true, alCambiar: cargar });
-    ['vfFLocal', 'vfFVend', 'vfFMotivo', 'vfFPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    llenarFiltroVend($('vfFVend'), $('vfFLocal').value, vistos);
+    ['vfFVend', 'vfFMotivo', 'vfFPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('vfFLocal').onchange = function () { vistos = {}; llenarFiltroVend($('vfFVend'), this.value, vistos); cargar(); };
     $('vfNueva').onclick = function () { abrirFallida({ local: $('vfFLocal').value, alGuardar: cargar }); };
     var pedido = 0;
     function deLaPrueba() { return $('vfFPrueba').value === '1'; }
@@ -4067,6 +4102,7 @@
       llamar('pos_fallidas', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('vfFLocal').value || null, p_vendedor: $('vfFVend').value || null,
                                p_motivo: $('vfFMotivo').value || null, p_prueba: deLaPrueba() }).then(function (d) {
         if (n !== pedido || !$('vfLista')) return;
+        sumarVistos($('vfFVend'), $('vfFLocal').value, vistos, d.filas);
         pintarF(d);
       }).catch(function (e) { if ($('vfLista')) $('vfLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
