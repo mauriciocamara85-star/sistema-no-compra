@@ -242,6 +242,53 @@ function pesos(n) {
   return (v < 0 ? '−' : '') + '$ ' + Math.abs(Math.round(v)).toLocaleString('es-AR');
 }
 
+/* (SQL 241, 4/11) El posnet y Mercado Pago pueden llevar más de una foto: el segundo posnet (Parque Brown tiene
+   Payway y Getnet) o la lista de Mercado Pago que no entra en una pantalla. Cada parte vale su última foto leída y el
+   comprobante es la suma, como en la base (orden_caja_lecturas). Lo usan la app (la caja) y la compu (el día de caja). */
+var OTRA_FOTO_CAJA = { lote: ['Otro posnet', '+ Otro posnet'], mp: ['Mercado Pago, otra foto', '+ Otra foto de Mercado Pago'] };
+function parteFoto(f) { return Number(f && f.parte) || 1; }
+
+/** Lo que leyó la IA de un medio: del sistema, su foto; de los demás, { total, partes } con las partes sumadas.
+    null si no hay nada leído. */
+function lecturaCaja(fotos, tipo) {
+  var buenas = {};
+  fotos.forEach(function (f) {
+    var p = parteFoto(f);
+    if (f.tipo === tipo && f.ia_estado === 'ok' && f.ia_resultado && !buenas[p]) buenas[p] = f.ia_resultado;
+  });
+  if (tipo === 'sistema') return buenas[1] || null;
+  var partes = Object.keys(buenas).sort(function (a, b) { return a - b; }).map(function (p) { return buenas[p]; });
+  if (!partes.length) return null;
+  var num = function (v) { return v == null || v === '' || !isFinite(Number(v)) ? null : Number(v); };
+  var suma = function (l) {
+    var x = l.filter(function (v) { return v != null; });
+    return x.length ? x.reduce(function (s, v) { return s + v; }, 0) : null;
+  };
+  if (partes.length === 1) return { total: num(partes[0].total), partes: partes };
+  if (tipo === 'mp') {
+    /* Si una foto muestra el total del día, vale ese (y una vez: la misma pantalla en dos fotos no se cuenta dos veces). */
+    var pantalla = [];
+    partes.forEach(function (r) { var t = num(r.total); if (t != null && r.total_de_lista !== true && pantalla.indexOf(t) < 0) pantalla.push(t); });
+    if (pantalla.length) return { total: suma(pantalla), partes: partes, pantalla: true };
+  }
+  return { total: suma(partes.map(function (r) { var t = num(r.total); return tipo === 'mp' && t == null ? num(r.suma_operaciones) : t; })), partes: partes };
+}
+
+/** "Posnet: Payway $ 253.000 + Getnet $ 564.500 = $ 817.500", si el comprobante sale de sumar. */
+function detalleSumaCaja(fotos, tipo) {
+  var l = lecturaCaja(fotos, tipo);
+  if (!l || !l.partes) return '';
+  if (l.pantalla) return 'Mercado Pago: vale el total del día de la pantalla, ' + pesos(l.total) + '.';
+  var items = [];
+  l.partes.forEach(function (r) {
+    var ps = Array.isArray(r.posnets) ? r.posnets : [];
+    var monto = function (v) { return v == null ? 'sin leer' : pesos(v); };
+    if (ps.length > 1) ps.forEach(function (p) { items.push((p.nombre ? p.nombre + ' ' : '') + monto(p.total)); });
+    else items.push((ps[0] && ps[0].nombre ? ps[0].nombre + ' ' : '') + monto(tipo === 'mp' && r.total == null ? r.suma_operaciones : r.total));
+  });
+  return items.length < 2 ? '' : (tipo === 'lote' ? 'Posnet' : 'Mercado Pago') + ': ' + items.join(' + ') + ' = ' + pesos(l.total);
+}
+
 function nombreLocal(l) { return l && l.id ? l.nombre : SIN_LOCAL; }
 
 function esDeRed(e) { return e && !e.delServidor && !e.sinSesion; }

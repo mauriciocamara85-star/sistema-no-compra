@@ -27,7 +27,7 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
     sobrante_faltante:
       'El mensaje debajo de TOTAL EFECTIVO: 0 si dice "No hay sobrante ni faltante de caja"; si dice sobrante, el monto en positivo; si dice faltante, el monto en negativo; null si no se ve',
   },
-  lote: { total: "Total en pesos del cierre de lote" },
+  lote: { total: "Total en pesos del cierre de lote (si se ven dos o más posnet, el del primero: cada uno va en posnets)" },
   mp: { total: "Total cobrado en el día (si la pantalla muestra un total)" },
   gocuotas: { total: "Total cobrado en el día" },
 };
@@ -35,7 +35,7 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
 const QUE_ES: Record<TipoFoto, string> = {
   sistema:
     'la pantalla "Cierre de caja" del sistema del local: a la derecha "Resultados del día" y a la izquierda el recuadro "TOTAL EFECTIVO" con el mensaje de sobrante o faltante (puede verse sólo "Resultados del día")',
-  lote: "el cierre de lote del posnet (Payway u otro)",
+  lote: "el cierre de lote del posnet (Payway, Getnet u otro); puede haber dos o más posnet en la misma foto",
   mp: "el resumen de cobros de Mercado Pago del día",
   gocuotas: "el resumen de cobros de Go Cuotas del día",
 };
@@ -59,6 +59,25 @@ export function esquemaCaja(tipo: TipoFoto) {
     ...(conLista
       ? { suma_operaciones: numeroONulo("Si NO hay total y se ve una lista, la suma de los montos visibles; si no, null") }
       : {}),
+    // (4/11) Parque Brown mandó el Payway y el Getnet en la misma foto y se leyó uno solo: la IA lista cada
+    // posnet y el código los suma (la IA nunca calcula el total del lote).
+    ...(tipo === "lote"
+      ? {
+        posnets: {
+          type: "array",
+          description: "Cada posnet que se ve en la foto, uno por renglón, con su nombre y el total de su cierre (uno solo si hay uno)",
+          items: {
+            type: "object",
+            properties: {
+              nombre: { type: "string", description: 'El nombre del posnet o de la empresa ("Payway", "Getnet"…); "" si no se ve' },
+              total: numeroONulo("El total en pesos del cierre de ese posnet"),
+            },
+            required: ["nombre", "total"],
+            additionalProperties: false,
+          },
+        },
+      }
+      : {}),
     lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
     dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien (vacío si no hay)" },
   };
@@ -71,7 +90,8 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Los montos están en pesos argentinos con formato "$ 1.440.100,00": el punto separa miles y la coma, decimales. Devolvé números simples (1440100).
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
-- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo; si está bien, "".
+${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
+` : ""}- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo; si está bien, "".
 Respondé SOLO con la lectura, en el formato JSON pedido.`;
 }
 
@@ -102,7 +122,10 @@ export async function leerFotoCaja(opts: {
   // Si Mercado Pago/Go Cuotas no muestran total pero la lista está completa, usamos la suma.
   if ((opts.tipo === "mp" || opts.tipo === "gocuotas") && r.total == null && typeof r.suma_operaciones === "number" && !r.lista_cortada) {
     r.total = r.suma_operaciones;
+    // (SQL 241) Con dos fotos de Mercado Pago, el total de la pantalla vale una vez y lo de cada lista se suma.
+    r.total_de_lista = true;
   }
+  if (opts.tipo === "lote") sumarPosnets(r);
   if (opts.tipo === "sistema") efectivoContado(r);
   r.fecha = fechaValida(r.fecha);
   // Sin motivo, null como antes (la base y la app preguntan si hay motivo).
@@ -119,6 +142,23 @@ export function efectivoContado(r: Record<string, unknown>) {
     r.total_efectivo = null;
     r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), "TOTAL EFECTIVO en $ 0: todavía no se había contado el efectivo"];
   }
+}
+
+/** (4/11) El lote con dos o más posnet en la foto: el total es la suma de los de cada uno (la cuenta la hace el
+ *  código, no la IA). Si uno no se lee, el total queda sin leer y va a dudas: mejor que lo carguen a mano. */
+export function sumarPosnets(r: Record<string, unknown>) {
+  const lista = Array.isArray(r.posnets) ? r.posnets as Record<string, unknown>[] : [];
+  const posnets = lista.map((p) => ({ nombre: typeof p?.nombre === "string" ? p.nombre.trim() : "", total: aNumero(p?.total) }));
+  r.posnets = posnets;
+  if (posnets.length < 2) {
+    if (r.total == null && posnets[0]?.total != null) r.total = posnets[0].total;
+    return;
+  }
+  const sinLeer = posnets.filter((p) => p.total == null);
+  if (sinLeer.length) {
+    r.total = null;
+    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), ...sinLeer.map((p) => `No se lee el total del posnet ${p.nombre || "sin nombre"}`)];
+  } else r.total = posnets.reduce((s, p) => s + (p.total as number), 0);
 }
 
 /** "1.440.100,00" | "$ 708.000" | 708000 → número; cualquier otra cosa → null */

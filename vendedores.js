@@ -2722,6 +2722,55 @@ var LECTURA_A_CAMPO = {
   lote: { total: 'real_lote' }, mp: { total: 'real_mp' }, gocuotas: { total: 'real_gocuotas' }
 };
 
+/* (SQL 241, pedido de Mauricio 4/11) El posnet y Mercado Pago pueden llevar más de una foto (la suma de las partes,
+   lecturaCaja, está en impecable-comun.js: la usa también la compu). */
+var MAX_PARTES_CAJA = 6;
+/* Si el cierre del sistema dice $ 0 en ese medio, su foto no hace falta (DOT no vendió con Go Cuotas). */
+var SIS_DE_FOTO = { lote: 'sis_tarjeta', mp: 'sis_mp', gocuotas: 'sis_gocuotas' };
+
+function nombreFotoCaja(tipo, parte, partes) {
+  var t = FOTOS_CAJA.filter(function (x) { return x[0] === tipo; })[0];
+  if (parte <= 1 || !OTRA_FOTO_CAJA[tipo]) return t ? t[1] : tipo;
+  return OTRA_FOTO_CAJA[tipo][0] + (partes > 2 ? ' (' + parte + ')' : '');
+}
+
+/** Las fotos del cierre de una caja, la última primero. Sin la columna parte (antes del SQL 241), todas son la 1. */
+function fotosDeCaja(id) {
+  var q = '/orden_caja_fotos?select=tipo,parte,ia_estado,ia_resultado&caja_id=eq.' + valor(id) + '&order=tomada_en.desc';
+  return leer(q).catch(function (e) {
+    if (!/parte|42703/.test(String(e && e.message))) throw e;
+    return leer(q.replace('tipo,parte,', 'tipo,'));
+  }).then(function (f) { return f || []; });
+}
+
+/** Los botones de las fotos del cierre: uno por medio y uno por cada parte que ya tiene foto; abajo, «+ Otro posnet» y
+    «+ Otra foto de Mercado Pago» (cuando ya está la primera) y la suma. estado: lo que se está subiendo o falló. */
+function htmlFotosCaja(fotos, estado) {
+  var ultima = {}, mas = '', sumas = '';
+  fotos.forEach(function (f) { var k = f.tipo + ':' + parteFoto(f); if (!ultima[k]) ultima[k] = f; });
+  var grilla = FOTOS_CAJA.map(function (t) {
+    var tipo = t[0], partes = 1, html = '';
+    fotos.forEach(function (f) { if (f.tipo === tipo) partes = Math.max(partes, parteFoto(f)); });
+    Object.keys(estado).forEach(function (k) { if (k.split(':')[0] === tipo) partes = Math.max(partes, Number(k.split(':')[1])); });
+    var sis = SIS_DE_FOTO[tipo] && app.querySelector('[data-campo="' + SIS_DE_FOTO[tipo] + '"]');
+    var noHaceFalta = !!sis && numeroCaja(sis.value) === 0 && !fotos.some(function (f) { return f.tipo === tipo; }) && !estado[tipo + ':1'];
+    for (var p = 1; p <= partes; p++) {
+      var f = ultima[tipo + ':' + p], e = estado[tipo + ':' + p];
+      var chip = e ? e.texto : noHaceFalta ? 'No hace falta' : !f ? 'Falta' : f.ia_estado === 'ok' ? 'Leída' : f.ia_estado === 'pendiente' ? 'Subida' : 'Cargá a mano';
+      html += '<button class="foto-caja' + (noHaceFalta ? ' no-falta' : '') + '" data-tipo="' + tipo + '" data-parte="' + p + '"' +
+        ((e && e.ocupado) || noHaceFalta ? ' disabled' : '') + '><b>' + esc(nombreFotoCaja(tipo, p, partes)) + '</b>' +
+        '<span class="chip ' + (f && !noHaceFalta ? 'listo' : 'pendiente') + '">' + esc(chip) + '</span></button>';
+    }
+    if (OTRA_FOTO_CAJA[tipo] && ultima[tipo + ':' + partes] && partes < MAX_PARTES_CAJA) {
+      mas += '<button class="foto-caja-mas" data-tipo="' + tipo + '" data-parte="' + (partes + 1) + '">' + esc(OTRA_FOTO_CAJA[tipo][1]) + '</button>';
+    }
+    var s = OTRA_FOTO_CAJA[tipo] ? detalleSumaCaja(fotos, tipo) : '';
+    if (s) sumas += '<p class="caja-suma">' + esc(s) + '</p>';
+    return html;
+  }).join('');
+  return '<div class="grilla">' + grilla + '</div>' + (mas ? '<div class="caja-mas">' + mas + '</div>' : '') + sumas;
+}
+
 function textoAlerta(a) {
   if (a.tipo === 'desvio') return 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) + (Number(a.monto) > 0 ? ' (falta plata)' : ' (sobra)');
   /* (SQL 122) Un lado tiene número y el otro está vacío: falta cargar, no es un desvío. */
@@ -2751,24 +2800,20 @@ function pantallaCaja() {
     }).catch(function () {});
   }
   llamar('orden_caja_hoy').then(function (caja) {
-    return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(caja.id) + '&order=tomada_en.desc')
-      .then(function (f) { if (enPapel('caja')) dibujarCaja(caja, f || []); });
+    return fotosDeCaja(caja.id).then(function (f) { if (enPapel('caja')) dibujarCaja(caja, f); });
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
 }
 
 /* corrige (SQL 124): el supervisor corrige (o carga) la caja de un día desde Revisar → Cajas:
    la misma pantalla, con "‹ Volver a la caja" y, al guardar, vuelve al día. */
 function dibujarCaja(caja, fotos, corrige) {
-  var ultima = {};
-  fotos.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
+  fotos = fotos.slice();
   var valores = {};
   FILAS_CAJA.forEach(function (f) { [f[1], f[2]].forEach(function (k) { valores[k] = caja[k] != null ? caja[k] : ''; }); });
-  /* Lo que la IA leyó precarga lo que todavía está vacío. */
-  Object.keys(ultima).forEach(function (tipo) {
-    var f = ultima[tipo];
-    if (f.ia_estado !== 'ok' || !f.ia_resultado) return;
-    var mapa = LECTURA_A_CAMPO[tipo] || {};
-    Object.keys(mapa).forEach(function (k) { if (valores[mapa[k]] === '' && f.ia_resultado[k] != null) valores[mapa[k]] = f.ia_resultado[k]; });
+  /* Lo que la IA leyó precarga lo que todavía está vacío (el posnet y Mercado Pago, con sus partes sumadas). */
+  FOTOS_CAJA.forEach(function (t) {
+    var l = lecturaCaja(fotos, t[0]), mapa = LECTURA_A_CAMPO[t[0]] || {};
+    if (l) Object.keys(mapa).forEach(function (k) { if (valores[mapa[k]] === '' && l[k] != null) valores[mapa[k]] = l[k]; });
   });
   var cerrada = caja.estado === 'controlada';
 
@@ -2779,13 +2824,7 @@ function dibujarCaja(caja, fotos, corrige) {
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
     : cabeza('Registro') + pestanitasPapeles() +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>');
-  if (!cerrada) {
-    html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
-      var f = ultima[t[0]];
-      var est = !f ? 'Falta' : f.ia_estado === 'ok' ? 'Leída' : f.ia_estado === 'pendiente' ? 'Subida' : 'Cargá a mano';
-      return '<button class="foto-caja" data-tipo="' + t[0] + '"><b>' + esc(t[1]) + '</b><span class="chip ' + (f ? 'listo' : 'pendiente') + '">' + est + '</span></button>';
-    }).join('') + '</div>';
-  }
+  if (!cerrada) html += '<div id="fotosCaja"></div>';
   var dis = cerrada ? ' disabled' : '';
   html += '<div class="seccion">Los números</div><div class="perfil caja-filas">' + FILAS_CAJA.map(function (f) {
     return '<div class="caja-fila"><div class="caja-nombre">' + esc(f[0]) + '</div>' +
@@ -2807,20 +2846,59 @@ function dibujarCaja(caja, fotos, corrige) {
   if (corrige) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
   else engancharCabeza();
 
-  app.querySelectorAll('.caja-fila input').forEach(function (i) { i.addEventListener('input', revisarFilasCaja); });
-  revisarFilasCaja();
   var input = document.getElementById('fotoCaja');
-  /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
-  app.querySelectorAll('.foto-caja').forEach(function (b) {
-    b.onclick = function () {
-      if (b.disabled) return;
-      b.disabled = true;
-      fotoCaja(caja, b.dataset.tipo, input, b).catch(function (e) {
-        if (e && e.sinSesion) { pantallaError(e); return; }
-        avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
-      }).then(function () { b.disabled = false; });
-    };
+  /* Lo que se está subiendo o leyendo, por parte ("lote:2" → { texto, ocupado }): los botones se vuelven a dibujar
+     al cambiar un número del sistema ($ 0 → «No hace falta») o al llegar una lectura. */
+  var estado = {};
+  function pintarFotos() {
+    var lugar = document.getElementById('fotosCaja');
+    if (!lugar) return;
+    lugar.innerHTML = htmlFotosCaja(fotos, estado);
+    /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
+    lugar.querySelectorAll('[data-parte]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.disabled) return;
+        var tipo = b.dataset.tipo, parte = Number(b.dataset.parte) || 1, clave = tipo + ':' + parte;
+        b.disabled = true;
+        fotoCaja(caja, tipo, parte, input, function (texto) { estado[clave] = { texto: texto, ocupado: true }; pintarFotos(); })
+          .then(function (nueva) {
+            delete estado[clave];
+            if (nueva) { fotos.unshift(nueva); completarConLectura(nueva); }
+          }, function (e) {
+            estado[clave] = { texto: 'Probá de nuevo' };
+            if (e && e.sinSesion) { pantallaError(e); return; }
+            avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
+          })
+          .then(function () { b.disabled = false; pintarFotos(); });
+      };
+    });
+  }
+  /* Lo que leyó la foto nueva pasa a los números (el posnet y Mercado Pago, sumados con sus otras fotos). */
+  function completarConLectura(nueva) {
+    var lectura = nueva.ia_resultado;
+    if (nueva.ia_estado === 'pendiente') { avisar('Foto guardada: cargá los números del cierre.'); return; }
+    if (nueva.ia_estado !== 'ok') { avisar(lectura && lectura.motivo ? lectura.motivo : 'No pudimos leer la foto: cargá los números a mano.'); return; }
+    var l = nueva.tipo === 'sistema' ? lectura : lecturaCaja(fotos, nueva.tipo), mapa = LECTURA_A_CAMPO[nueva.tipo] || {};
+    Object.keys(mapa).forEach(function (k) {
+      var campo = app.querySelector('[data-campo="' + mapa[k] + '"]');
+      if (campo && l && l[k] != null) campo.value = l[k];
+    });
+    revisarFilasCaja();
+    var sinEfectivo = nueva.tipo === 'sistema' && !String(app.querySelector('[data-campo="real_efectivo"]').value || '').trim();
+    var suma = OTRA_FOTO_CAJA[nueva.tipo] && l && l.total != null && detalleSumaCaja(fotos, nueva.tipo);
+    avisar(sinEfectivo ? 'Listo, pero no se leyó el TOTAL EFECTIVO: escribí el efectivo que contaste.'
+      : suma ? 'Listo: ' + (nueva.tipo === 'lote' ? 'el posnet' : 'Mercado Pago') + ' suma ' + pesos(l.total) + '. Revisá los números.'
+      : 'Listo: revisá los números que se cargaron.');
+  }
+
+  app.querySelectorAll('.caja-fila input').forEach(function (i) {
+    i.addEventListener('input', function () {
+      revisarFilasCaja();
+      if (/^sis_(tarjeta|mp|gocuotas)$/.test(i.dataset.campo)) pintarFotos();
+    });
   });
+  revisarFilasCaja();
+  pintarFotos();
   var g = document.getElementById('guardarCaja');
   if (g) unaVez(g, function () { return guardarCaja(caja, g, corrige); });
 }
@@ -2830,8 +2908,8 @@ function corregirCaja(c) {
   app.innerHTML = '<p class="cargando">Cargando…</p>';
   /* La IA de la caja de ESE local (SQL 134): si está apagada, la foto se guarda y se corrige a mano. */
   var ia = leer('/orden_config?select=*&local_id=eq.' + valor(c.local_id)).then(function (r) { return iaDeCaja(r && r[0]); }, function () { return true; });
-  return Promise.all([leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc'), ia])
-    .then(function (r) { _cajaIA = r[1]; dibujarCaja(c, r[0] || [], true); }, function (e) { detalleCaja(c); throw e; });
+  return Promise.all([fotosDeCaja(c.id), ia])
+    .then(function (r) { _cajaIA = r[1]; dibujarCaja(c, r[0], true); }, function (e) { detalleCaja(c); throw e; });
 }
 
 /** Vuelve al día de la caja, con lo que quedó guardado. */
@@ -2841,44 +2919,29 @@ function volverAlDiaCaja(id) {
   });
 }
 
-function fotoCaja(caja, tipo, input, boton) {
+/** Saca, sube y hace leer una foto del cierre. Devuelve la foto nueva como viene de orden_caja_fotos (null si cerraron
+    la cámara). parte: 2 en adelante para el otro posnet o la otra foto de Mercado Pago (SQL 241). */
+function fotoCaja(caja, tipo, parte, input, alEmpezar) {
   return new Promise(function (ok, mal) {
     input.value = '';
-    input.oncancel = function () { ok(); };   // cerraron la cámara sin sacar la foto: el botón no queda trabado
+    input.oncancel = function () { ok(null); };   // cerraron la cámara sin sacar la foto: el botón no queda trabado
     input.onchange = function () {
       var f = input.files && input.files[0];
-      if (!f) { ok(); return; }
-      boton.querySelector('.chip').textContent = _cajaIA ? 'Leyendo…' : 'Subiendo…';
+      if (!f) { ok(null); return; }
+      alEmpezar(_cajaIA ? 'Leyendo…' : 'Subiendo…');
       archivoAJpeg(f)
-        .then(function (blob) { return subirArchivo(caja.local_id + '/cajas/' + caja.fecha + '/' + tipo + '-' + nombreArchivo(), blob); })
-        .then(function (ruta) { return llamar('orden_caja_registrar_foto', { p_caja: caja.id, p_tipo: tipo, p_foto_path: ruta }); })
+        .then(function (blob) { return subirArchivo(caja.local_id + '/cajas/' + caja.fecha + '/' + tipo + (parte > 1 ? parte : '') + '-' + nombreArchivo(), blob); })
+        .then(function (ruta) {
+          var p = { p_caja: caja.id, p_tipo: tipo, p_foto_path: ruta };
+          if (parte > 1) p.p_parte = parte;   // la primera, sin p_parte: como antes del SQL 241
+          return llamar('orden_caja_registrar_foto', p);
+        })
         .then(function (fotoId) { return _cajaIA ? llamarFuncion('leer-caja', { foto_id: fotoId }) : { apagada: true }; })
         .then(function (r) {
-          if (r && r.apagada) {
-            boton.querySelector('.chip').textContent = 'Guardada';
-            boton.querySelector('.chip').className = 'chip listo';
-            avisar('Foto guardada: cargá los números del cierre.');
-            ok();
-            return;
-          }
           var lectura = r && r.ok ? r.lectura : null;
-          if (lectura && lectura.foto_valida !== false) {
-            var mapa = LECTURA_A_CAMPO[tipo] || {};
-            Object.keys(mapa).forEach(function (k) {
-              var campo = app.querySelector('[data-campo="' + mapa[k] + '"]');
-              if (campo && lectura[k] != null) campo.value = lectura[k];
-            });
-            boton.querySelector('.chip').textContent = 'Leída';
-            revisarFilasCaja();
-            var sinEfectivo = tipo === 'sistema' && !String(app.querySelector('[data-campo="real_efectivo"]').value || '').trim();
-            avisar(sinEfectivo ? 'Listo, pero no se leyó el TOTAL EFECTIVO: escribí el efectivo que contaste.' : 'Listo: revisá los números que se cargaron.');
-          } else {
-            boton.querySelector('.chip').textContent = 'Cargá a mano';
-            avisar(lectura && lectura.motivo ? lectura.motivo : 'No pudimos leer la foto: cargá los números a mano.');
-          }
-          boton.querySelector('.chip').className = 'chip listo';
-          ok();
-        }, function (e) { boton.querySelector('.chip').textContent = 'Probá de nuevo'; mal(e); });
+          ok({ tipo: tipo, parte: parte, ia_resultado: lectura,
+               ia_estado: r && r.apagada ? 'pendiente' : lectura && lectura.foto_valida !== false ? 'ok' : lectura ? 'invalida' : 'error' });
+        }, mal);
     };
     input.click();
   });
@@ -2911,8 +2974,7 @@ function guardarCaja(caja, boton, corrige) {
         avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
         if (corrige) return volverAlDiaCaja(c.id);
         revisarCaja();
-        return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
-          .then(function (f) { dibujarCaja(c, f || []); });
+        return fotosDeCaja(c.id).then(function (f) { dibujarCaja(c, f); });
       });
   });
 }
@@ -3632,8 +3694,13 @@ function detalleCaja(c) {
       ? '<button class="boton" id="corregirCaja">' + (c.estado === 'pendiente' ? 'Cargar la caja' : 'Corregir: cierre nuevo o a mano') + '</button>' : '');
   var fotos = c.fotos || {};
   if (Object.keys(fotos).length) {
-    html += '<div class="seccion">Fotos</div><div class="grilla">' + FOTOS_CAJA.filter(function (t) { return fotos[t[0]]; }).map(function (t) {
-      return '<figure class="foto-chica"><img data-foto="' + esc(fotos[t[0]]) + '" alt=""><figcaption>' + esc(t[1]) + '</figcaption></figure>';
+    /* (SQL 241) "lote", "lote:2"…: la última de cada parte. */
+    html += '<div class="seccion">Fotos</div><div class="grilla">' + FOTOS_CAJA.map(function (t) {
+      var partes = Object.keys(fotos).filter(function (k) { return k.split(':')[0] === t[0]; })
+        .map(function (k) { return { k: k, p: Number(k.split(':')[1]) || 1 }; }).sort(function (a, b) { return a.p - b.p; });
+      return partes.map(function (x) {
+        return '<figure class="foto-chica"><img data-foto="' + esc(fotos[x.k]) + '" alt=""><figcaption>' + esc(nombreFotoCaja(t[0], x.p, partes.length)) + '</figcaption></figure>';
+      }).join('');
     }).join('') + '</div>';
   }
   if ((c.historial || []).length) {

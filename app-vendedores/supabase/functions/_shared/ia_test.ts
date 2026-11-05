@@ -283,7 +283,7 @@ Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con
   igual(error.startsWith("API 401"), true, "otro error no se reintenta: sigue como antes");
 });
 
-import { aNumero, efectivoContado, esquemaCaja, fechaValida, leerFotoCaja, MAX_UNIONES } from "./caja_ia.ts";
+import { aNumero, efectivoContado, esquemaCaja, fechaValida, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets } from "./caja_ia.ts";
 
 /** Las propiedades con anyOf o con una lista de tipos, en todo el esquema (la API acepta hasta 16). */
 function uniones(s: unknown): number {
@@ -323,6 +323,16 @@ Deno.test("caja: motivo y fecha vacíos vuelven como null, como antes (18/10)", 
     modelo: "m", apiKey: "k", pedir: respuesta({ ...base, foto_valida: false, motivo: "Sacala de más cerca", fecha: "2026-10-17", total: null, suma_operaciones: null }),
   });
   igual([mp.motivo, mp.fecha], ["Sacala de más cerca", "2026-10-17"], "mp inválida con motivo");
+  const lista = await leerFotoCaja({
+    tipo: "mp", fecha: "2026-11-04", local: "Rivadavia", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: respuesta({ ...base, motivo: "", fecha: "2026-11-04", total: null, suma_operaciones: 50000 }),
+  });
+  igual([lista.total, lista.total_de_lista], [50000, true], "el total sacado de la lista queda marcado (SQL 241)");
+  const pantalla = await leerFotoCaja({
+    tipo: "mp", fecha: "2026-11-04", local: "Rivadavia", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: respuesta({ ...base, motivo: "", fecha: "2026-11-04", total: 300000, suma_operaciones: null }),
+  });
+  igual([pantalla.total, pantalla.total_de_lista], [300000, undefined], "el de la pantalla, no");
 });
 
 Deno.test("caja: montos en formato argentino y fechas imposibles", () => {
@@ -347,4 +357,35 @@ Deno.test("caja: el efectivo contado sale del TOTAL EFECTIVO de la foto del sist
   igual(cero.total_efectivo, null, "en $ 0 todavía no se contó");
   igual((cero.dudas as string[]).length, 1, "y queda en dudas");
   igual(leido({ total_efectivo: 0, sobrante_faltante: 0, saldo_final_efectivo: 0 }).total_efectivo, 0, "sin efectivo de verdad: 0");
+});
+
+Deno.test("caja: dos posnet en la foto del lote se suman en el código, no en la IA (4/11, Parque Brown)", async () => {
+  const lote = esquemaCaja("lote") as { properties: Record<string, unknown>; required: string[] };
+  igual("posnets" in lote.properties && lote.required.includes("posnets"), true, "el lote pide la lista de posnets");
+  igual(["sistema", "mp", "gocuotas"].some((t) => "posnets" in esquemaCaja(t as "mp").properties), false, "los demás no");
+  igual(uniones(lote), 2, "el total y el total de cada posnet");
+  igual(sistemaCaja("lote", "2026-11-04", "Parque Brown").includes('"posnets"'), true, "el lote lo explica");
+  igual(sistemaCaja("mp", "2026-11-04", "Parque Brown").includes("posnets"), false, "Mercado Pago no");
+
+  const suma = (r: Record<string, unknown>) => (sumarPosnets(r), r);
+  const dos = suma({ total: 253000, posnets: [{ nombre: " Payway ", total: 253000 }, { nombre: "Getnet", total: "$ 564.500,00" }], dudas: [] });
+  igual([dos.total, dos.posnets], [817500, [{ nombre: "Payway", total: 253000 }, { nombre: "Getnet", total: 564500 }]], "Payway + Getnet");
+  igual(suma({ total: 253000, posnets: [{ nombre: "Payway", total: 253000 }] }).total, 253000, "uno solo: el total de siempre");
+  igual(suma({ total: null, posnets: [{ nombre: "Payway", total: 253000 }] }).total, 253000, "uno solo sin total: el del posnet");
+  igual(suma({ total: 253000 }).total, 253000, "sin lista (lecturas de antes): igual");
+  const flojo = suma({ total: 253000, posnets: [{ nombre: "Payway", total: 253000 }, { nombre: "", total: null }], dudas: ["x"] });
+  igual([flojo.total, flojo.dudas], [null, ["x", "No se lee el total del posnet sin nombre"]], "si uno no se lee, el total queda sin leer");
+  igual(suma({ total: 5, posnets: "basura" }).posnets, [], "una lista rara no rompe");
+
+  const r = await leerFotoCaja({
+    tipo: "lote", fecha: "2026-11-04", local: "Parque Brown", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: (async () => new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({
+        foto_valida: true, motivo: "", fecha: "2026-11-04", total: 253000, lista_cortada: false, dudas: [],
+        posnets: [{ nombre: "Payway", total: 253000 }, { nombre: "Getnet", total: 564500 }],
+      }) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
+  });
+  igual([r.total, (r.posnets as unknown[]).length], [817500, 2], "la lectura completa");
 });

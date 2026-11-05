@@ -206,6 +206,14 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 /* Caja */
 .foto-caja { display: grid; gap: 8px; justify-items: start; min-height: 88px; padding: 12px; border-radius: 16px; cursor: pointer; text-align: left;
              background: var(--tarjeta); border: 1px solid var(--borde); }
+/* (SQL 241) La foto que no hace falta (el cierre del sistema dice $ 0), «+ Otro posnet» y la suma de las partes. Con el
+   título del de al lado en dos renglones, la etiqueta queda abajo sin estirarse. */
+.foto-caja { align-content: space-between; }
+.foto-caja.no-falta { opacity: .45; cursor: default; }
+.caja-mas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.foto-caja-mas { padding: 10px 16px; border-radius: 99px; border: 1px dashed var(--suave); background: none; color: var(--texto);
+                 font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.caja-suma { margin: 10px 2px 0; font-size: 13px; color: var(--suave); }
 .tabla-caja .fila { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; flex-wrap: nowrap; font-size: 14px; }
 .tabla-caja .fila span:not(:first-child) { text-align: right; }
 .tabla-caja .cab { color: var(--suave); font-weight: 700; font-size: 12px; }

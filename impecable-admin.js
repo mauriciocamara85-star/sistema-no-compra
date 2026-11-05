@@ -1646,19 +1646,36 @@ var FILAS_DIA_CAJA = [['Mercado Pago', 'sis_mp', 'real_mp', 'desvio_mp'], ['Tarj
 function ventanaCaja(k) {
   /* Cómo quedó la lectura de cada foto; sin señal, igual se ven las fotos (sin la lectura).
      Y qué números puso la IA (SQL 122; sin ese SQL, no se marca nada). */
+  var q = '/orden_caja_fotos?select=id,tipo,parte,foto_path,ia_estado,ia_resultado,tomada_en&caja_id=eq.' + valor(k.id) + '&borrada_en=is.null&order=tomada_en.desc';
   Promise.all([
-    leer('/orden_caja_fotos?select=id,tipo,foto_path,ia_estado,ia_resultado,tomada_en&caja_id=eq.' + valor(k.id) + '&borrada_en=is.null&order=tomada_en.desc')
-      .catch(function () { return null; }),
+    /* (SQL 241) Con la parte de cada foto; sin esa columna todavía, todas son la 1. */
+    leer(q).catch(function () { return leer(q.replace('tipo,parte,', 'tipo,')); }).catch(function () { return null; }),
     leer('/orden_cajas?select=ia_campos&id=eq.' + valor(k.id)).catch(function () { return null; })
   ]).then(function (r) { dibujarVentanaCaja(k, r[0], ((r[1] || [])[0] || {}).ia_campos || []); });
 }
 
 function dibujarVentanaCaja(k, fs, deIA) {
   deIA = deIA || [];
+  /* La última foto de cada parte (SQL 241: "lote", "lote:2"…, el segundo posnet o la otra de Mercado Pago). */
   var ultima = {};
-  if (fs) fs.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
-  else Object.keys(k.fotos || {}).forEach(function (t) { ultima[t] = { tipo: t, foto_path: k.fotos[t] }; });
-  var hay = FOTOS_CIERRE.filter(function (t) { return ultima[t[0]]; });
+  if (fs) fs.forEach(function (f) { var c = f.tipo + ':' + parteFoto(f); if (!ultima[c]) ultima[c] = f; });
+  else Object.keys(k.fotos || {}).forEach(function (c) {
+    var t = c.split(':'), p = Number(t[1]) || 1;
+    ultima[t[0] + ':' + p] = { tipo: t[0], parte: p, foto_path: k.fotos[c] };
+  });
+  var figuras = [];
+  FOTOS_CIERRE.forEach(function (t) {
+    var partes = Object.keys(ultima).filter(function (c) { return c.split(':')[0] === t[0]; }).map(function (c) { return ultima[c]; })
+      .sort(function (a, b) { return parteFoto(a) - parteFoto(b); });
+    partes.forEach(function (f, i) {
+      var p = parteFoto(f), nombre = p === 1 ? t[1] : (OTRA_FOTO_CAJA[t[0]] || [t[1]])[0] + (partes.length > 2 ? ' (' + p + ')' : '');
+      /* El nombre arriba, la foto y, debajo, lo que leyó la IA (al bajar no se mezcla con la siguiente). Con varias
+         fotos del mismo medio, cada una dice lo suyo y debajo de la última va la suma, comparada con lo cargado. */
+      figuras.push('<figure class="foto-chica foto-cierre" data-tipo="' + t[0] + '" data-partes="' + partes.length + '"><figcaption><b>' + esc(nombre) + '</b>' + (f.tomada_en ? ' · ' + esc(hora(f.tomada_en)) : '') + '</figcaption>' +
+        '<img data-foto="' + esc(f.foto_path) + '" alt="' + esc(nombre) + '">' + lecturaCierre(t, f, k, partes.length > 1) +
+        (fs && partes.length > 1 && i === partes.length - 1 ? sumaCierre(t, fs, k) : '') + '</figure>');
+    });
+  });
   var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
     ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
@@ -1672,13 +1689,8 @@ function dibujarVentanaCaja(k, fs, deIA) {
     filasDiaCaja(k, deIA, false) + '</tbody></table></div>' +
     (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">IA</span> los cargó la IA desde las fotos: corroboralos con las fotos de abajo.</p>' : '') +
     controlCajaHTML(k) +
-    (hay.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + hay.map(function (t) {
-      var f = ultima[t[0]];
-      /* El nombre arriba, la foto y, debajo, lo que leyó la IA (al bajar no se mezcla con la siguiente). */
-      return '<figure class="foto-chica foto-cierre" data-tipo="' + t[0] + '"><figcaption><b>' + esc(t[1]) + '</b>' + (f.tomada_en ? ' · ' + esc(hora(f.tomada_en)) : '') + '</figcaption>' +
-        '<img data-foto="' + esc(f.foto_path) + '" alt="' + esc(t[1]) + '">' + lecturaCierre(t, f, k) + '</figure>';
-    }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
-  engancharReleer(v, k);
+    (figuras.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + figuras.join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
+  engancharReleer(v, k, fs);
   engancharEdicionCaja(v, k, deIA);
   engancharControlCaja(v, k);
 }
@@ -1806,8 +1818,9 @@ function engancharEdicionCaja(v, k, deIA) {
   });
 }
 
-/** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. */
-function lecturaCierre(t, f, k) {
+/** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. enPartes: el medio tiene varias fotos (SQL 241):
+    cada una no se compara sola, la suma va debajo de la última (sumaCierre). */
+function lecturaCierre(t, f, k, enPartes) {
   if (!f.ia_estado) return '';
   var r = f.ia_resultado || {};
   if (f.ia_estado === 'invalida') return '<div class="lectura-ia"><span class="rojo">La IA no la pudo leer: ' + esc(r.motivo || 'no es la pantalla pedida o no se ven los números') + '.</span></div>';
@@ -1818,26 +1831,47 @@ function lecturaCierre(t, f, k) {
   var renglones = t[2].filter(function (c) { return r[c[0]] != null || (c[2] && k[c[2]] != null && (c[0] in r || c[0] !== 'total_efectivo')); }).map(function (c) {
     var leido = r[c[0]], cargado = c[2] ? k[c[2]] : null;
     /* Rojo sólo si la IA leyó un número y lo cargado es otro (o no cargaron nada). */
-    var distinto = !!c[2] && leido != null && (cargado == null || Math.abs(Number(leido) - Number(cargado)) > 0.5);
+    var distinto = !enPartes && !!c[2] && leido != null && (cargado == null || Math.abs(Number(leido) - Number(cargado)) > 0.5);
     return '<li>' + esc(c[1]) + ': <b>' + (leido == null ? 'no se leyó' : esc(pesos(leido))) + '</b>' +
       (distinto ? ' <span class="rojo">· cargaron ' + esc(pesos(cargado)) + '</span>' : '') + '</li>';
   });
+  /* Dos o más posnet en la misma foto: cada uno y la suma (la hace el código, no la IA). */
+  var posnets = Array.isArray(r.posnets) && r.posnets.length > 1 ? detalleSumaCaja([{ tipo: t[0], ia_estado: 'ok', ia_resultado: r }], t[0]) : '';
   var otroDia = r.fecha && r.fecha !== String(k.fecha).slice(0, 10);
   return '<div class="lectura-ia">La IA leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
+    (posnets ? '<div>' + esc(posnets) + '</div>' : '') +
     (otroDia ? '<div class="rojo">La foto dice ' + esc(diaMes(r.fecha)) + ': parece de otro día.</div>' : '') +
     ((r.dudas || []).length ? '<div>No se leían bien: ' + esc(r.dudas.join(', ')) + '</div>' : '') + '</div>';
 }
 
-function engancharReleer(v, k) {
+/** (SQL 241) Debajo de la última foto de un medio con varias: lo leído de todas sumado, comparado con lo que cargaron. */
+function sumaCierre(t, fs, k) {
+  var l = lecturaCaja(fs, t[0]), cargado = k[t[2][0][2]];
+  var html = '<div class="lectura-ia suma-cierre" data-tipo="' + t[0] + '">';
+  if (!l || l.total == null) return html + 'Las fotos todavía no se leyeron todas.</div>';
+  var distinto = cargado == null || Math.abs(Number(l.total) - Number(cargado)) > 0.5;
+  return html + '<b>' + esc(detalleSumaCaja(fs, t[0]) || 'Lo leído de las fotos: ' + pesos(l.total)) + '</b>' +
+    (distinto ? ' <span class="rojo">· cargaron ' + esc(pesos(cargado)) + '</span>' : '') + '</div>';
+}
+
+function engancharReleer(v, k, fs) {
   v.querySelectorAll('[data-releer]').forEach(function (b) {
     unaVez(b, function () {
       b.textContent = 'Leyendo…';
       return llamarFuncion('leer-caja', { foto_id: b.dataset.releer }).then(function (d) {
         if (!d._ok || !d.ok || !d.lectura) { avisar(d.mensaje || d.error || 'No se pudo leer la foto. Probá más tarde.'); return; }
         var fig = b.closest('.foto-cierre'), t = FOTOS_CIERRE.filter(function (x) { return x[0] === fig.dataset.tipo; })[0];
+        var nueva = { id: b.dataset.releer, ia_estado: d.lectura.foto_valida === false ? 'invalida' : 'ok', ia_resultado: d.lectura };
         var div = document.createElement('div');
-        div.innerHTML = lecturaCierre(t, { id: b.dataset.releer, ia_estado: d.lectura.foto_valida === false ? 'invalida' : 'ok', ia_resultado: d.lectura }, k);
+        div.innerHTML = lecturaCierre(t, nueva, k, Number(fig.dataset.partes) > 1);
         fig.querySelector('.lectura-ia').replaceWith(div.firstChild);
+        /* Con varias fotos del medio, la suma de abajo se rehace con la lectura nueva. */
+        var suma = v.querySelector('.suma-cierre[data-tipo="' + t[0] + '"]');
+        if (suma && fs) {
+          fs.forEach(function (f) { if (f.id === nueva.id) { f.ia_estado = nueva.ia_estado; f.ia_resultado = nueva.ia_resultado; } });
+          div.innerHTML = sumaCierre(t, fs, k);
+          suma.replaceWith(div.firstChild);
+        }
         avisar(d.lectura.foto_valida === false ? 'La IA dice que esa foto no se lee.' : 'Listo: la IA leyó la foto.');
       });
     });
