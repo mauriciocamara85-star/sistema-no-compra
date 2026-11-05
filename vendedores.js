@@ -2799,9 +2799,54 @@ function pantallaCaja() {
       if (b) b.textContent = textoBajadaCaja();
     }).catch(function () {});
   }
+  var atrasadas = cargarAtrasadas();
   llamar('orden_caja_hoy').then(function (caja) {
-    return fotosDeCaja(caja.id).then(function (f) { if (enPapel('caja')) dibujarCaja(caja, f); });
+    return Promise.all([fotosDeCaja(caja.id), atrasadas]).then(function (r) { if (enPapel('caja')) dibujarCaja(caja, r[0]); });
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
+}
+
+/* ── Días anteriores para cargar (SQL 243). Mauricio (5/11): "como empezamos ayer 4 … habilitar para que puedan cargar
+   el día 3, el día 2 y el día 1 manualmente; así queda el mes completo de noviembre". La base dice qué días puede
+   cargar el local y hasta cuándo; arriba de la caja de hoy sale un recuadro con cada día, y cada uno se carga como la de
+   hoy (las fotos de ese día o los números a mano). Sin el SQL, sin días o en «Ver su app»: no sale nada. ── */
+var _cajasAtrasadas = [];
+function cargarAtrasadas() {
+  return llamar('orden_cajas_atrasadas').then(function (r) { _cajasAtrasadas = Array.isArray(r) ? r : []; },
+                                              function () { _cajasAtrasadas = []; });
+}
+
+/** "domingo 1/11" (de una fecha AAAA-MM-DD). */
+function diaSemanaMes(f) {
+  return new Intl.DateTimeFormat('es-AR', { timeZone: ZONA, weekday: 'long' }).format(new Date(f + 'T12:00:00-03:00')) + ' ' + diaMes(f);
+}
+function conMayuscula(t) { return t.charAt(0).toUpperCase() + t.slice(1); }
+
+function htmlAtrasadas() {
+  if (!_cajasAtrasadas.length) return '';
+  var faltan = _cajasAtrasadas.filter(function (c) { return c.estado === 'pendiente'; }).length;
+  var hasta = _cajasAtrasadas.map(function (c) { return c.cargar_hasta; }).filter(Boolean).sort()[0];
+  return '<div class="perfil cajas-atrasadas' + (faltan ? ' faltan' : '') + '">' +
+    '<div class="titulo">' + (faltan ? 'Falta cargar ' + (faltan === 1 ? 'un día anterior' : faltan + ' días anteriores') : 'Días anteriores') + '</div>' +
+    '<p class="detalle">' + esc('Cada día se carga como la caja de hoy: con las fotos del cierre de ese día o los números a mano.' +
+      (hasta ? ' Se puede hasta el ' + diaSemanaMes(hasta) + '.' : '')) + '</p>' +
+    _cajasAtrasadas.map(function (c) {
+      var n = (c.alertas || []).length;
+      var est = c.estado === 'pendiente' ? ['vencido', 'Falta cargar'] : n ? ['corregir', 'Guardada, para revisar'] : ['listo', 'Guardada'];
+      return '<button class="fila fila-boton" data-atrasada="' + esc(c.id) + '"><span><b>' + esc(conMayuscula(diaSemanaMes(c.fecha))) + '</b></span>' +
+        '<span class="chip ' + est[0] + '">' + est[1] + '</span></button>';
+    }).join('') + '</div>';
+}
+function engancharAtrasadas() {
+  app.querySelectorAll('[data-atrasada]').forEach(function (b) {
+    b.onclick = function () {
+      var c = _cajasAtrasadas.filter(function (x) { return x.id === b.dataset.atrasada; })[0];
+      if (!c) return;
+      barra.hidden = true;
+      app.className = 'app';
+      dibujarCaja(c, c.fotos_lista || [], 'atrasada');
+      window.scrollTo(0, 0);
+    };
+  });
 }
 
 /* corrige (SQL 124): el supervisor corrige (o carga) la caja de un día desde Revisar → Cajas:
@@ -2817,13 +2862,23 @@ function dibujarCaja(caja, fotos, corrige) {
   });
   var cerrada = caja.estado === 'controlada';
 
-  var html = corrige
+  /* corrige 'atrasada' (SQL 243): un día anterior que el local puede cargar; vuelve a la caja de hoy. */
+  var atrasada = corrige === 'atrasada';
+  var html = atrasada
+    ? '<button class="volver" id="volverCaja">‹ Volver a la caja de hoy</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') +
+      ' la caja del ' + esc(diaSemanaMes(caja.fecha)) + '</h1>' +
+      '<p class="bajada">' + esc(_cajaIA
+        ? 'Es un día anterior: sacá las fotos del cierre de ESE día (el del sistema, el posnet y Mercado Pago) y los números se cargan solos; si no las tenés, escribilos a mano. Revisalos y guardá.'
+        : 'Es un día anterior: cargá a mano los números del cierre de ESE día (si tenés las fotos, sacalas igual). Revisalos y guardá.') + '</p>'
+    : corrige
     ? '<button class="volver" id="volverCaja">‹ Volver a la caja</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') + ' la caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
         ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
     : cabeza('Registro') + pestanitasPapeles() +
-      (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>');
+      (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>') +
+      /* Con los días anteriores arriba, lo de abajo dice que es la de hoy (si no, las fotos parecían de esos días). */
+      (_cajasAtrasadas.length ? htmlAtrasadas() + '<div class="seccion">La caja de hoy · ' + esc(diaSemanaMes(caja.fecha)) + '</div>' : '');
   if (!cerrada) html += '<div id="fotosCaja"></div>';
   var dis = cerrada ? ' disabled' : '';
   html += '<div class="seccion">Los números</div><div class="perfil caja-filas">' + FILAS_CAJA.map(function (f) {
@@ -2843,8 +2898,9 @@ function dibujarCaja(caja, fotos, corrige) {
   if (!cerrada) html += '<button class="boton lima" id="guardarCaja">Guardar</button>';
   html += '<input type="file" id="fotoCaja" accept="image/*" capture="environment" hidden>';
   app.innerHTML = html;
-  if (corrige) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
-  else engancharCabeza();
+  if (atrasada) document.getElementById('volverCaja').onclick = function () { pantallaCaja(); };
+  else if (corrige) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
+  else { engancharCabeza(); engancharAtrasadas(); }
 
   var input = document.getElementById('fotoCaja');
   /* Lo que se está subiendo o leyendo, por parte ("lote:2" → { texto, ocupado }): los botones se vuelven a dibujar
@@ -2987,6 +3043,8 @@ function guardarCaja(caja, boton, corrige) {
     return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
       .then(function (c) {
         avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
+        /* (SQL 243) Un día anterior: vuelve a la caja de hoy, con la lista de los días al día. */
+        if (corrige === 'atrasada') return pantallaCaja();
         if (corrige) return volverAlDiaCaja(c.id);
         revisarCaja();
         return fotosDeCaja(c.id).then(function (f) { dibujarCaja(c, f); });

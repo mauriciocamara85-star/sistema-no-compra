@@ -594,6 +594,13 @@ button.mapa-sec { cursor: pointer; }
 .caja-da.da { color: var(--verde); }
 .caja-da.falta { color: var(--rojo); }
 .caja-da.sobra { color: var(--ambar); }
+/* (SQL 243) Días anteriores para cargar, arriba de la caja de hoy: con borde ámbar mientras falte alguno. */
+.cajas-atrasadas { padding: 14px 16px 4px; }
+.cajas-atrasadas.faltan { border-color: var(--ambar); }
+.cajas-atrasadas .titulo { font-weight: 800; font-size: 16px; }
+.cajas-atrasadas.faltan .titulo { color: var(--ambar); }
+.cajas-atrasadas .detalle { margin: 4px 0 2px; }
+.cajas-atrasadas .fila:last-child { border-bottom: 0; }
 
 /* Ver su app (14/10): una franja lima arriba, todo el tiempo, con "Salir". */
 .espejo-banda { position: fixed; left: 0; right: 0; top: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px;
