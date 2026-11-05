@@ -3299,17 +3299,21 @@ function dibujarCaja(caja, fotos, corrige) {
   pintar();
 }
 
-/** «¿Por qué lo cargás a mano?»: el porqué (uno de MOTIVOS_MANO) o null si cancela. La ventanita de siempre. */
+/** El porqué de «Editar a mano» (uno de MOTIVOS_MANO) o null si sigue con las fotos. La ventanita de siempre.
+   El título dice primero que no hace falta (la IA completa sola) y el botón grande vuelve a las fotos: muchos no leen
+   y tocan lo primero que ven. Pedido de Mauricio (5/11): "que le explique al que cierra la caja que la IA completa
+   todo automáticamente, que no hace falta cargarlo a mano" y "un poquito más resumido". */
 function elegirMotivoMano() {
   return new Promise(function (listo) {
     if (document.querySelector('.dialogo-capa')) { listo(null); return; }
     var capa = document.createElement('div');
     capa.className = 'dialogo-capa';
     capa.innerHTML = '<div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogoTexto">' +
-      '<p class="dialogo-texto" id="dialogoTexto">¿Por qué lo cargás a mano?</p>' +
-      '<p class="dialogo-sub">Lo que escribas a mano lo revisa tu supervisor.</p>' +
+      '<p class="dialogo-texto" id="dialogoTexto">La IA completa los números sola</p>' +
+      '<p class="dialogo-sub">Cargalo a mano sólo si:</p>' +
       MOTIVOS_MANO.map(function (m, i) { return '<button type="button" class="opcion" data-m="' + i + '">' + esc(m) + '</button>'; }).join('') +
-      '<button type="button" class="boton suave" data-m="no">Cancelar</button></div>';
+      '<p class="dialogo-pie">Lo revisa tu supervisor.</p>' +
+      '<button type="button" class="boton lima" data-m="no">Seguir con las fotos</button></div>';
     document.body.appendChild(capa);
     var cerrada = false;
     var alAtras = function () { cerrar(null, true); };
@@ -3329,7 +3333,7 @@ function elegirMotivoMano() {
       if (b) { cerrar(b.dataset.m === 'no' ? null : MOTIVOS_MANO[Number(b.dataset.m)]); return; }
       if (e.target === capa) cerrar(null);
     });
-    capa.querySelector('[data-m="0"]').focus();
+    capa.querySelector('[data-m="no"]').focus();
   });
 }
 
