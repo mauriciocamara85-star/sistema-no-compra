@@ -4620,6 +4620,23 @@
   var OCULTO = '<i class="cj-oculto" title="Se ve después de contar el efectivo (Paso 1)">' + icono('candado') + 'al contar</i>';
 
   function refCierre(c) { return (c.prueba ? 'P-' : 'Nº ') + c.numero; }
+  /* SQL 247: cada cierre es de un día de la caja (de 5 de la mañana a 5 de la mañana, como la base). */
+  var DIAS_CJ = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  /** Un día en palabras: «jueves 5/11». */
+  function diaCaja(iso) {
+    var p = String(iso || '').slice(0, 10).split('-');
+    if (p.length !== 3) return '';
+    return DIAS_CJ[new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])).getUTCDay()] + ' ' + Number(p[2]) + '/' + Number(p[1]);
+  }
+  /** El día de la caja de un momento: la fecha de Argentina de 5 horas antes. */
+  function diaCajaDe(ts) {
+    try {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' })
+        .format(new Date(new Date(ts).getTime() - 5 * 3600e3));
+    } catch (e) { return String(ts || '').slice(0, 10); }
+  }
+  /** Un cierre hecho otro día que el suyo (el día quedó abierto y se cerró después). */
+  function cierreTarde(c) { return !!(c && c.dia && c.fecha) && diaCajaDe(c.fecha) > String(c.dia).slice(0, 10); }
   /** El número del movimiento, para escribirlo en el ticket que se guarda con la caja (SQL 179): G-12 el gasto, o GP-3 el de prueba;
       MS-4 lo que pasó a la caja fuerte, o MSP-1 (SQL 180, otro talonario); RF-2 el retiro de fondos, o RFP-1 (SQL 191, otro más). Sin el 179, nada. */
   function refGasto(m, prueba) {
@@ -4706,7 +4723,7 @@
             campo('c4', 'Caja', '<input type="text" value="Caja chica" readonly>') +
             campo('c8', 'Responsable', '<input type="text" id="cjResp" readonly title="Quien entró al POS">') +
           '</div>' +
-          '<div class="cj-paso" id="cjPaso1"><div class="cj-paso-cab"><b>Paso 1</b><span>Ingresá el total de efectivo que hay en el local</span></div>' +
+          '<div class="cj-paso" id="cjPaso1"><div class="cj-paso-cab"><b>Paso 1</b><span id="cjPaso1Txt">Ingresá el total de efectivo que hay en el local</span></div>' +
             '<div class="cj-fila"><div class="cj-saldo" id="cjSaldoIni"></div>' +
               campo('cj-monto', 'Total efectivo', '<input type="text" inputmode="decimal" id="cjContado" autocomplete="off" placeholder="$0">') +
               '<button type="button" class="btn btn-pri btn-chico" id="cjContar">Ver la cuenta</button></div>' +
@@ -4737,25 +4754,58 @@
     function pintarTodo() {
       var d = K.d, saldo = $('cjSaldo') ? $('cjSaldo').value : '';
       $('cjFecha').value = fechaCorta(d.dia);
+      /* SQL 247: un día anterior que quedó sin cerrar se marca en la fecha. */
+      $('cjFecha').classList.toggle('cj-tarde', pend());
+      $('cjFecha').title = pend() ? 'Es el ' + diaCaja(d.dia) + ': quedó sin cerrar' : '';
       $('cjNum').value = (prueba ? 'P-' : '') + d.numero;
       $('cjResp').value = d.responsable || '';
       /* En el modo prueba lo dice acá y no en un cartel: con el cartel, el cierre no entra en la PC del local. */
-      $('cjSub').textContent = (prueba ? 'Caja de prueba: sólo las ventas de prueba. ' : '') + (d.primer
+      $('cjSub').textContent = (prueba ? 'Caja de prueba: sólo las ventas de prueba. ' : '') + (pend()
+        ? 'Quedó sin cerrar el ' + diaCaja(d.dia) + ': primero se cierra ese día, sólo con lo suyo. ' + despuesTxt(d)
+        : d.primer
         ? 'El primer cierre de ' + nombreLocal(localDe(S.cajaLocal)) + ' en el POS: toma las ventas de hoy.'
         : 'La caja está abierta desde el cierre ' + refCierre({ prueba: prueba, numero: d.ultimo.numero }) + ' (' + fechaHora(d.ultimo.fecha) + ').');
       /* El primer cierre no tiene de dónde sacar el saldo inicial: lo escriben (con cuánto arrancó la caja). */
       $('cjSaldoIni').innerHTML = d.primer ? campo('cj-monto', 'Saldo inicial', '<input type="text" inputmode="decimal" id="cjSaldo" autocomplete="off" placeholder="$0" title="Con cuánto efectivo arrancó la caja (el cambio)">') : '';
       /* Lo que tendría que haber cambia mientras escriben el saldo inicial. */
       if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = function () { if (K.k) olvidarCuenta(); else pintarPasos(); }; }
+      /* Un día anterior trae lo que contaron esa noche (o se cierra sin contar): ya se puede cerrar. */
+      if (pend() && !$('cjContado').value.trim()) K.k = cuentaGuardada();
       pintarHecho();
       pintarPasos();
+    }
+    /* SQL 247: el día que se cierra es uno anterior (quedó sin cerrar). Sin el 247, nunca. */
+    function pend() { return !!(K.d && K.d.pendiente); }
+    /** Si todavía se puede contar la caja de ese día: hoy, sí; un día anterior, sólo si hoy no se movió efectivo. */
+    function sePuedeContar() { return !pend() || !K.d.efectivo_despues; }
+    /** Lo que queda abierto después del día que se cierra, en palabras. */
+    function despuesTxt(d) {
+      var ds = d.dias_despues || [], n = Number(d.tickets_despues) || 0;
+      if (!ds.length) return '';
+      return 'Después: ' + ds.map(function (x) { return x === d.hoy ? 'el de hoy' : 'el del ' + diaCaja(x); }).join(', ') +
+        (n ? ' (' + n + (n === 1 ? ' ticket' : ' tickets') + ')' : '') + '.';
+    }
+    /** La cuenta de un día anterior sin contar ahora: con lo que contaron esa noche, o «sin contar» (queda lo que
+        tendría que haber) si nadie la contó y hoy ya se movió efectivo. Si todavía se puede contar, null: a contar. */
+    function cuentaGuardada() {
+      var d = K.d;
+      if (!pend()) return null;
+      if (d.conteo) return copiar(d, { contado: d.conteo.contado, esperado: d.esperado, desvio: (cent(d.esperado) - cent(d.conteo.contado)) / 100,
+                                       saldo_inicial: d.primer ? d.conteo.saldo_inicial : d.saldo_inicial, guardado: true });
+      return d.efectivo_despues ? copiar(d, { sin: true }) : null;
+    }
+    function copiar(base, x) { var r = {}, k; for (k in base) r[k] = base[k]; for (k in x) r[k] = x[k]; return r; }
+    /** Lo que dice el botón de cerrar. */
+    function textoCerrar() {
+      if (!pend()) return 'Cerrar caja';
+      return K.k && K.k.sin ? 'Cerrar sin contar' : 'Cerrar el ' + DIAS_CJ[new Date(K.d.dia + 'T12:00:00Z').getUTCDay()];
     }
     function pintarHecho() {
       var h = S.cajaHecho, z = $('cjHecho');
       if (!h || h.local !== S.cajaLocal || h.prueba !== prueba) { z.innerHTML = ''; return; }
       var dv = desvioDe(h.desvio, h.tol);
-      z.innerHTML = '<div class="pos-hecho' + (h.prueba ? ' prueba' : '') + '">' + icono('ok') + '<span>Cierre ' + esc(refCierre(h)) + ' guardado · ' + esc(dv.corto) +
-        ' · quedan ' + plata(h.queda) + '</span><button type="button" id="cjVerHecho">Ver</button></div>';
+      z.innerHTML = '<div class="pos-hecho' + (h.prueba ? ' prueba' : '') + '">' + icono('ok') + '<span>Cierre ' + esc(refCierre(h)) + (h.tarde ? ' del ' + esc(diaCaja(h.dia)) : '') +
+        ' guardado · ' + esc(h.sin ? 'sin contar' : dv.corto) + ' · quedan ' + plata(h.queda) + '</span><button type="button" id="cjVerHecho">Ver</button></div>';
       $('cjVerHecho').onclick = function () { abrirCierre(h.id, function () { S.cajaHecho = null; if (S.vista === 'cierre') verCierre(); }); };
     }
     /* SQL 175: la base manda el efectivo desde que se abre el cierre. Sin el 175, recién al contar (como antes). */
@@ -4787,7 +4837,7 @@
         vista && $('cjSaldo') && $('cjSaldo').value.trim() && !isNaN(saldoEscrito()) ? plata(saldoEscrito()) : '<i class="cj-oculto">en el Paso 1</i>';
       /* SQL 246: cada renglón de las ventas se toca y muestra cada venta (los botones ocupan lo mismo que los renglones). */
       var ver = !!(k || vista), fd = function (que, lbl, valor, cls) { return filaDetCaja(!!d.detalle, que, lbl, valor, cls); };
-      $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
+      $('cjRes').innerHTML = '<h3 class="cj-res-tit">' + (pend() ? 'Resultados del ' + esc(diaCaja(d.dia)) : 'Resultados del día') + '</h3>' +
         filaRes('Saldo inicial', saldo, 'fuerte') +
         fd('tarjeta', 'Ventas Tarjeta', p(v.tarjeta)) +
         fd('transferencia', 'Ventas Transferencia', p(v.transferencia)) +
@@ -4830,10 +4880,10 @@
         if (!K.k && $('cjRes') && S.cajaLocal === local) { K.d = d; pintarTodo(); }
         var x = K.k || d, renglon = que === 'total' ? x.ventas_total : que === 'descuentos' ? x.descuentos : x.ventas[que];
         pintarDetalleCaja(dentro, que, d.detalle, {
-          donde: 'en esta caja', bajada: 'Las de ' + de + ' desde el último cierre: entran en este.',
-          renglon: cent(renglon || 0), desfase: 'cambió algo después de contar; contá de nuevo («Ver la cuenta»)',
+          donde: 'en esta caja', bajada: d.pendiente ? 'Las del ' + esc(diaCaja(d.dia)) + ' en ' + de + ': entran en este cierre.' : 'Las de ' + de + ' desde el último cierre: entran en este.',
+          renglon: cent(renglon || 0), desfase: pend() ? 'cambió algo de ese día; tocá «Actualizar»' : 'cambió algo después de contar; contá de nuevo («Ver la cuenta»)',
           reabrir: function () { abrirDetalleCaja(que); },
-          /* Si anulan una venta desde acá, la caja se trae de nuevo (y hay que contar de nuevo). */
+          /* Si anulan una venta desde acá, la caja se trae de nuevo (y hay que contar de nuevo; un día anterior trae otra vez lo que contaron). */
           alCambiar: function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } }
         });
       }).catch(function (e) {
@@ -4853,34 +4903,74 @@
         '<small>' + esc(partes.join(' ')) + '</small></div>';
     }
     function pintarPasos() {
-      var k = K.k, hay = !!k;
+      var k = K.k, hay = !!k, d = K.d, p = pend(), dia = p ? diaCaja(d.dia) : '';
+      /* SQL 247, sin contar: queda lo que tendría que haber (en el primer cierre, con el saldo inicial que escriben). */
+      if (k && k.sin) {
+        var e = esperadoHoy() / 100;
+        k.esperado = e; k.contado = e; k.desvio = 0;
+        if (d.primer) k.saldo_inicial = isNaN(saldoEscrito()) ? 0 : saldoEscrito() / 100;
+      }
+      /* «Dejarla abierta» sólo con el 247 (d.hoy): sin él, como siempre («Cancelar»). */
+      var dv = hay ? desvioDe(cent(k.desvio), cent(k.tolerancia)) : null, dif = !!dv && dv.cls !== 'ok' && !k.sin && !!(d && d.hoy);
       $('cjPaso2').classList.toggle('apagado', !hay);
       $('cjObs').disabled = !hay;
       $('cjCerrar').disabled = !hay;
-      /* El arqueo del cambio de turno se cuenta igual, pero no se cierra: «Cancelar». */
-      $('cjPaso2Txt').textContent = hay ? 'Cerrá la caja (si era un arqueo, «Cancelar»)' : 'Primero contá el efectivo (Paso 1)';
+      /* Un día anterior se cuenta sólo si hoy todavía no se movió efectivo: si no, la plata del cajón ya no es la de ese día. */
+      var cuenta = sePuedeContar();
+      $('cjContado').disabled = !cuenta;
+      $('cjContar').disabled = !cuenta;
+      $('cjPaso1Txt').textContent = !p ? 'Ingresá el total de efectivo que hay en el local'
+        : cuenta ? 'Contá la caja antes de cobrar en efectivo: vale para el ' + dia
+        : 'La caja del ' + dia + ' ya no se puede contar';
+      /* Con diferencia, lo primero es dejarla abierta (Mauricio, 3/11: "si no se encuentra la solución, que no se cierre la
+         caja, que se cierre al otro día"). El arqueo del cambio de turno se cuenta igual, pero no se cierra: «Cancelar». */
+      $('cjPaso2Txt').textContent = !hay ? 'Primero contá el efectivo (Paso 1)'
+        : p ? 'Cerrá el ' + dia + (k.sin ? ', sin contar' : '')
+        : dif ? '¿No encontrás la diferencia? Dejala abierta: se revisa y se cierra después (mañana, si hace falta)'
+        : 'Cerrá la caja (si era un arqueo, «Cancelar»)';
+      var bc = $('cjCancelar'), bz = $('cjCerrar');
+      bc.style.display = p ? 'none' : '';
+      bc.textContent = dif ? 'Dejarla abierta' : 'Cancelar';
+      bc.title = dif ? 'No se cierra: el conteo queda anotado y se cierra después' : '';
+      bc.className = 'btn btn-chico ' + (dif ? 'btn-pri' : 'btn-sec');
+      bz.className = 'btn btn-chico ' + (dif ? 'btn-sec' : 'btn-pri');
+      if (!S.guardando) bz.textContent = textoCerrar();
       var obsL = $('cjObsL').firstChild;
       if (!hay) {
-        var n = K.d ? Number(K.d.conteos) : 0, ya = n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.' : '';
+        var n = d ? Number(d.conteos) : 0, ya = n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.' : '';
         /* Lo de la caja fuerte se pasa antes de contar (SQL 180): si todavía no pasaron nada, se lo recuerda. */
         var antes = movsDe(true).length ? '' : 'Lo de la caja fuerte se pasa antes, en <a href="#salidas">Movimientos de salida</a>. ';
-        $('cjCuenta').innerHTML = aLaVista()
+        /* Un día anterior que todavía se puede contar: la plata del cajón es la de ese día. */
+        var viejo = p && d.conteo_viejo ? ' Lo contaron el ' + esc(fechaHora(d.conteo_viejo.fecha)) + ', pero después entró ' + esc(d.conteo_viejo.por) + ': ese conteo ya no sirve.' : '';
+        $('cjCuenta').innerHTML = p
+          ? '<p class="pos-ayuda">Hoy todavía no se movió efectivo: la plata del cajón es la del ' + esc(dia) + '. Contala, escribila y tocá «Ver la cuenta».' + viejo + '</p>' + tendria()
+          : aLaVista()
           ? '<p class="pos-ayuda">Contá la plata del cajón, escribila y tocá «Ver la cuenta»: te dice si cuadra. ' + antes + (ya || 'Cada conteo queda anotado.') + '</p>' + tendria()
           : '<p class="pos-ayuda">' + (ya || 'Contá la plata del cajón y escribila. Recién ahí se ve cuánto tendría que haber.') + '</p>';
         obsL.textContent = 'Observaciones';
         $('cjQueda').innerHTML = '';
+      } else if (k.sin) {
+        $('cjCuenta').innerHTML = '<div class="cj-dif warn"><b>Sin contar</b><span>Nadie contó la caja del ' + esc(dia) + ' y hoy ya se movió efectivo (' + esc(d.efectivo_despues) +
+          '). Queda lo que tendría que haber' + (d.primer ? ', con el saldo inicial que escribas' : '') + '; si faltaba o sobraba, va a salir en el cierre de hoy.</span></div>';
+        obsL.textContent = 'Observaciones';
+        $('cjQueda').innerHTML = 'Queda en la caja chica: <b>' + plata(cent(k.contado)) + '</b><small>Lo que tendría que haber: es el saldo inicial del próximo cierre.</small>';
       } else {
-        var dv = desvioDe(cent(k.desvio), cent(k.tolerancia));
+        /* Un día anterior: lo que contaron esa noche (quién y cuándo). */
+        var quien = k.guardado ? 'contaron ' + plata(cent(k.contado)) + ' (' + [d.conteo.persona, fechaHora(d.conteo.fecha)].filter(Boolean).join(', ') + ')' : 'contaste ' + plata(cent(k.contado));
         $('cjCuenta').innerHTML = '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + plata(cent(k.esperado)) +
-          ' y contaste ' + plata(cent(k.contado)) + '.' + (k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + '</span></div>';
+          ' y ' + esc(quien) + '.' + (k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + (k.guardado && cuenta ? ' Si querés, contá de nuevo.' : '') + '</span></div>';
         obsL.textContent = dv.cls === 'ok' ? 'Observaciones' : 'Observaciones: ¿por qué ' + (cent(k.desvio) > 0 ? 'falta' : 'sobra') + '?';
         /* Lo que contaron queda en la caja chica: lo de la caja fuerte ya salió antes. */
         $('cjQueda').innerHTML = 'Queda en la caja chica: <b>' + plata(cent(k.contado)) + '</b><small>Es el saldo inicial del próximo cierre.</small>';
       }
       pintarRes();
     }
-    /* Si cambian lo contado (o el saldo inicial) después de ver la cuenta, hay que volver a contar. */
-    function olvidarCuenta() { if (K.k) { K.k = null; pintarPasos(); } }
+    /* Si cambian lo contado (o el saldo inicial) después de ver la cuenta, hay que volver a contar. Un día anterior
+       (SQL 247): con el efectivo vacío vuelve a lo que contaron esa noche (o a «sin contar»). */
+    function olvidarCuenta() {
+      if (pend()) { K.k = $('cjContado').value.trim() ? null : cuentaGuardada(); pintarPasos(); return; }
+      if (K.k) { K.k = null; pintarPasos(); }
+    }
 
     /* SQL 212: las ventas hechas sin internet que todavía están en esta compu no están en la caja de la base. */
     function sinMandar() {
@@ -4920,26 +5010,48 @@
       /* SQL 212: con ventas sin mandar el efectivo no da (la plata está en el cajón y la venta todavía no en la base). */
       var sm = sinMandar();
       if (sm) { avisar('err', sm + '. Esperá a que vuelva internet (se mandan solas) y contá de nuevo para cerrar.'); abrirCola(); return; }
-      var obs = $('cjObs').value.trim(), dv = desvioDe(cent(k.desvio), cent(k.tolerancia));
-      if (dv.cls !== 'ok' && !obs && !confirm(dv.txt + ' y no escribiste nada en Observaciones. ¿Cerrar la caja igual?')) { $('cjObs').focus(); return; }
+      var obs = $('cjObs').value.trim(), dv = desvioDe(cent(k.desvio), cent(k.tolerancia)), d = K.d, tarde = pend();
+      if (k.sin) {
+        /* SQL 247: el primer cierre de la sucursal, sin contar, necesita el saldo inicial. */
+        if (d.primer && (!$('cjSaldo') || !$('cjSaldo').value.trim() || isNaN(saldoEscrito()))) { avisar('err', 'Escribí el saldo inicial: con cuánto efectivo arrancó la caja.'); if ($('cjSaldo')) $('cjSaldo').focus(); return; }
+        if (!confirm('Se cierra el ' + diaCaja(d.dia) + ' sin contar: quedan ' + plata(cent(k.contado)) + ', lo que tendría que haber. ¿Cerrar?')) return;
+      } else if (dv.cls !== 'ok' && !obs && !confirm(dv.txt + ' y no escribiste nada en Observaciones. ¿Cerrar la caja igual?')) { $('cjObs').focus(); return; }
       S.guardando = true;
       var b = $('cjCerrar');
       b.disabled = true;
       b.textContent = 'Cerrando…';
-      /* Sin retiro: lo de la caja fuerte ya salió en Movimientos de salida (SQL 180). */
-      llamar('pos_caja_cerrar', { p: { clave: K.clave, local_id: S.cajaLocal, prueba: prueba, contado: k.contado, observaciones: obs } }).then(function (x) {
+      /* Sin retiro: lo de la caja fuerte ya salió en Movimientos de salida (SQL 180). Con el 247 va el día que se cierra
+         (la base frena si ahora toca otro) y, sin contar, el aviso. */
+      var pc = { clave: K.clave, local_id: S.cajaLocal, prueba: prueba, contado: k.sin ? null : k.contado, observaciones: obs };
+      if (d.hoy) {
+        pc.dia = d.dia;
+        if (k.sin) { pc.sin_contar = true; if (d.primer) pc.saldo_inicial = aPesos(saldoEscrito()); }
+      }
+      llamar('pos_caja_cerrar', { p: pc }).then(function (x) {
         S.guardando = false;
-        S.cajaHecho = { id: x.id, numero: x.numero, prueba: !!x.prueba, desvio: cent(x.desvio), queda: cent(x.queda), local: S.cajaLocal, tol: cent(k.tolerancia) };
-        avisar('ok', 'Caja cerrada: cierre ' + refCierre(x) + '.');
+        S.cajaHecho = { id: x.id, numero: x.numero, prueba: !!x.prueba, desvio: cent(x.desvio), queda: cent(x.queda), local: S.cajaLocal, tol: cent(k.tolerancia),
+                        dia: x.dia, tarde: tarde, sin: !!x.sin_contar };
+        avisar('ok', 'Caja cerrada: cierre ' + refCierre(x) + (tarde ? ' del ' + diaCaja(x.dia) : '') + '.');
         if (S.vista === 'cierre') verCierre();
       }).catch(function (e) {
         S.guardando = false;
-        if (b.isConnected) { b.disabled = false; b.textContent = 'Cerrar caja'; }
+        if (b.isConnected) { b.disabled = false; b.textContent = textoCerrar(); }
         if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
         avisar('err', esDeRed(e) ? 'No se pudo cerrar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
-        /* SQL 180: entró o salió plata después de contar (una venta, un gasto, un pase a la caja fuerte): la cuenta nueva, y a contar de nuevo. */
-        if (!esDeRed(e) && /contá de nuevo/.test(mensajeDe(e)) && $('cjRes')) { $('cjContado').value = ''; cargar(); $('cjContado').focus(); }
+        /* SQL 180: entró o salió plata después de contar (una venta, un gasto, un pase a la caja fuerte): la cuenta nueva, y a contar de nuevo.
+           SQL 247: si cambió el día que toca o el conteo de ese día, se trae todo de nuevo. */
+        if (!esDeRed(e) && /contá de nuevo|Actualizar/.test(mensajeDe(e)) && $('cjRes')) { $('cjContado').value = ''; cargar(); if (!$('cjContado').disabled) $('cjContado').focus(); }
       });
+    }
+    /* «Dejarla abierta» (con diferencia, SQL 247): no se cierra. El conteo ya quedó anotado con su día: la próxima vez que
+       abran el cierre aparece primero ese día, para revisarlo y cerrarlo con este conteo. */
+    function dejarAbierta(k) {
+      var dia = diaCaja(K.d.dia), hora = fechaHora(new Date());
+      ventana('<h3 id="posVentTit">Quedó abierta</h3>' +
+        '<p class="pos-bajada">No se cerró la caja. El conteo quedó anotado: ' + plata(cent(k.contado)) + ' (' + esc(desvioDe(cent(k.desvio), cent(k.tolerancia)).txt.toLowerCase()) + '), ' + esc(hora) + '.</p>' +
+        '<p class="pos-bajada">Si encuentran el error, lo corrigen, cuentan de nuevo y cierran. Si no aparece, mañana, al abrir el cierre de caja, el del ' + esc(dia) +
+          ' va a estar primero: se cierra con este conteo, antes que el de mañana.</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Entendido</button></div>');
     }
 
     /* Los gastos (o los pases a la caja fuerte, o los retiros de la caja chica) que entran en este cierre, para mirarlos. Se cargan
@@ -4947,12 +5059,14 @@
     function abrirMovsCaja(que) {
       var fuerte = que === true, ret = que === 'retiros', sal = que === 'salida', ing = que === 'ingreso', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
       var tot = ms.reduce(function (t, x) { return t + cent(x.monto); }, 0);
+      /* SQL 247: un día anterior que quedó sin cerrar trae sólo lo de ese día. */
+      var desde = pend() ? 'del ' + esc(diaCaja(K.d.dia)) : 'desde el último cierre';
       ventana('<h3 id="posVentTit">' + (fuerte ? 'A la caja fuerte' : ret ? 'Retiros de fondos' : sal ? 'Otras salidas' : ing ? 'Otros ingresos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
-          ? 'Lo que pasó de la caja chica a la caja fuerte de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Movimientos de salida».'
-          : ret ? 'Lo que se retiró de la caja chica de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Retiros de fondos».'
-          : sal ? 'Las de ' + de + ' desde el último cierre: se restan en este. Se cargan y se anulan en «Gastos» (Qué es: «Otra salida»).'
-          : ing ? 'Los de ' + de + ' desde el último cierre: se suman en este. Se cargan y se anulan en «Gastos» (Qué es: «Otro ingreso»).'
-          : 'Los de ' + de + ' desde el último cierre: entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
+          ? 'Lo que pasó de la caja chica a la caja fuerte de ' + de + ' ' + desde + ': se resta en este. Se carga y se anula en «Movimientos de salida».'
+          : ret ? 'Lo que se retiró de la caja chica de ' + de + ' ' + desde + ': se resta en este. Se carga y se anula en «Retiros de fondos».'
+          : sal ? 'Las de ' + de + ' ' + desde + ': se restan en este. Se cargan y se anulan en «Gastos» (Qué es: «Otra salida»).'
+          : ing ? 'Los de ' + de + ' ' + desde + ': se suman en este. Se cargan y se anulan en «Gastos» (Qué es: «Otro ingreso»).'
+          : 'Los de ' + de + ' ' + desde + ': entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
         (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th>' + (fuerte ? '' : ret ? '<th>Lo retiró</th>' : '<th>Qué es</th>') +
           '<th>' + (fuerte || ret ? 'Observaciones' : 'Detalle') + '</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
           ms.map(function (x) {
@@ -4975,11 +5089,12 @@
     $('cjContado').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); contar(); } };
     $('cjContar').onclick = contar;
     $('cjCancelar').onclick = function () {
+      var k = K.k, abierta = !!k && !k.sin && !pend() && desvioDe(cent(k.desvio), cent(k.tolerancia)).cls !== 'ok' && !!K.d.hoy;
       K.k = null;
       $('cjContado').value = '';
       $('cjObs').value = '';
       pintarPasos();
-      $('cjContado').focus();
+      if (abierta) dejarAbierta(k); else $('cjContado').focus();
     };
     $('cjCerrar').onclick = cerrar;
     /* SQL 212: cuando llegan las ventas hechas sin internet, la caja se vuelve a traer (y hay que contar de nuevo). */
@@ -4989,7 +5104,8 @@
        (los números pudieron cambiar y cada conteo queda anotado: no se cuenta solo). Mientras cierra, no hace nada. */
     actualizable(function () {
       if (S.guardando) return;
-      var habia = !!K.k;
+      /* Un día anterior con lo que contaron esa noche (o sin contar) se vuelve a armar solo: no hay que contar (SQL 247). */
+      var habia = !!K.k && !K.k.guardado && !K.k.sin;
       cargar();
       if (habia) avisar('info', 'Los números se trajeron de nuevo: tocá «Ver la cuenta» otra vez.');
     });
@@ -5219,7 +5335,8 @@
       z.textContent = '';
       llamar('pos_caja', { p_local: caja.querySelector('#tfLocal').value, p_prueba: !!prueba }).then(function (d) {
         if (n !== pedido || !caja.isConnected || d.primer || d.ventas.efectivo == null) return;
-        hay = esperadoCaja(d, cent(d.saldo_inicial || 0));
+        /* SQL 247: con un día anterior sin cerrar, lo del cajón es todo lo abierto (ese día y hoy). */
+        hay = d.en_caja != null ? cent(d.en_caja) : esperadoCaja(d, cent(d.saldo_inicial || 0));
         z.innerHTML = 'En la caja chica tendría que haber <b>' + plata(hay) + '</b>.';
       }).catch(function () { /* sin ese dato, se puede guardar igual */ });
     }
@@ -5378,8 +5495,8 @@
       z.textContent = 'Sale de la caja chica: lo resta el próximo cierre.';
       llamar('pos_caja', { p_local: caja.querySelector('#rtLocal').value, p_prueba: !!prueba }).then(function (d) {
         if (n !== pedido || !caja.isConnected || d.primer || d.ventas.efectivo == null) return;
-        hay = esperadoCaja(d, cent(d.saldo_inicial || 0));
-        z.innerHTML = 'Sale de la caja chica: lo resta el próximo cierre. Tendría que haber <b>' + plata(hay) + '</b>.';
+        hay = d.en_caja != null ? cent(d.en_caja) : esperadoCaja(d, cent(d.saldo_inicial || 0));   // SQL 247: todo lo abierto
+        z.innerHTML = 'Sale de la caja chica: lo resta ' + (d.pendiente ? 'el cierre de hoy' : 'el próximo cierre') + '. Tendría que haber <b>' + plata(hay) + '</b>.';
       }).catch(function () { /* sin ese dato, se puede guardar igual */ });
     }
     caja.querySelector('#rtCaja').onclick = function (e) {
@@ -5532,16 +5649,22 @@
       var movs = c.movimientos || [], conteos = c.conteos_detalle || [];
       /* SQL 246: los renglones de las ventas se tocan y muestran cada venta (un cierre anulado no tiene: lo suyo volvió a la caja abierta). */
       var con = !!c.detalle, fd = function (que, lbl, valor, cls) { return filaDetCaja(con, que, lbl, valor, cls); };
+      /* SQL 247: el día que quedó abierto y se cerró después, y el que se cerró sin contar (nadie lo contó y ya se había movido efectivo). */
+      var tarde = cierreTarde(c), sin = !!c.sin_contar;
+      var cuando = tarde ? (c.contado_en ? ' Lo contaron el ' + fechaHora(c.contado_en) + ' y se cerró el ' + fechaHora(c.fecha) + '.' : ' Se cerró el ' + fechaHora(c.fecha) + '.') : '';
       dentro.innerHTML = '<h3 id="posVentTit">Cierre ' + esc(refCierre(c)) + ' · ' + esc(bonito(c.local)) + ' ' +
           (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Cerrado</span>') +
+          (tarde ? ' <span class="pill pill-warn" title="El día quedó abierto y se cerró después">Cerrado tarde</span>' : '') +
           (c.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
         (c.prueba ? '<div class="pos-cartel prueba">Es un cierre de prueba: cuenta sólo las ventas de prueba y se borra con «Borrar las pruebas».</div>' : '') +
         '<div class="pos-ticket-datos cj-det-datos">' +
           '<div><span>Fecha</span>' + esc(fechaHora(c.fecha)) + '</div>' +
-          '<div><span>Día</span>' + esc(fechaCorta(c.dia)) + '</div>' +
+          '<div><span>Día</span>' + esc(c.dia ? diaCaja(c.dia) : '') + '</div>' +
           '<div><span>Responsable</span>' + esc(c.responsable_nombre || '—') + '</div>' +
           '<div><span>Caja</span>Caja chica</div>' +
-          '<div><span>Desde</span>' + esc(fechaHora(c.desde)) + '</div>' +
+          /* Cerrado tarde, «Desde» (el cierre anterior) confunde: va cuándo se contó. */
+          (tarde ? '<div><span>Se contó</span>' + esc(sin ? 'Sin contar' : c.contado_en ? fechaHora(c.contado_en) : '—') + '</div>'
+                 : '<div><span>Desde</span>' + esc(fechaHora(c.desde)) + '</div>') +
           '<div><span>Tickets</span>' + c.tickets + (c.cambios ? ' y ' + c.cambios + (c.cambios === 1 ? ' cambio' : ' cambios') : '') + '</div>' +
         '</div>' +
         '<div class="cj-det">' +
@@ -5560,9 +5683,11 @@
             filaRes('Otros ingresos', p(c.otros_ingresos)) +
             filaRes('Saldo final en efectivo', p(c.esperado), 'barra') + '</div>' +
           '<div class="cj-det-der">' +
-            '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + p(c.esperado) + ' y contaron ' + p(c.contado) + '.</span></div>' +
+            (sin ? '<div class="cj-dif warn"><b>Sin contar</b><span>Nadie contó la caja ese día y después ya se movió efectivo: quedó lo que tendría que haber, ' + p(c.esperado) +
+                     '. Si faltaba o sobraba, salió en el cierre siguiente.' + esc(cuando) + '</span></div>'
+                 : '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + p(c.esperado) + ' y contaron ' + p(c.contado) + '.' + esc(cuando) + '</span></div>') +
             /* Lo que pasaba a la caja fuerte al cerrar (el Paso 2, hasta el SQL 180): sólo en los cierres de antes. */
-            '<div class="cj-res">' + filaRes('Contado', p(c.contado)) + (Number(c.retiro) || c.a_caja_fuerte == null ? filaRes('A la caja fuerte al cerrar', p(c.retiro)) : '') +
+            '<div class="cj-res">' + filaRes('Contado', sin ? 'Sin contar' : p(c.contado)) + (Number(c.retiro) || c.a_caja_fuerte == null ? filaRes('A la caja fuerte al cerrar', p(c.retiro)) : '') +
               filaRes('Queda en la caja chica', p(c.queda), 'barra') + '</div>' +
             (conteos.length > 1 ? '<p class="pos-lbl">Se contó ' + conteos.length + ' veces</p><ul class="cj-lista">' + conteos.map(function (k) {
               return '<li>' + esc(fechaHora(k.fecha)) + ' — ' + p(k.contado) + (k.persona ? ' (' + esc(k.persona) + ')' : '') + '</li>'; }).join('') + '</ul>' : '') +
@@ -5638,15 +5763,18 @@
         '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
         '<th class="n" title="MODO, Go Cuotas, transferencias y gift cards">Otros</th><th class="n" title="Gastos, otras salidas y retiros de fondos de la caja chica">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
-          var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia));
+          var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia)), sin = !!f.sin_contar;
+          /* SQL 247: el cierre de un día que quedó abierto dice de qué día es (la fecha es cuando se cerró). */
+          var cuando = cierreTarde(f) ? '<small title="' + esc('El ' + diaCaja(f.dia) + ' quedó abierto y se cerró el ' + fechaHora(f.fecha)) + '">Del ' + esc(diaCaja(f.dia).split(' ')[1]) +
+                                          ', cerró ' + esc(fechaHora(f.fecha)) + '</small>' : '<small>' + esc(fechaHora(f.fecha)) + '</small>';
           return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '') + '">' +
-            '<td><b>' + esc(refCierre(f)) + '</b><small>' + esc(fechaHora(f.fecha)) + '</small></td>' +
+            '<td><b>' + esc(refCierre(f)) + '</b>' + cuando + '</td>' +
             '<td>' + esc(bonito(f.local)) + '<small>' + esc(f.responsable_nombre || '—') + '</small></td>' +
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
             '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia) + Number(f.ventas_giftcard || 0)) + '</td>' +
-            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + p(f.contado) + '</td>' +   // SQL 191
-            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
+            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + (sin ? 'Sin contar' : p(f.contado)) + '</td>' +   // SQL 191; SQL 247
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
               (f.conteos > 1 ? ' <small class="cj-veces" title="Contaron ' + f.conteos + ' veces">×' + f.conteos + '</small>' : '')) + '</td>' +
             '<td class="n tachar">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td></tr>';   // SQL 180: el Paso 2 de antes y los movimientos de salida
         }).join('') + '</tbody></table></div>' +

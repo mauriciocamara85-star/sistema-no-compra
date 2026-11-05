@@ -537,6 +537,8 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
   .tk-datos.cj-datos { grid-template-columns: 1fr 1.4fr .8fr 1fr 1.4fr; }
   .tk-datos.cj-datos > * { grid-column: auto; }
 }
+/* SQL 247: el día que se cierra es uno anterior (quedó sin cerrar): la fecha se marca. */
+.cj-datos input.cj-tarde { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-txt); font-weight: 700; }
 .cj-paso {
   display: grid; gap: 8px; padding: 11px 12px;
   background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
