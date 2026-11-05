@@ -2953,6 +2953,7 @@ function dibujarCaja(caja, fotos, corrige) {
   function valorDe(k) { var i = app.querySelector('.caja-fila [data-campo="' + k + '"]'); return i ? numeroCaja(i.value) : null; }
 
   var input = document.getElementById('fotoCaja');
+  var lugarCaja = document.getElementById('fotosCaja');   // (5/11) para saber si sigue en pantalla esta caja
   /* Lo que se está subiendo o leyendo, por parte ("lote:2" → { texto, ocupado }): los botones se vuelven a dibujar
      al cambiar un número del sistema ($ 0 → «No hace falta») o al llegar una lectura. */
   var estado = {};
@@ -2962,26 +2963,11 @@ function dibujarCaja(caja, fotos, corrige) {
     lugar.innerHTML = htmlFotosCaja(fotos, estado, caja.fecha);
     /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
     lugar.querySelectorAll('[data-parte]').forEach(function (b) {
+      /* (5/11) Primero el instructivo de esa foto, a pantalla completa (el supervisor que corrige y «Ver su app», directo). */
       b.onclick = function () {
         if (b.disabled) return;
-        var tipo = b.dataset.tipo, parte = Number(b.dataset.parte) || 1, clave = tipo + ':' + parte;
-        b.disabled = true;
-        fotoCaja(caja, tipo, parte, input, function (texto) { estado[clave] = { texto: texto, ocupado: true }; pintar(); })
-          .then(function (nueva) {
-            delete estado[clave];
-            if (nueva) { fotos.unshift(nueva); completarConLectura(nueva); }
-            return nueva;
-          }, function (e) {
-            estado[clave] = { texto: 'Probá de nuevo' };
-            if (e && e.sinSesion) { pantallaError(e); return; }
-            avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
-          })
-          .then(function (nueva) {
-            b.disabled = false;
-            if (nueva && nueva.caja_guardada) { guardadaSola(); return; }
-            pintar();
-            if (nueva) refrescarCaja();
-          });
+        if (supervisor || _espejo) { sacar(b); return; }
+        instructivoCaja(b.dataset.tipo, Number(b.dataset.parte) || 1, { fecha: caja.fecha }, function () { sacar(b); });
       };
     });
     /* La foto que sigue, con el borde verde (la misma que pide la barra de abajo). */
@@ -2993,7 +2979,53 @@ function dibujarCaja(caja, fotos, corrige) {
       if (chip && !s.foto.malas && !estado[s.foto.tipo + ':' + (s.foto.parte || 1)]) { chip.className = 'chip empezar'; chip.textContent = fotos.length ? 'Sacala ahora' : 'Empezá acá'; }
     }
   }
+  /* (5/11) Saca, sube y hace leer la foto de ese botón (después del instructivo). */
+  function sacar(b) {
+    if (b.disabled) return;
+    var tipo = b.dataset.tipo, parte = Number(b.dataset.parte) || 1, clave = tipo + ':' + parte;
+    b.disabled = true;
+    fotoCaja(caja, tipo, parte, input, function (texto) { estado[clave] = { texto: texto, ocupado: true }; pintar(); })
+      .then(function (nueva) {
+        delete estado[clave];
+        if (nueva) { fotos.unshift(nueva); completarConLectura(nueva); }
+        return nueva;
+      }, function (e) {
+        estado[clave] = { texto: 'Probá de nuevo' };
+        if (e && e.sinSesion) { pantallaError(e); return; }
+        avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
+      })
+      .then(function (nueva) {
+        b.disabled = false;
+        if (nueva && nueva.caja_guardada) { guardadaSola(); return; }
+        pintar();
+        if (nueva) refrescarCaja();
+        if (nueva) volverAlInstructivo(nueva);
+      });
+  }
   function pintar() { pintarFotos(); pintarPie(); }
+
+  /* (5/11) La foto no se pudo leer (o la del sistema sin el TOTAL EFECTIVO): vuelve el instructivo de esa foto con el
+     porqué en rojo, el paso que falló marcado y «Sacala de nuevo»; a la segunda, también «cargarlo a mano» (como la barra). */
+  function motivoRechazo(nueva) {
+    if (nueva.ia_estado === 'invalida' || nueva.ia_estado === 'error') return (nueva.ia_resultado && nueva.ia_resultado.motivo) || 'No pudimos leer la foto.';
+    if (nueva.ia_estado === 'ok' && nueva.tipo === 'sistema' && !fotoDeOtroDia(nueva, caja.fecha) && valorDe('real_efectivo') == null)
+      return 'No se leyó el TOTAL EFECTIVO: que se vea entero en la foto.';
+    return null;
+  }
+  function volverAlInstructivo(nueva) {
+    if (supervisor || _espejo || !conInstructivo(nueva)) return;
+    var motivo = motivoRechazo(nueva), parte = nueva.parte || 1;
+    var t = app.querySelector('#fotosCaja [data-tipo="' + nueva.tipo + '"][data-parte="' + parte + '"]');
+    if (!motivo || !t) return;
+    var s = siguiente(), malas = s.foto && s.foto.tipo === nueva.tipo ? s.foto.malas : 1;
+    instructivoCaja(nueva.tipo, parte, {
+      fecha: caja.fecha, motivo: motivo,
+      mano: trabar && malas >= 2 ? function () { entrarManual(MOTIVOS_MANO[0]); } : null,
+      textoMano: nueva.tipo === 'sistema' && nueva.ia_estado === 'ok' ? 'Escribir el efectivo a mano' : null
+    }, function () { var b = app.querySelector('#fotosCaja [data-tipo="' + nueva.tipo + '"][data-parte="' + parte + '"]'); if (b) sacar(b); });
+  }
+  /* Sólo si sigue en pantalla ESTA caja (no se fue a otra pantalla ni se volvió a dibujar mientras se leía). */
+  function conInstructivo() { return !!lugarCaja && document.getElementById('fotosCaja') === lugarCaja; }
 
   /* ── Lo que falta: la foto que sigue (el sistema primero: dice qué otras hacen falta) o guardar. ── */
   function sisDe(tipo) { return SIS_DE_FOTO[tipo] ? valorDe(SIS_DE_FOTO[tipo]) : null; }
@@ -3219,7 +3251,7 @@ function dibujarCaja(caja, fotos, corrige) {
   function completarConLectura(nueva) {
     var lectura = nueva.ia_resultado;
     if (nueva.ia_estado === 'pendiente') { avisar('Foto guardada: cargá los números del cierre.'); return; }
-    if (nueva.ia_estado !== 'ok') { avisar(lectura && lectura.motivo ? lectura.motivo : 'No pudimos leer la foto: sacala de nuevo.'); return; }
+    if (nueva.ia_estado !== 'ok') { if (supervisor || _espejo) avisar(lectura && lectura.motivo ? lectura.motivo : 'No pudimos leer la foto: sacala de nuevo.'); return; }
     if (fotoDeOtroDia(nueva, caja.fecha)) {
       var fo = String(lectura.fecha);
       avisar('Esa foto es ' + (/^\d{4}-\d{2}-\d{2}$/.test(fo) ? 'del ' + diaMes(fo) : 'de otro día') + ', no de este cierre: sacá la de este día.');
@@ -3238,6 +3270,7 @@ function dibujarCaja(caja, fotos, corrige) {
     var sinEfectivo = nueva.tipo === 'sistema' && valorDe('real_efectivo') == null;
     var suma = OTRA_FOTO_CAJA[nueva.tipo] && l && l.total != null && detalleSumaCaja(fotos, nueva.tipo);
     var rep = suma && l.repetidas ? ' (' + l.repetidas + (l.repetidas === 1 ? ' venta repetida va una vez)' : ' ventas repetidas van una vez)') : '';
+    if (sinEfectivo && !supervisor && !_espejo) return;   // lo dice el instructivo (vuelve solo)
     avisar(sinEfectivo ? 'No se leyó el TOTAL EFECTIVO: sacala de nuevo, que se vea.'
       : suma ? 'Listo: ' + (nueva.tipo === 'lote' ? 'el posnet' : 'Mercado Pago') + ' suma ' + pesos(l.total) + rep + '.'
       : 'Listo: la foto se leyó.');
@@ -3313,6 +3346,122 @@ function corregirCaja(c) {
 function volverAlDiaCaja(id) {
   return leer('/orden_v_cajas?select=*&id=eq.' + valor(id)).then(function (r) {
     if (r && r[0]) detalleCaja(r[0]); else irA('cajas');
+  });
+}
+
+/* ── El instructivo de cada foto (5/11) ──
+   Pedido de Mauricio (5/11): "ayer en algunos locales la sacaron mal, quedando mal encuadradas. Sería bueno que, cuando
+   está la cámara, aparezca … a pantalla completa … como un aviso. O sea, encuadrar bien la pantalla o usar pantalla
+   completa". Antes de cada foto, a pantalla completa: qué foto es, un dibujo «Así sí», tres «Así no», tres pasos y
+   «Abrir la cámara» abajo (la cámara de siempre del teléfono: saca mejor los números chicos). Si la IA no la pudo leer,
+   vuelve con el porqué en rojo, el paso que falló marcado y «Sacala de nuevo». Los dibujos, en caja-dibujos.js.
+   {hoy} / {de_hoy}: «hoy» / «de hoy», o el día de la caja si es un día anterior. */
+var INSTRUCTIVO_CAJA = {
+  sistema: { titulo: 'Foto del cierre del sistema', bajada: 'La pantalla «Cierre de caja» de la compu.',
+    pasos: ['En la compu, poné el cierre a <b>pantalla completa</b>.',
+            'Que entre <b>toda la pantalla</b> en la foto, de borde a borde.',
+            'De frente y sin reflejos: que se lea el <b>TOTAL EFECTIVO</b>.'] },
+  lote: { titulo: 'Foto del cierre de lote', bajada: 'El ticket que imprime el posnet al cerrar el lote.',
+    pasos: ['El ticket del <b>cierre de lote</b>: el cupón de una venta no sirve.',
+            'Estiralo, sin dobleces: que entre <b>entero</b>, de la fecha al total.',
+            '<b>Derecho y con luz</b>, sin sombra.'],
+    nota: '¿Dos posnet? Sacalos <b>juntos</b> en la misma foto o el otro aparte con «+ Otro posnet»: se suman solos.',
+    otra: { titulo: 'Foto del otro posnet', bajada: 'El cierre de lote del segundo posnet.', nota: '' } },
+  mp: { titulo: 'Foto de Mercado Pago', bajada: 'Lo cobrado {hoy}, en la app de Mercado Pago.',
+    pasos: ['Abrí la <b>Actividad {de_hoy}</b>, la de los cobros, con el total.',
+            'Que se vea la <b>fecha {de_hoy}</b> y toda la lista.',
+            'De frente y <b>sin reflejos</b>.'],
+    nota: '¿No entra toda la lista? Después sumás otra foto con «+ Otra foto de Mercado Pago»: se suman solas, y una venta que sale en las dos cuenta una vez.',
+    otra: { titulo: 'Otra foto de Mercado Pago', bajada: 'Las ventas que no entraron en la primera.', nota: '',
+      pasos: ['Bajá la lista hasta <b>donde terminó la otra foto</b>.',
+              'Que se vean las <b>ventas que faltaban</b>. Si se repite alguna, no se suma dos veces.',
+              'De frente y <b>sin reflejos</b>.'] } },
+  gocuotas: { titulo: 'Foto de Go Cuotas', bajada: 'Sólo si {hoy} se vendió con Go Cuotas.',
+    pasos: ['Entrá con el usuario del local: las <b>ventas {de_hoy}</b>, con el total.',
+            'Que se vea la <b>fecha {de_hoy}</b> y toda la lista.',
+            'De frente y <b>sin reflejos</b>.'] }
+};
+/* El porqué de la IA es largo (3 o 4 renglones) y siempre termina con "de frente, sin reflejos": el problema está en la
+   PRIMERA frase. Arriba va esa frase (lo demás, en «Ver más») y los pasos que se marcan salen de ella (puede ser más de
+   uno; si no se reconoce, ninguno: es una ayuda). Probado con los porqués de verdad del 14/10 al 5/11. */
+function primeraFrase(motivo) {
+  var m = String(motivo || '').trim(), k = m.search(/[.!?]\s+[A-ZÁÉÍÓÚÑ¿"']/);
+  return k < 0 ? [m, ''] : [m.slice(0, k + 1), m.slice(k + 1).trim()];
+}
+var FALLOS_CAJA = {
+  sistema: [/no (es )?la pantalla|otra pantalla|terminal|posnet|no corresponde/,
+            /cortad|recort|no entra|fuera de|parte de abajo|no se ve|incomplet|toda la|recuadro|falta/,
+            /reflej|borros|desenfoc|movid|torcid|inclinad|angulo|costado|oscur|brillo|moire|total efectivo/],
+  lote: [/cupon|comprobante|no (es )?el cierre|venta (con|individual)|transferencia/,
+         /cortad|recort|entero|incomplet|no se ve|doblad|fuera de|falta/,
+         /sombra|luz|oscur|borros|desenfoc|movid|torcid|reflej|inclinad|arrugad/],
+  mp: [/otra pantalla|abrir (la )?caja|sesion|no (es )?el resumen|no se ven (los )?montos|ningun monto/,
+       /cortad|recort|fuera de|una parte|una (unica|sola)|solo (una|dos|\d)|fecha|total|lista|incomplet|mezclad|otro dia/,
+       /reflej|borros|desenfoc|movid|torcid|inclinad|angulo|costado|oscur|brillo|moire/],
+  gocuotas: [/otra pantalla|sesion|ninguna venta|no (es )?el resumen|ningun monto/,
+             /cortad|recort|fuera de|fecha|total|lista|incomplet|otro dia/,
+             /reflej|borros|desenfoc|movid|torcid|inclinad|angulo|costado|oscur|brillo|moire/]
+};
+function pasosQueFallaron(tipo, motivo) {
+  var m = primeraFrase(motivo)[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  var r = FALLOS_CAJA[tipo] || [], si = [];
+  for (var i = 0; i < r.length; i++) if (r[i].test(m)) si.push(i);
+  return si;
+}
+/** La pantalla del instructivo. op: { fecha (la de la caja), motivo (si no se pudo leer), mano (fn: «cargarlo a mano»),
+    textoMano }. alAbrir() se llama ADENTRO del toque de «Abrir la cámara»: el teléfono abre la cámara sólo si es un toque. */
+function instructivoCaja(tipo, parte, op, alAbrir) {
+  var t = INSTRUCTIVO_CAJA[tipo];
+  if (document.querySelector('.instr-capa')) return;   // ya hay uno abierto
+  if (!t) { alAbrir(); return; }
+  var o = parte > 1 && t.otra ? t.otra : {};
+  var hoy = !op.fecha || String(op.fecha).slice(0, 10) === hoyAR();
+  var dia = function (s) { return s.replace(/\{de_hoy\}/g, hoy ? 'de hoy' : 'del ' + diaMes(op.fecha)).replace(/\{hoy\}/g, hoy ? 'hoy' : 'el ' + diaMes(op.fecha)); };
+  var d = (typeof DIBUJOS_CAJA !== 'undefined' && DIBUJOS_CAJA[tipo]) || null;
+  var marca = op.motivo ? pasosQueFallaron(tipo, op.motivo) : [], frase = primeraFrase(op.motivo);
+  var capa = document.createElement('div');
+  capa.className = 'instr-capa';
+  capa.setAttribute('role', 'dialog');
+  capa.setAttribute('aria-modal', 'true');
+  capa.setAttribute('aria-labelledby', 'instrTitulo');
+  capa.innerHTML = '<div class="instr">' +
+      '<button type="button" class="instr-volver" data-x="volver">‹ Volver a la caja</button>' +
+      (op.motivo ? '<div class="instr-motivo"><b>No se pudo leer la foto</b><p>' + esc(frase[0]) + '</p>' +
+        (frase[1] ? '<details><summary>Ver más</summary><p>' + esc(frase[1]) + '</p></details>' : '') + '</div>' : '') +
+      '<h1 id="instrTitulo">' + esc(o.titulo || t.titulo) + '</h1><p class="bajada">' + esc(dia(o.bajada || t.bajada)) + '</p>' +
+      (d ? '<div class="instr-si"><span class="instr-etq si">✓ Así sí</span><div class="instr-dibujo">' + d.si + '</div></div>' +
+           '<div class="instr-no"><span class="instr-etq no">✕ Así no</span><div class="instr-nos">' +
+           d.no.map(function (n) { return '<figure><div class="instr-mini">' + n[1] + '<i>✕</i></div><figcaption>' + esc(n[0]) + '</figcaption></figure>'; }).join('') +
+           '</div></div>' : '') +
+      '<ol class="instr-pasos">' + (o.pasos || t.pasos).map(function (p, i) {
+        return '<li' + (marca.indexOf(i) > -1 ? ' class="fallo"' : '') + '><i>' + (i + 1) + '</i><span>' + dia(p) + '</span></li>';
+      }).join('') + '</ol>' +
+      ((o.nota != null ? o.nota : t.nota) ? '<p class="instr-nota">' + (o.nota != null ? o.nota : t.nota) + '</p>' : '') +
+    '</div>' +
+    '<div class="instr-pie"><button type="button" class="boton lima" data-x="abrir">' + CAMARA + (op.motivo ? 'Sacala de nuevo' : 'Abrir la cámara') + '</button>' +
+      (op.mano ? '<button type="button" class="pie-mano" data-x="mano">' + LAPIZ + esc(op.textoMano || 'No se lee: cargarlo a mano') + '</button>' : '') + '</div>';
+  document.body.appendChild(capa);
+  document.body.classList.add('con-instr');
+  var cerrada = false;
+  var alAtras = function () { cerrar(true); };
+  abrirCapa(alAtras);
+  function cerrar(sinHistoria) {
+    if (cerrada) return;
+    cerrada = true;
+    document.removeEventListener('keydown', tecla, true);
+    capa.remove();
+    document.body.classList.remove('con-instr');
+    if (!sinHistoria) soltarCapa(alAtras);
+  }
+  function tecla(e) { if (e.key === 'Escape') { e.preventDefault(); cerrar(); } }
+  document.addEventListener('keydown', tecla, true);
+  capa.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-x]') : null;
+    if (!b) return;
+    var x = b.dataset.x;
+    cerrar();
+    if (x === 'abrir') alAbrir();
+    else if (x === 'mano' && op.mano) op.mano();
   });
 }
 

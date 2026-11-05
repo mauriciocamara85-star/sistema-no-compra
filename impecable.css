@@ -812,3 +812,47 @@ body:has(#barra:not([hidden])):has(.caja-pie) .cartel { bottom: calc(var(--barra
 .dialogo .dialogo-sub { margin: -6px 0 14px; color: var(--suave); font-size: 14px; }
 .revision.mano { border-color: var(--ambar); }
 .revision.mano .titulo { color: var(--ambar); }
+
+
+/* (5/11) El instructivo de la foto de la caja, a pantalla completa: «Así sí», «Así no», los pasos y «Abrir la cámara»
+   abajo, siempre a la vista. Encima de la barra de la caja y de las pestañas; debajo de los diálogos. */
+body.con-instr { overflow: hidden; }
+.instr-capa { position: fixed; inset: 0; z-index: 50; background: var(--fondo); display: flex; flex-direction: column; }
+.instr { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: calc(10px + env(safe-area-inset-top)) 18px 18px; }
+.instr > * { max-width: 448px; margin-left: auto; margin-right: auto; }
+.instr-volver { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 6px 0; color: var(--suave); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.instr h1 { font-size: 23px; line-height: 1.2; margin-top: 6px; margin-bottom: 4px; }
+.instr .bajada { margin-bottom: 12px; font-size: 14px; }
+.instr-motivo { border: 1px solid var(--rojo); background: rgba(255, 138, 138, .08); border-radius: 16px; padding: 12px 14px; margin-top: 6px; margin-bottom: 10px; }
+.instr-motivo b { display: block; color: var(--rojo); margin-bottom: 4px; }
+.instr-motivo p { margin: 0; font-size: 14px; line-height: 1.4; }
+.instr-motivo details { margin-top: 6px; color: var(--suave); }
+.instr-motivo summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--texto); }
+.instr-motivo details p { margin-top: 6px; font-size: 13px; }
+.instr-etq { display: block; font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+.instr-etq.si { color: var(--verde); }
+.instr-etq.no { color: var(--rojo); }
+.instr-si { margin-bottom: 12px; }
+.instr-dibujo { border: 2px solid var(--verde); border-radius: 14px; overflow: hidden; line-height: 0; }
+.instr-dibujo svg, .instr-mini svg { display: block; width: 100%; height: auto; }
+.instr-nos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.instr-nos figure { margin: 0; }
+.instr-nos figcaption { margin-top: 4px; color: var(--suave); font-size: 12px; text-align: center; }
+.instr-mini { position: relative; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; line-height: 0; }
+.instr-mini i { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--rojo); color: var(--fondo);
+  font-style: normal; font-size: 12px; font-weight: 900; line-height: 20px; text-align: center; }
+.instr-pasos { list-style: none; padding: 0; margin-top: 16px; margin-bottom: 0; display: grid; gap: 10px; }
+.instr-pasos li { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.35; }
+.instr-pasos li i { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--tarjeta);
+  border: 1px solid var(--borde); font-style: normal; font-size: 13px; font-weight: 800; }
+.instr-pasos li.fallo { color: var(--rojo); }
+.instr-pasos li.fallo i { background: var(--rojo); border-color: var(--rojo); color: var(--fondo); }
+.instr-nota { margin-top: 12px; margin-bottom: 0; padding: 10px 12px; border-radius: 12px; background: var(--tarjeta); border: 1px solid var(--borde);
+  color: var(--suave); font-size: 13px; line-height: 1.4; }
+.instr-nota b { color: var(--texto); }
+.instr-pie { flex: none; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: rgba(14, 17, 22, .97); border-top: 1px solid var(--borde); }
+.instr-pie > * { max-width: 448px; margin-left: auto; margin-right: auto; }
+.instr-pie .boton { width: 100%; min-height: 58px; font-size: 17px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.instr-pie .boton svg { width: 22px; height: 22px; }
+/* Celulares bajos (360x640): el dibujo «Así sí» más chico, así entran los tres pasos sin bajar. */
+@media (max-height: 700px) { .instr-si .instr-dibujo { max-width: 215px; margin: 0 auto; } .instr h1 { font-size: 21px; } .instr-pasos { margin-top: 12px; gap: 8px; } }
