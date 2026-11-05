@@ -32,7 +32,8 @@
 }
 /* Son 18 secciones: en la compu el menú se queda quieto y, si no entra, se desliza solo él. */
 @media (min-width: 1000px) {
-  .pos-menu { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; scrollbar-width: thin; }
+  /* De costado nunca se desliza (5/11): todo tiene que entrar en el ancho del menú. */
+  .pos-menu { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
 }
 .pos-menu-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 4px 10px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
 .pos-menu-cab > span { white-space: nowrap; overflow: hidden; }
@@ -129,6 +130,9 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 @media (min-width: 1000px) {
   /* Achicado: todos los íconos a la vista (con 1 px de alto el grupo no se puede tocar). */
   .menu-chico .pos-grupo-btn { pointer-events: none; }
+  /* La rayita entre secciones va con margen a los dos lados: con el ancho entero (width: 100%) se salía 12 px por la
+     derecha y aparecía una barrita para deslizar de costado abajo del menú (Mauricio, 5/11: "sacala, no tiene que estar ahí"). */
+  .menu-chico .pos-grupo-btn { width: auto; align-self: stretch; }
   .menu-chico .pos-grupo-btn svg { display: none; }
   .menu-chico .pos-grupo-items.cerrado { display: contents; }
   .menu-chico .pos-grupo { flex: none; }
