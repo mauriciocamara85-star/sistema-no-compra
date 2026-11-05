@@ -2570,6 +2570,9 @@
       var conNota = con205 && t.letra !== 'X';
       var izq = anulada || !puede('anular') ? '' : !conNota ? '<button type="button" class="btn btn-sec btn-chico izq" id="tkAnularBtn">Anular la venta</button>' :
         t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkNotaBtn" title="Anula el ticket entero, como «Generar nota crédito» de BlueSoft">Nota de crédito</button>';
+      /* SQL 248: «Corregir el pago» (se cobró con un medio y se cargó con otro), mientras la venta no entró en un cierre. Sin el 248, no está. */
+      var corr = Object.prototype.hasOwnProperty.call(t, 'correcciones') ? (t.correcciones || []) : null;
+      var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !t.factura && puede('caja') && pagosACorregir(t).length > 0;
       dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
           (anulada ? '<span class="pill pill-bad">' + (nota ? 'Anulada · ' + esc(refNota(nota)) : 'Anulada') + '</span>' : '<span class="pill pill-ok">Cobrada</span>') +
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
@@ -2590,15 +2593,21 @@
         '</div>' +
         productosTicket(t) +
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Pagos</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
+        /* SQL 248: cada corrección del pago, con quién, cuándo, por qué y cómo estaba antes. */
+        (corr && corr.length ? '<ul class="tk-corr">' + corr.map(function (c) {
+          return '<li>Pago corregido el ' + esc(fechaHora(c.fecha)) + (c.persona ? ' por ' + esc(c.persona) : '') + '. Antes: ' + esc(resumenPagos(c.antes)) +
+            '. Por qué: ' + esc(c.motivo || '') + '</li>';
+        }).join('') + '</ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (anulada && nota ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada con la nota de crédito <b>' + esc(refNota(nota)) + '</b> el ' + esc(fechaHora(nota.fecha)) +
             (nota.hizo_nombre ? ' por ' + esc(nota.hizo_nombre) : '') + ': ' + esc(nota.motivo || '') +
             ' <button type="button" class="pos-link" id="tkVerNota">Ver la nota de crédito</button></div>' :
           anulada ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada el ' + esc(fechaHora(t.anulada_en)) + (t.anulada_por_nombre ? ' por ' + esc(t.anulada_por_nombre) : '') + ': ' + esc(t.anulada_motivo || '') + '</div>' :
           conNota && t.cierre && puede('anular') ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre de caja ' + esc(refCierre(t.cierre)) +
-            ': para hacerle la nota de crédito, primero hay que anular ese cierre.</div>' : '') +
+            ': para hacerle la nota de crédito' + (corr && puede('caja') ? ' o corregirle el pago' : '') + ', primero hay que anular ese cierre.</div>' : '') +
         '<div id="tkAnular"></div>' +
         '<div class="pos-pie">' + izq +
+          (corrige ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>' : '') +
           /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
           (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
           (volver ? '<button type="button" class="btn btn-sec btn-chico" id="tkVolver">‹ Volver</button>' : '') +
@@ -2611,6 +2620,8 @@
       if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
       var du = dentro.querySelector('#tkDuplicar');
       if (du) du.onclick = function () { duplicarVenta(t); };
+      var co = dentro.querySelector('#tkCorregir');
+      if (co) co.onclick = function () { corregirPago(t, alCambiar, volver); };
       var ab = dentro.querySelector('#tkAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
@@ -2637,6 +2648,143 @@
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Ticket</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     CORREGIR EL PAGO (SQL 248)
+     Mauricio (5/11): se cobró con un medio y se cargó con otro (era
+     efectivo y se puso tarjeta, otra tarjeta, Mercado Pago en vez de
+     transferencia). Se corrige sin anular la venta, que sigue en su día,
+     mientras no entró en un cierre de caja. No se tocan la gift card con
+     la que pagó ni la tarjeta en cuotas (el interés depende de las cuotas).
+     ════════════════════════════════════════════════════════════════════ */
+  function pagoFijo(g) { return g.medio === 'giftcard' || (g.medio === 'tarjeta' && Number(g.cuotas) > 1); }
+  /** Lo que se puede corregir. Con la promo «pagando todo en efectivo» no hay nada: el efectivo es efectivo. */
+  function pagosACorregir(t) {
+    if (t.promo_medio === 'efectivo') return [];
+    return (t.pagos || []).filter(function (g) { return !pagoFijo(g); });
+  }
+  /** «Tarjeta VISA $6.000 + Efectivo $4.000» */
+  function resumenPagos(ps) {
+    return (ps || []).map(function (g) {
+      return (MEDIOS_VENTA[g.medio] || g.medio) + (g.medio === 'tarjeta' && g.tarjeta ? ' ' + g.tarjeta + (Number(g.cuotas) > 1 ? ' en ' + g.cuotas + ' cuotas' : '') : '') +
+        ' ' + plata(cent(g.monto));
+    }).join(' + ') || '—';
+  }
+  function corregirPago(t, alCambiar, volver) {
+    var fijos = (t.pagos || []).filter(pagoFijo);
+    var tot = cent(t.total) - fijos.reduce(function (s, g) { return s + cent(g.monto); }, 0);
+    var conGc = fijos.some(function (g) { return g.medio === 'giftcard'; }), conCuotas = fijos.some(function (g) { return g.medio !== 'giftcard'; });
+    var queNoSeToca = (conGc && conCuotas ? 'La gift card y las cuotas no se cambian acá: si están mal' : conGc ? 'La gift card no se cambia acá: si está mal' :
+      'Las cuotas no se cambian acá: si están mal') + ', se hace una nota de crédito y la venta de nuevo.';
+    /* La promo «pagando todo con …»: el medio no cambia (se puede corregir qué tarjeta o el número de operación). */
+    var promo = MEDIOS[t.promo_medio] ? t.promo_medio : '';
+    var medios = (promo ? [promo] : Object.keys(MEDIOS)).map(function (k) { return [k, MEDIOS[k]]; });
+    var clave = nuevaClave();   // la misma si la mandan dos veces (se cortó internet): se corrige una sola vez
+    var origen = pagosACorregir(t);
+    var filas = origen.map(function (g) { return { medio: g.medio, monto: cent(g.monto), tarjeta: g.tarjeta || '', cupon: g.cupon || '', orig: g }; });
+    var caja = ventana('<h3 id="posVentTit">Corregir el pago · Ticket ' + esc(ref(t)) + '</h3>' +
+      '<p class="pos-bajada">Del ' + esc(fechaHora(t.fecha)) + ' · total <b>' + plata(cent(t.total)) + '</b>. Poné cómo se cobró de verdad: la venta no se anula y sigue en su día.</p>' +
+      (fijos.length ? '<div class="cp-fijos"><span class="pos-lbl">Queda como está</span><ul>' + fijos.map(function (g) {
+        return '<li>' + esc(resumenPagos([g])) + '</li>';
+      }).join('') + '</ul><p class="cp-nota">' + queNoSeToca + '</p></div>' : '') +
+      (promo ? '<div class="pos-cartel" style="margin-bottom:10px">Tiene la promo de pagar todo ' + esc(promo === 'tarjeta' ? 'con tarjeta' : 'con ' + MEDIOS[promo]) +
+        ': el medio no cambia. Si se pagó con otra cosa, se hace una nota de crédito y la venta de nuevo.</div>' : '') +
+      '<div class="pos-pagos" id="cpFilas"></div>' +
+      '<p><button type="button" class="pos-link" id="cpMas">+ Agregar otro pago</button></p>' +
+      '<div class="pos-pago-cuenta" id="cpCuenta"></div>' +
+      campo('ancho cp-motivo', '¿Por qué se corrige?', '<textarea id="cpMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: pagó en efectivo y se cargó tarjeta"></textarea>') +
+      '<p class="cp-nota">Si cambia el efectivo y la caja de hoy ya estaba contada, hay que contarla de nuevo.</p>' +
+      '<div class="pos-error" id="cpError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="cpVolver">Volver al ticket</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="cpGuardar">Guardar la corrección</button></div>', true);
+    function fila(x, i) {
+      var tarjetas = TARJETAS.map(function (y) { return [y[0], y[0]]; });
+      if (x.tarjeta && !TARJETAS.some(function (y) { return y[0] === x.tarjeta; })) tarjetas.push([x.tarjeta, x.tarjeta]);
+      var mas = x.medio === 'tarjeta'
+        ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(tarjetas, x.tarjeta) + '</select>') +
+          campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
+          '<p class="cp-cuota">En 1 cuota</p></div>'
+        : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
+        : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
+      return '<div class="pos-pago-fila" data-f="' + i + '">' +
+        campo('', 'Medio', '<select data-k="medio">' + opciones(medios, x.medio) + '</select>') +
+        campo('', 'Monto', '<input type="text" inputmode="decimal" data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
+        '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
+    }
+    function cuentaTxt() {
+      var s = sumaPagos(filas), dif = tot - s, e = caja.querySelector('#cpCuenta');
+      e.className = 'pos-pago-cuenta ' + (dif === 0 ? 'ok' : 'mal');
+      e.innerHTML = '<span>Pagos: ' + plata(s) + (fijos.length ? ' (más ' + plata(cent(t.total) - tot) + ' que quedan)' : '') + '</span><span>' +
+        (dif === 0 ? 'Justo' : dif > 0 ? 'Falta ' + plata(dif) : 'Sobra ' + plata(-dif)) + '</span>';
+    }
+    function pintarFilas() { caja.querySelector('#cpFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); }
+    pintarFilas();
+    var lista = caja.querySelector('#cpFilas'), m = caja.querySelector('#cpMotivo');
+    lista.addEventListener('input', function (e) {
+      var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
+      if (!f || !k || k === 'medio' || k === 'tarjeta') return;
+      var x = filas[Number(f.getAttribute('data-f'))];
+      if (k === 'monto') { var n = leerPlata(e.target.value); x.monto = isNaN(n) ? 0 : n; cuentaTxt(); }
+      else x[k] = e.target.value;
+      errorEn(caja, 'cpError', '');
+    });
+    lista.addEventListener('change', function (e) {
+      var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
+      if (!f || !k) return;
+      var x = filas[Number(f.getAttribute('data-f'))];
+      if (k === 'medio') { x.medio = e.target.value; x.tarjeta = ''; x.cupon = ''; pintarFilas(); }
+      else if (k === 'tarjeta') x.tarjeta = e.target.value;
+      errorEn(caja, 'cpError', '');
+    });
+    lista.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-quitar-pago]');
+      if (!b) return;
+      filas.splice(Number(b.getAttribute('data-quitar-pago')), 1);
+      pintarFilas();
+    });
+    caja.querySelector('#cpMas').onclick = function () { filas.push({ medio: promo || 'efectivo', monto: 0 }); pintarFilas(); };
+    caja.querySelector('#cpVolver').onclick = function () { abrirTicket(t.id, alCambiar, volver); };
+    m.oninput = function () { errorEn(caja, 'cpError', ''); };
+    /* Lo que va a la base. Lo que no se ve (lote y últimos 4 de la tarjeta, lo recibido en efectivo) sigue si ese pago no cambió. */
+    function aPago(x) {
+      var o = x.orig && x.orig.medio === x.medio ? x.orig : null, p = { medio: x.medio, monto: aPesos(x.monto) };
+      if (x.medio === 'tarjeta') {
+        var igual = o && o.tarjeta === x.tarjeta;
+        p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta) || (igual ? o.tipo_tarjeta : ''); p.cuotas = 1;
+        if (igual && o.lote) p.lote = o.lote;
+        if (igual && o.ultimos4) p.ultimos4 = o.ultimos4;
+      }
+      if (x.medio !== 'efectivo' && String(x.cupon || '').trim()) p.cupon = String(x.cupon).trim();
+      if (x.medio === 'efectivo' && o && o.recibido && cent(o.monto) === x.monto) p.recibido = Number(o.recibido);
+      return p;
+    }
+    function igualQueAntes() {
+      return filas.length === origen.length && filas.every(function (x, i) {
+        var o = origen[i];
+        return x.medio === o.medio && x.monto === cent(o.monto) && (x.tarjeta || '') === (o.tarjeta || '') && String(x.cupon || '').trim() === (o.cupon || '');
+      });
+    }
+    caja.querySelector('#cpGuardar').onclick = function () {
+      var bt = this, motivo = m.value.trim();
+      var vacias = filas.filter(function (x) { return !x.monto; });
+      if (vacias.length === 1) vacias[0].monto = tot - sumaPagos(filas);
+      filas = filas.filter(function (x) { return x.monto || x === vacias[0]; });
+      var mal = !filas.length ? 'Falta la forma de pago.' :
+        filas.some(function (x) { return !(x.monto > 0); }) ? 'Hay un pago sin monto.' :
+        filas.some(function (x) { return x.medio === 'tarjeta' && !x.tarjeta; }) ? 'Elegí qué tarjeta es.' :
+        sumaPagos(filas) !== tot ? 'Los pagos tienen que sumar ' + plata(tot) + (fijos.length ? ' (con lo que queda como está, ' + plata(cent(t.total)) + ')' : '') + '.' :
+        igualQueAntes() ? 'No cambiaste nada: los pagos ya están así.' :
+        motivo.length < 3 ? 'Escribí por qué se corrige.' : '';
+      pintarFilas();
+      if (!errorEn(caja, 'cpError', mal)) { if (/por qué/.test(mal)) m.focus(); return; }
+      bt.disabled = true;
+      llamar('pos_venta_pagos_corregir', { p: { venta_id: t.id, clave: clave, motivo: motivo, pagos: filas.map(aPago) } }).then(function () {
+        avisar('ok', 'Listo: el pago del ticket ' + ref(t) + ' quedó corregido.');
+        if (alCambiar) alCambiar();
+        abrirTicket(t.id, alCambiar, volver);
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'cpError', mensajeDe(e)); });
+    };
   }
 
   /* ════════════════════════════════════════════════════════════════════

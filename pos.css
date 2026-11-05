@@ -496,6 +496,14 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-pago-cuenta { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 14px; font-weight: 600; }
 .pos-pago-cuenta.ok { background: var(--ok-soft); color: var(--ok-txt); }
 .pos-pago-cuenta.mal { background: var(--warn-soft); color: var(--warn-txt); }
+/* SQL 248: corregir el pago y, en el ticket, cada corrección. */
+.tk-corr { margin: 8px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.4; color: var(--txt-2); display: grid; gap: 3px; }
+.cp-fijos { margin: 0 0 10px; font-size: 14px; }
+.cp-fijos ul { margin: 4px 0 0; padding-left: 18px; }
+.cp-cuota { margin: 0; align-self: end; padding-bottom: 9px; font-size: 13px; color: var(--txt-2); }
+.pos-caja .cp-motivo { display: grid; margin-top: 10px; }
+.pos-caja .cp-motivo textarea { width: 100%; }
+.cp-nota { margin: 6px 0 0; font-size: 13px; color: var(--txt-2); }
 
 /* El ticket guardado. */
 .pos-ticket-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin: 10px 0 12px; }
