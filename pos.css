@@ -338,8 +338,9 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-tabla tr:last-child td { border-bottom: 0; }
 .pos-tabla .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pos-tabla .c { text-align: center; }
-.pos-tabla tr[data-ticket] { cursor: pointer; }
-.pos-tabla tr[data-ticket]:hover td { background: var(--surface-2); }
+.pos-tabla tr[data-ticket], .pos-tabla tr[data-cambio] { cursor: pointer; }
+.pos-tabla tr[data-ticket]:hover td, .pos-tabla tr[data-cambio]:hover td { background: var(--surface-2); }
+.pos-tabla td.nw { white-space: nowrap; }   /* el número y la hora, en un renglón (el detalle del cierre, SQL 246) */
 .pos-tabla tr.anulada td { color: var(--txt-3); }
 .pos-tabla tr.anulada td.tachar { text-decoration: line-through; }
 /* La venta que se acaba de guardar con "Guardar" (24/10): verde, y se apaga sola. */

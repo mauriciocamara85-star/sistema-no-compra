@@ -2413,7 +2413,8 @@
         (Number(t.interes) ? ' · Interés +' + plata(cent(t.interes)) : '') + ' · ' + t.cantidad + (t.cantidad === 1 ? ' prenda' : ' prendas') + '</span><b>Total ' + plata(cent(t.total)) + '</b></div>';
   }
 
-  function abrirTicket(id, alCambiar) {
+  /* volver (SQL 246): abierto desde el detalle de un renglón del cierre, «‹ Volver» trae esa lista de nuevo. */
+  function abrirTicket(id, alCambiar, volver) {
     var caja = ventana('<h3 id="posVentTit">Ticket</h3><p class="cargando">Cargando…</p>', true);
     var dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_venta', { p_id: id }).then(function (t) {
@@ -2457,7 +2458,10 @@
         '<div class="pos-pie">' + izq +
           /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
           (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
+          (volver ? '<button type="button" class="btn btn-sec btn-chico" id="tkVolver">‹ Volver</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var vv = dentro.querySelector('#tkVolver');
+      if (vv) vv.onclick = volver;
       var vn = dentro.querySelector('#tkVerNota');
       if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar); };
       var nb = dentro.querySelector('#tkNotaBtn');
@@ -2483,7 +2487,7 @@
             S.stock = {};
             avisar('ok', 'La venta ' + ref(t) + ' quedó anulada.');
             if (alCambiar) alCambiar();
-            abrirTicket(t.id, alCambiar);
+            abrirTicket(t.id, alCambiar, volver);
           }).catch(function (e) { bt.disabled = false; errorEn(dentro, 'tkError', mensajeDe(e)); });
         };
       };
@@ -4392,7 +4396,7 @@
   }
 
   /* ── Un cambio guardado: verlo y anularlo (sólo mientras la caja está abierta) ── */
-  function abrirCambio(id, alCambiar) {
+  function abrirCambio(id, alCambiar, volver) {   // volver: como en abrirTicket (SQL 246)
     var caja = ventana('<h3 id="posVentTit">Cambio</h3><p class="cargando">Cargando…</p>', true);
     var dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_cambio', { p_id: id }).then(function (t) {
@@ -4436,7 +4440,10 @@
           t.cierre ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre ' + esc(refCierre(t.cierre)) + ': para anularlo, hay que anular el cierre.</div>' : '') +
         '<div id="cbAnular"></div>' +
         '<div class="pos-pie">' + (an || t.cierre || !puede('anular') ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="cbAnularBtn">Anular el cambio</button>') +
+          (volver ? '<button type="button" class="btn btn-sec btn-chico" id="cbVolver">‹ Volver</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var vv = dentro.querySelector('#cbVolver');
+      if (vv) vv.onclick = volver;
       var ab = dentro.querySelector('#cbAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
@@ -4447,7 +4454,7 @@
             S.stock = {};
             avisar('ok', 'El cambio ' + refCambio(t) + ' quedó anulado.');
             if (alCambiar) alCambiar();
-            abrirCambio(t.id, alCambiar);
+            abrirCambio(t.id, alCambiar, volver);
           });
         });
       };
@@ -4639,10 +4646,12 @@
       var d = K.d, s = d.primer ? saldoEscrito() : cent(d.saldo_inicial || 0);
       return esperadoCaja(d, isNaN(s) ? 0 : s);
     }
-    /** Los gastos (false), los pases a la caja fuerte (true) o los retiros de la caja chica ('retiros', SQL 191) de esta caja, cada uno con su botón en los resultados. */
+    /** Los gastos (false), los pases a la caja fuerte (true), los retiros de la caja chica ('retiros', SQL 191), las otras
+        salidas ('salida') o los otros ingresos ('ingreso') de esta caja, cada uno con su botón en los resultados. Hasta el
+        5/11 «Gastos» mostraba también las otras salidas y los otros ingresos; ahora cada renglón, lo suyo (lo que suma). */
     function movsDe(que) {
-      var k = que === true ? 'caja_fuerte' : que === 'retiros' ? 'retiro' : '';
-      return ((K.d && K.d.movimientos) || []).filter(function (m) { return k ? m.tipo === k : m.tipo !== 'caja_fuerte' && m.tipo !== 'retiro'; });
+      var k = que === true ? 'caja_fuerte' : que === 'retiros' ? 'retiro' : que === 'salida' || que === 'ingreso' ? que : 'gasto';
+      return ((K.d && K.d.movimientos) || []).filter(function (m) { return m.tipo === k; });
     }
     /* Los resultados: con todo a la vista (SQL 175); sin el 175, el efectivo recién después de contar. */
     function pintarRes() {
@@ -4650,27 +4659,32 @@
       if (!d) return;
       var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); }, vista = aLaVista();
       var nm = movsDe(false).length, nf = movsDe(true).length, nr = movsDe('retiros').length, nc = Number(x.cambios) || 0;
+      var ns = movsDe('salida').length, ni = movsDe('ingreso').length;
       /* SQL 191: el renglón de los retiros sólo si hay; entonces los descuentos pasan al pie (con un renglón más, el cierre no entra en la PC del local). */
       var conRet = !!(nr || cent(x.retiros_fondos || 0));
       var saldo = !d.primer ? p(d.saldo_inicial) : k ? p(k.saldo_inicial) :
         vista && $('cjSaldo') && $('cjSaldo').value.trim() && !isNaN(saldoEscrito()) ? plata(saldoEscrito()) : '<i class="cj-oculto">en el Paso 1</i>';
+      /* SQL 246: cada renglón de las ventas se toca y muestra cada venta (los botones ocupan lo mismo que los renglones). */
+      var ver = !!(k || vista), fd = function (que, lbl, valor, cls) { return filaDetCaja(!!d.detalle, que, lbl, valor, cls); };
       $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
         filaRes('Saldo inicial', saldo, 'fuerte') +
-        filaRes('Ventas Tarjeta', p(v.tarjeta)) +
-        filaRes('Ventas Transferencia', p(v.transferencia)) +
-        filaRes('Ventas Efectivo', k || vista ? p(v.efectivo) : OCULTO) +
-        filaRes('Ventas Mercado Pago', p(v.mercadopago)) +
-        filaRes('Ventas MODO', p(v.modo)) +
-        filaRes('Ventas Go Cuotas', p(v.go_cuotas)) +
-        filaRes('Ventas totales del día', k || vista ? p(x.ventas_total) : OCULTO, 'barra') +
+        fd('tarjeta', 'Ventas Tarjeta', p(v.tarjeta)) +
+        fd('transferencia', 'Ventas Transferencia', p(v.transferencia)) +
+        (ver ? fd('efectivo', 'Ventas Efectivo', p(v.efectivo)) : filaRes('Ventas Efectivo', OCULTO)) +
+        fd('mercadopago', 'Ventas Mercado Pago', p(v.mercadopago)) +
+        fd('modo', 'Ventas MODO', p(v.modo)) +
+        fd('go_cuotas', 'Ventas Go Cuotas', p(v.go_cuotas)) +
+        (ver ? fd('total', 'Ventas totales del día', p(x.ventas_total), 'barra') : filaRes('Ventas totales del día', OCULTO, 'barra')) +
         '<button type="button" class="cj-r cj-r-btn" id="cjMovs" title="Ver los gastos que entran en este cierre"><span>Gastos en efectivo' +
           (nm ? ' (' + nm + ')' : '') + '</span><b>' + p(x.gastos) + '</b></button>' +
-        filaRes('Otras salidas', p(x.otras_salidas)) +
+        '<button type="button" class="cj-r cj-r-btn" id="cjSalidas" title="Ver las otras salidas que entran en este cierre"><span>Otras salidas' +
+          (ns ? ' (' + ns + ')' : '') + '</span><b>' + p(x.otras_salidas) + '</b></button>' +
         '<button type="button" class="cj-r cj-r-btn" id="cjFuerte" title="Ver lo que pasó a la caja fuerte desde el último cierre"><span>A la caja fuerte' +
           (nf ? ' (' + nf + ')' : '') + '</span><b>' + p(x.a_caja_fuerte) + '</b></button>' +
         (conRet ? '<button type="button" class="cj-r cj-r-btn" id="cjRetiros" title="Ver los retiros de fondos de la caja chica desde el último cierre"><span>Retiros de fondos' +
-          (nr ? ' (' + nr + ')' : '') + '</span><b>' + p(x.retiros_fondos) + '</b></button>' : filaRes('Descuentos', p(x.descuentos), 'info')) +
-        filaRes('Otros ingresos', p(x.otros_ingresos)) +
+          (nr ? ' (' + nr + ')' : '') + '</span><b>' + p(x.retiros_fondos) + '</b></button>' : fd('descuentos', 'Descuentos', p(x.descuentos), 'info')) +
+        '<button type="button" class="cj-r cj-r-btn" id="cjIngresos" title="Ver los otros ingresos que entran en este cierre"><span>Otros ingresos' +
+          (ni ? ' (' + ni + ')' : '') + '</span><b>' + p(x.otros_ingresos) + '</b></button>' +
         filaRes('Saldo final en efectivo', k ? p(k.esperado) : vista ? plata(esperadoHoy()) : OCULTO, 'barra') +
         /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
         '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
@@ -4678,8 +4692,32 @@
           (cent((d.ventas || {}).giftcard || 0) ? '. Pagado con gift card: ' + p(d.ventas.giftcard) + ', ya sumado en las ventas' : '') +   // SQL 200: no es efectivo
           (conRet ? '. Descuentos: ' + p(x.descuentos) + ', ya restados de las ventas.</p>' : '. Los descuentos ya están restados de las ventas.</p>');
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
+      $('cjSalidas').onclick = function () { abrirMovsCaja('salida'); };
+      $('cjIngresos').onclick = function () { abrirMovsCaja('ingreso'); };
       $('cjFuerte').onclick = function () { abrirMovsCaja(true); };
       if ($('cjRetiros')) $('cjRetiros').onclick = function () { abrirMovsCaja('retiros'); };
+      $('cjRes').querySelectorAll('[data-det]').forEach(function (b) { b.onclick = function () { abrirDetalleCaja(b.getAttribute('data-det')); }; });
+    }
+    /* SQL 246: el detalle de un renglón de las ventas, con la caja al día (la trae de nuevo: puede haber entrado una venta
+       desde que se abrió la pantalla). Si todavía no contaron, los números de la pantalla también se ponen al día. */
+    function abrirDetalleCaja(que) {
+      var caja = ventana('<h3 id="posVentTit">' + esc(DET_CAJA[que][0]) + '</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
+      var local = S.cajaLocal, de = esc(nombreLocal(localDe(local)));
+      llamar('pos_caja', { p_local: local, p_prueba: prueba }).then(function (d) {
+        if (!_velo || !caja.isConnected) return;
+        if (!d.detalle) { dentro.innerHTML = '<h3 id="posVentTit">' + esc(DET_CAJA[que][0]) + '</h3><div class="pos-cartel mal">No se pudo traer el detalle.</div>'; return; }
+        if (!K.k && $('cjRes') && S.cajaLocal === local) { K.d = d; pintarTodo(); }
+        var x = K.k || d, renglon = que === 'total' ? x.ventas_total : que === 'descuentos' ? x.descuentos : x.ventas[que];
+        pintarDetalleCaja(dentro, que, d.detalle, {
+          donde: 'en esta caja', bajada: 'Las de ' + de + ' desde el último cierre: entran en este.',
+          renglon: cent(renglon || 0), desfase: 'cambió algo después de contar; contá de nuevo («Ver la cuenta»)',
+          reabrir: function () { abrirDetalleCaja(que); },
+          /* Si anulan una venta desde acá, la caja se trae de nuevo (y hay que contar de nuevo). */
+          alCambiar: function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } }
+        });
+      }).catch(function (e) {
+        if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">' + esc(DET_CAJA[que][0]) + '</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+      });
     }
     /* Lo que tendría que haber, grande en el Paso 1 (el número del arqueo), con de dónde sale. */
     function tendria() {
@@ -4786,10 +4824,13 @@
     /* Los gastos (o los pases a la caja fuerte, o los retiros de la caja chica) que entran en este cierre, para mirarlos. Se cargan
        y se anulan en Gastos, en Movimientos de salida (26/10) y en Retiros de fondos (SQL 191). */
     function abrirMovsCaja(que) {
-      var fuerte = que === true, ret = que === 'retiros', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
-      ventana('<h3 id="posVentTit">' + (fuerte ? 'A la caja fuerte' : ret ? 'Retiros de fondos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
+      var fuerte = que === true, ret = que === 'retiros', sal = que === 'salida', ing = que === 'ingreso', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
+      var tot = ms.reduce(function (t, x) { return t + cent(x.monto); }, 0);
+      ventana('<h3 id="posVentTit">' + (fuerte ? 'A la caja fuerte' : ret ? 'Retiros de fondos' : sal ? 'Otras salidas' : ing ? 'Otros ingresos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
           ? 'Lo que pasó de la caja chica a la caja fuerte de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Movimientos de salida».'
           : ret ? 'Lo que se retiró de la caja chica de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Retiros de fondos».'
+          : sal ? 'Las de ' + de + ' desde el último cierre: se restan en este. Se cargan y se anulan en «Gastos» (Qué es: «Otra salida»).'
+          : ing ? 'Los de ' + de + ' desde el último cierre: se suman en este. Se cargan y se anulan en «Gastos» (Qué es: «Otro ingreso»).'
           : 'Los de ' + de + ' desde el último cierre: entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
         (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th>' + (fuerte ? '' : ret ? '<th>Lo retiró</th>' : '<th>Qué es</th>') +
           '<th>' + (fuerte || ret ? 'Observaciones' : 'Detalle') + '</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
@@ -4798,8 +4839,10 @@
               (fuerte ? '' : '<td>' + esc(ret ? x.retira || '—' : TIPOS_MOV[x.tipo] || x.tipo) + '</td>') +
               '<td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
-          }).join('') + '</tbody></table></div>' :
-          '<div class="pos-cartel">' + (fuerte ? 'Todavía no pasó nada a la caja fuerte en esta caja.' : ret ? 'Todavía no se retiró nada de esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
+          }).join('') + '</tbody></table></div>' +
+          '<div class="pos-ticket-tot"><span>' + ms.length + (ms.length === 1 ? ' movimiento' : ' movimientos') + '</span><b>Total ' + plata(tot) + '</b></div>' :
+          '<div class="pos-cartel">' + (fuerte ? 'Todavía no pasó nada a la caja fuerte en esta caja.' : ret ? 'Todavía no se retiró nada de esta caja.' :
+            sal ? 'Todavía no hay otras salidas en esta caja.' : ing ? 'Todavía no hay otros ingresos en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
         '<div class="pos-pie">' + (fuerte ? '<a class="btn btn-sec btn-chico izq" href="#salidas" id="cjIrSalidas">Ir a Movimientos de salida</a>'
                                    : ret ? '<a class="btn btn-sec btn-chico izq" href="#retiros" id="cjIrRetiros">Ir a Retiros de fondos</a>'
                                           : '<a class="btn btn-sec btn-chico izq" href="#gastos" id="cjIrGastos">Ir a Gastos</a>') +
@@ -5240,6 +5283,112 @@
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardarRetiro(); } });
   }
 
+  /* ════════ EL DETALLE DE CADA RENGLÓN DEL CIERRE (SQL 246) ════════
+     Mauricio (5/11): "si aprieto en «Ventas Tarjeta» dentro del cierre de cajas, se me va a desplegar todo el detalle
+     de cada venta que hice en tarjeta, lo mismo con las demás secciones". La base manda cada venta y cada cambio de la
+     caja con sus pagos ('detalle' en pos_caja y pos_cierre); acá se arma la lista de cada renglón, que suma lo mismo que
+     el renglón. Una venta o un cambio se tocan y se abren, con «‹ Volver» a la lista. Sin el 246 (sin 'detalle'), los
+     renglones de las ventas quedan fijos, como antes. */
+  var DET_CAJA = {
+    tarjeta: ['Ventas Tarjeta', 'con tarjeta'], transferencia: ['Ventas Transferencia', 'por transferencia'],
+    efectivo: ['Ventas Efectivo', 'en efectivo'], mercadopago: ['Ventas Mercado Pago', 'con Mercado Pago'],
+    modo: ['Ventas MODO', 'con MODO'], go_cuotas: ['Ventas Go Cuotas', 'con Go Cuotas'], giftcard: ['Ventas Gift card', 'con gift card'],
+    total: ['Ventas totales del día', ''], descuentos: ['Descuentos', 'con descuento'], cambios: ['Cobrado en cambios', '']
+  };
+  /** El renglón de los resultados: con el detalle (SQL 246), un botón que lo abre; sin él, el renglón fijo de siempre. */
+  function filaDetCaja(con, que, lbl, valor, cls) {
+    if (!con) return filaRes(lbl, valor, cls);
+    var tit = que === 'total' ? 'Ver cada venta' : que === 'cambios' ? 'Ver cada cambio' : 'Ver cada venta ' + DET_CAJA[que][1];
+    return '<button type="button" class="cj-r cj-r-btn' + (cls ? ' ' + cls : '') + '" data-det="' + que + '" title="' + esc(tit) + '"><span>' + lbl + '</span><b>' + valor + '</b></button>';
+  }
+  /** El número en el detalle: la factura con su letra («B-12»), la X («X-4»), la prueba («P-3»). */
+  function refEnCaja(v) { return v.serie === 'factura' ? v.letra + '-' + v.numero : refCorta(v); }
+  /** Lo que dice un pago: la tarjeta con las cuotas y el cupón, lo recibido y el vuelto, el número de operación. */
+  function detPagoCaja(g) {
+    var p = function (n) { return plata(cent(n || 0)); };
+    /* El tipo sólo si el nombre no lo dice ya («VISA Débito»). */
+    var tipo = /d[ée]bito|cr[ée]dito/i.test(g.tarjeta || '') ? '' : g.tipo_tarjeta === 'debito' ? 'débito' : g.tipo_tarjeta === 'credito' ? 'crédito' : '';
+    if (g.medio === 'tarjeta') return [g.tarjeta, tipo,
+      g.cuotas > 1 ? g.cuotas + ' cuotas' : '', g.cupon ? 'cupón ' + g.cupon : '', g.ultimos4 ? 'terminada en ' + g.ultimos4 : ''].filter(Boolean).join(' · ');
+    if (g.medio === 'efectivo') return g.recibido ? 'recibido ' + p(g.recibido) + ', vuelto ' + p(g.vuelto) : '';
+    if (g.medio === 'giftcard') return g.cupon || '';
+    return g.cupon ? 'op. ' + g.cupon : '';
+  }
+  function mediosDeCaja(pagos) { return (pagos || []).map(function (g) { return MEDIOS_VENTA[g.medio] || g.medio; }).join(' + '); }
+  /** Los renglones del detalle: uno por pago de ese medio (dos tarjetas en un ticket, dos renglones) o, en el total y los
+      descuentos, uno por venta. Los cambios entran con lo que se cobró de diferencia. */
+  function filasDetCaja(que, det) {
+    var f = [];
+    function con(base, x) { var r = {}, k; for (k in base) r[k] = base[k]; for (k in x) r[k] = x[k]; return r; }
+    (det.ventas || []).forEach(function (v) {
+      var base = { tipo: 'v', id: v.id, ref: refEnCaja(v), tit: (LETRAS[v.letra] || v.letra) + ' ' + ref(v), fecha: v.fecha, vendedor: v.vendedor, cliente: v.cliente, anulada: !!v.anulada };
+      if (que === 'total') f.push(con(base, { det: mediosDeCaja(v.pagos), monto: v.total }));
+      else if (que === 'descuentos') { if (cent(v.descuentos || 0)) f.push(con(base, { det: 'ticket de ' + plata(cent(v.total)), monto: v.descuentos })); }
+      else if (que !== 'cambios') (v.pagos || []).forEach(function (g) {
+        if (g.medio !== que) return;
+        var parte = cent(g.monto) !== cent(v.total);
+        f.push(con(base, { det: [detPagoCaja(g), parte ? 'de un ticket de ' + plata(cent(v.total)) : ''].filter(Boolean).join(' · '), monto: g.monto }));
+      });
+    });
+    (det.cambios || []).forEach(function (c) {
+      var base = { tipo: 'c', id: c.id, ref: refCambio(c), tit: 'Cambio ' + refCambio(c), fecha: c.fecha, vendedor: c.vendedor, cliente: c.cliente, anulada: !!c.anulado };
+      if (que === 'total' || que === 'cambios') f.push(con(base, { det: 'cambio' + ((c.pagos || []).length ? ' · ' + mediosDeCaja(c.pagos) : ' sin diferencia'), monto: c.diferencia }));
+      else if (que !== 'descuentos') (c.pagos || []).forEach(function (g) {
+        if (g.medio === que) f.push(con(base, { det: ['diferencia de un cambio', detPagoCaja(g)].filter(Boolean).join(' · '), monto: g.monto }));
+      });
+    });
+    return f.sort(function (a, b) { return new Date(a.fecha) - new Date(b.fecha); });
+  }
+  /** La ventana del detalle de un renglón, adentro de «dentro». o: { donde ('en esta caja'), bajada, renglon (lo que dice el
+      renglón, en centavos), desfase (por qué la lista no daría lo mismo), volver (al cierre), reabrir (esta lista), alCambiar }. */
+  function pintarDetalleCaja(dentro, que, det, o) {
+    var d = DET_CAJA[que], fs = filasDetCaja(que, det), tot = 0, ids = {}, nv = 0, nc = 0, an = 0;
+    fs.forEach(function (x) {
+      tot += cent(x.monto);
+      if (x.anulada) an++;
+      if (!ids[x.tipo + x.id]) { ids[x.tipo + x.id] = 1; if (x.tipo === 'v') nv++; else nc++; }
+    });
+    var nada = que === 'total' ? 'Todavía no hay ventas ' + o.donde + '.' : que === 'descuentos' ? 'Ninguna venta ' + o.donde + ' tuvo descuento.' :
+      que === 'cambios' ? 'No hubo cambios ' + o.donde + '.' : 'No hubo ventas ' + d[1] + ' ' + o.donde + '.';
+    var cuenta = [nv ? nv + (nv === 1 ? ' venta' : ' ventas') : '', nc ? nc + (nc === 1 ? ' cambio' : ' cambios') : ''].filter(Boolean).join(' y ');
+    var avisos = (o.renglon != null && o.renglon !== tot ? '<div class="pos-cartel">Esta lista suma ' + plata(tot) + ' y el renglón dice ' + plata(o.renglon) + ': ' + esc(o.desfase || 'algo cambió') + '.</div>' : '') +
+      (an ? '<div class="pos-cartel">' + (an === 1 ? 'La anulada después del cierre sigue sumando: ' : 'Las anuladas después del cierre siguen sumando: ') + 'el cierre ya la' + (an === 1 ? '' : 's') + ' había contado.</div>' : '');
+    dentro.innerHTML = '<h3 id="posVentTit">' + esc(d[0]) + '</h3><p class="pos-bajada">' + o.bajada + (fs.length ? ' Tocá una para ver el ticket.' : '') + '</p>' + avisos +
+      (fs.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ticket</th><th>Hora</th><th>Vendedor</th><th>Cliente</th><th>Detalle</th>' +
+          '<th class="n">' + (que === 'descuentos' ? 'Descuento' : 'Monto') + '</th></tr></thead><tbody>' +
+        fs.map(function (x) {
+          return '<tr data-' + (x.tipo === 'v' ? 'ticket' : 'cambio') + '="' + esc(x.id) + '" tabindex="0"' + (x.anulada ? ' class="anulada"' : '') + '>' +
+            '<td class="nw" title="' + esc(x.tit) + '"><b>' + esc(x.ref) + '</b></td><td class="nw">' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(x.vendedor || '') + '</td>' +
+            '<td>' + esc(x.cliente || '') + '</td><td>' + esc(x.det) + (x.anulada ? ' <span class="pill pill-bad">Anulada después del cierre</span>' : '') + '</td>' +
+            '<td class="n"><b>' + plata(cent(x.monto)) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        '<div class="pos-ticket-tot"><span>' + esc(cuenta) + '</span><b>Total ' + plata(tot) + '</b></div>'
+      : '<div class="pos-cartel">' + esc(nada) + '</div>') +
+      '<div class="pos-pie">' + (o.volver ? '<button type="button" class="btn btn-sec btn-chico izq" id="cdVolver">‹ Volver al cierre</button>' : '') +
+        '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>';
+    dentro.querySelectorAll('tr[data-ticket], tr[data-cambio]').forEach(function (tr) {
+      tr.onclick = function () {
+        var id = tr.getAttribute('data-ticket');
+        if (id) abrirTicket(id, o.alCambiar, o.reabrir); else abrirCambio(tr.getAttribute('data-cambio'), o.alCambiar, o.reabrir);
+      };
+      tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+    });
+    var vb = dentro.querySelector('#cdVolver');
+    if (vb) vb.onclick = o.volver;
+  }
+  /** El detalle de un renglón de un cierre ya hecho: lo que entró en ese cierre (no cambia). */
+  function abrirDetalleCierre(c, que, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">' + esc(DET_CAJA[que][0]) + '</h3>', true);
+    var col = que === 'total' ? 'ventas_total' : que === 'descuentos' ? 'descuentos' : que === 'cambios' ? 'cambios_diferencia' : 'ventas_' + que;
+    pintarDetalleCaja(caja.querySelector('.pos-caja-in'), que, c.detalle, {
+      donde: 'en este cierre', bajada: 'Las que entraron en el cierre ' + esc(refCierre(c)) + ' de ' + esc(bonito(c.local)) + '.',
+      renglon: cent(c[col] || 0), desfase: 'el cierre se guardó con otra cuenta',
+      volver: function () { abrirCierre(c.id, alCambiar); },
+      reabrir: function () { abrirDetalleCierre(c, que, alCambiar); },
+      alCambiar: alCambiar
+    });
+  }
+
   /* Un cierre guardado: todos sus números, sus gastos, cada vez que contaron, y anularlo (sólo el último). */
   function abrirCierre(id, alCambiar) {
     var caja = ventana('<h3 id="posVentTit">Cierre de caja</h3><p class="cargando">Cargando…</p>', true);
@@ -5249,6 +5398,8 @@
       var an = c.estado === 'anulada', p = function (n) { return plata(cent(n || 0)); };
       var dv = desvioDe(cent(c.desvio), cent(c.tolerancia));
       var movs = c.movimientos || [], conteos = c.conteos_detalle || [];
+      /* SQL 246: los renglones de las ventas se tocan y muestran cada venta (un cierre anulado no tiene: lo suyo volvió a la caja abierta). */
+      var con = !!c.detalle, fd = function (que, lbl, valor, cls) { return filaDetCaja(con, que, lbl, valor, cls); };
       dentro.innerHTML = '<h3 id="posVentTit">Cierre ' + esc(refCierre(c)) + ' · ' + esc(bonito(c.local)) + ' ' +
           (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Cerrado</span>') +
           (c.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
@@ -5264,16 +5415,16 @@
         '<div class="cj-det">' +
           '<div class="cj-res"><h3 class="cj-res-tit">Resultados del día</h3>' +
             filaRes('Saldo inicial', p(c.saldo_inicial), 'fuerte') +
-            filaRes('Ventas Tarjeta', p(c.ventas_tarjeta)) + filaRes('Ventas Transferencia', p(c.ventas_transferencia)) +
-            filaRes('Ventas Efectivo', p(c.ventas_efectivo)) + filaRes('Ventas Mercado Pago', p(c.ventas_mercadopago)) +
-            filaRes('Ventas MODO', p(c.ventas_modo)) + filaRes('Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
-            (Number(c.ventas_giftcard) ? filaRes('Ventas Gift card', p(c.ventas_giftcard)) : '') +   // SQL 200
-            filaRes('Ventas totales del día', p(c.ventas_total), 'barra') +
+            fd('tarjeta', 'Ventas Tarjeta', p(c.ventas_tarjeta)) + fd('transferencia', 'Ventas Transferencia', p(c.ventas_transferencia)) +
+            fd('efectivo', 'Ventas Efectivo', p(c.ventas_efectivo)) + fd('mercadopago', 'Ventas Mercado Pago', p(c.ventas_mercadopago)) +
+            fd('modo', 'Ventas MODO', p(c.ventas_modo)) + fd('go_cuotas', 'Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
+            (Number(c.ventas_giftcard) ? fd('giftcard', 'Ventas Gift card', p(c.ventas_giftcard)) : '') +   // SQL 200
+            fd('total', 'Ventas totales del día', p(c.ventas_total), 'barra') +
             filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
             (c.a_caja_fuerte != null ? filaRes('A la caja fuerte', p(c.a_caja_fuerte)) : '') +   // SQL 180: los movimientos de salida
             (Number(c.retiros_fondos) ? filaRes('Retiros de fondos', p(c.retiros_fondos)) : '') +   // SQL 191: los de la caja chica
-            filaRes('Descuentos', p(c.descuentos), 'info') +
-            (c.cambios ? filaRes('Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
+            fd('descuentos', 'Descuentos', p(c.descuentos), 'info') +
+            (c.cambios ? fd('cambios', 'Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
             filaRes('Otros ingresos', p(c.otros_ingresos)) +
             filaRes('Saldo final en efectivo', p(c.esperado), 'barra') + '</div>' +
           '<div class="cj-det-der">' +
@@ -5294,6 +5445,7 @@
         '<div id="ciAnular"></div>' +
         '<div class="pos-pie">' + (c.es_ultimo ? '<button type="button" class="btn btn-sec btn-chico izq" id="ciAnularBtn">Anular el cierre</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      dentro.querySelectorAll('[data-det]').forEach(function (b) { b.onclick = function () { abrirDetalleCierre(c, b.getAttribute('data-det'), alCambiar); }; });
       var ab = dentro.querySelector('#ciAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
