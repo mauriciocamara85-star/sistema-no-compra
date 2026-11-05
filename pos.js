@@ -638,8 +638,14 @@
     S.actualizar = null; // y el del botón de actualizar, si lo tiene (actualizable)
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
     cerrarVentana();
+    /* Lo que se veía del menú, para que pase suave al de la pantalla nueva: las secciones que se abren o se cierran, y el
+       ancho si cambia (la venta arranca achicada). */
+    var gViejo = app.querySelector('.pos-grid');
+    var antes = gViejo ? altosMenu(gViejo.querySelector('.pos-menu')) : null, clasesViejas = gViejo ? gViejo.className : '';
     app.innerHTML = marco();
+    var anchoNuevo = conElAnchoDeAntes(clasesViejas);
     engancharMenu();
+    pasarSuave(anchoNuevo, antes);
     if (REQUIERE[v] && !puede(REQUIERE[v])) {
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
@@ -707,10 +713,10 @@
   }
   /* Que el menú abierto entre sin deslizar (Mauricio, 5/11: "no me gusta que tengas que deslizar"): si con las secciones
      abiertas no entra (la PC del local tiene 657 de alto), se cierra sola la que se abrió hace más tiempo. Nunca la de
-     la pantalla en la que está ni la que se acaba de abrir. Achicado no hace falta: son sólo los íconos y entran. */
+     la pantalla en la que está ni la que se acaba de abrir. Achicado es igual (mide lo mismo, sin los nombres). */
   function queEntre(recien) {
     var nav = app.querySelector('.pos-menu'), g = app.querySelector('.pos-grid');
-    if (!nav || !g || g.classList.contains('menu-chico') || !compuGrande()) return;
+    if (!nav || !g || !compuGrande()) return;
     var e = leerJSON(K_GRUPOS, {}) || {}, cambio = false;
     while (nav.scrollHeight > nav.clientHeight + 1) {
       var abiertos = [].filter.call(nav.querySelectorAll('.pos-grupo-btn[aria-expanded="true"]'), function (b) {
@@ -736,10 +742,11 @@
 
   function marco() {
     var chico = menuChico(), y = persona.yo();
+    var flota = chico && _flota && compuGrande();   // se tocó una sección con el menú abierto por encima: sigue abierto
     /* Los dos sin la barra del sistema (Gestión desde el 31/10): "‹ Sistema" arriba de las secciones. */
     var cab = (MODO === 'gestion'
-      ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>'
-      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>') +
+      ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>'
+      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>') +
       '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
     /* Las secciones se despliegan y se pliegan, en Gestión (20/10) y desde el 5/11 también en el mostrador (Mauricio:
        "BlueSoft tenía también secciones y dentro de cada sección cosas adentro … no me gusta que tengas que deslizar …
@@ -760,7 +767,7 @@
           '<button type="button" class="pos-item pos-yo" id="posYo" title="' + esc(y ? y.nombre + ' · No soy yo' : 'Entrar') + '">' + icono('yo') +
             '<span>' + esc(y ? String(y.nombre || '').split(' ')[0] : 'Entrar') + '</span></button>' +
         '</div>';
-    return '<div class="pos-grid' + (chico ? ' menu-chico' : '') + '">' +
+    return '<div class="pos-grid' + (flota ? ' menu-flota' : chico ? ' menu-chico' : '') + '">' +
       '<nav class="pos-menu" id="menuPos" aria-label="Secciones ' + (MODO === 'gestion' ? 'de Gestión' : 'del POS') + '">' + cab + cuerpo + '</nav>' +
       '<section class="pos-cuerpo" id="cuerpo"></section></div>';
   }
@@ -769,30 +776,154 @@
      vos te ponés sobre la barra y se achique si vos te alejás, como hicimos con la barra del sistema"). Como en
      interfaz.js: un cuarto de segundo de demora, para que no salte cada vez que el mouse cruza, y por encima: la pantalla
      no se mueve. menu-flota = abierto por encima (las columnas siguen las del achicado). El botón de arriba lo deja fijo. */
-  var _tFlota = null;
+  var _tAbrir = null, _tCerrar = null;
+  var _flota = false;          // abierto por encima: si el menú se rehace (se tocó una sección), sale igual
+  var _esperarSalida = false;  // se achicó con el mouse encima (Escape, el botón): no se vuelve a abrir hasta que salga
   function compuGrande() { return !window.matchMedia || matchMedia('(min-width: 1000px)').matches; }
+  function pararTiempos() { clearTimeout(_tAbrir); clearTimeout(_tCerrar); _tAbrir = _tCerrar = null; }
   function flotar(si) {
     var g = app.querySelector('.pos-grid'), pl = app.querySelector('.pos-menu .plegar-panel');
+    if (!si) _flota = false;
     if (!g || (si ? !g.classList.contains('menu-chico') : !g.classList.contains('menu-flota'))) return;
     g.classList.toggle('menu-chico', !si);
     g.classList.toggle('menu-flota', si);
     if (pl) pl.setAttribute('aria-expanded', String(si));
+    _flota = si;
     if (si) queEntre();
   }
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { clearTimeout(_tFlota); flotar(false); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var g = app.querySelector('.pos-grid');
+    if (g && g.classList.contains('menu-flota')) _esperarSalida = true;
+    pararTiempos(); flotar(false);
+  });
+  /* Se mira dónde está el mouse en cada movimiento, no al entrar y salir del menú: al tocar una sección el menú se rehace
+     debajo del mouse, y el menú nuevo no se entera de que el mouse está encima hasta que sale. */
+  function cerrarEnUnRato() {
+    clearTimeout(_tAbrir); _tAbrir = null;
+    var g = app.querySelector('.pos-grid');
+    if (g && g.classList.contains('menu-flota') && !_tCerrar) _tCerrar = setTimeout(function () { _tCerrar = null; flotar(false); }, 150);
+  }
+  document.addEventListener('mousemove', function (e) {
+    var g = app.querySelector('.pos-grid'), nav = g && g.querySelector('.pos-menu');
+    if (!nav || !compuGrande()) return;
+    if (!nav.contains(e.target)) { _esperarSalida = false; cerrarEnUnRato(); return; }
+    clearTimeout(_tCerrar); _tCerrar = null;
+    if (g.classList.contains('menu-chico') && !_esperarSalida && !_tAbrir) _tAbrir = setTimeout(function () { _tAbrir = null; flotar(true); }, 250);
+  });
+  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) { _esperarSalida = false; cerrarEnUnRato(); } });   // se fue de la ventana
+
+  /* Que se mueva suave (Mauricio, 5/11, con una foto de Supabase: "que cuando se deslice la barra de la izquierda tenga un
+     movimiento fluido, no tan brusco. Lo mismo para las secciones … que tenga vida"). El ancho y los nombres van por CSS
+     (pos.css); las secciones, acá: cada renglón crece desde 0 al desplegarse y se achica hasta 0 al plegarse, con la misma
+     curva, así el alto total pasa parejo de uno a otro y el menú nunca necesita deslizar. */
+  var CURVA = 'cubic-bezier(.4, 0, .2, 1)', DURA = 240;   // la misma curva y el mismo tiempo que el ancho (pos.css, --curva-menu)
+  function sinMovimiento() {
+    return !compuGrande() || !Element.prototype.animate || !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  }
+  function claveItem(it) { return it.getAttribute('data-ir') || it.getAttribute('href') || it.textContent; }
+  /** El alto de cada renglón de las secciones que se ven (los de las cerradas no están). */
+  function altosMenu(nav) {
+    var m = {};
+    if (nav) nav.querySelectorAll('.pos-grupo-items > .pos-item').forEach(function (it) {
+      var h = it.getBoundingClientRect().height;
+      if (h > 0) m[claveItem(it)] = h;
+    });
+    return m;
+  }
+  function pararAnimaciones(nav) {
+    if (!nav) return;
+    (nav._anims || []).forEach(function (a) { try { a.cancel(); } catch (x) {} });
+    nav._anims = [];
+    nav.classList.remove('animando');
+  }
+  /** Cada sección, abierta o cerrada según su botón. */
+  function ajustarSecciones(nav) {
+    nav.querySelectorAll('.pos-grupo-btn').forEach(function (b) {
+      var c = b.nextElementSibling;
+      if (c) c.classList.toggle('cerrado', b.getAttribute('aria-expanded') !== 'true');
+    });
+  }
+  /** De cómo se veía (antes: el alto de cada renglón) a cómo quedó, suave. Las que se cierran se ven mientras se pliegan. */
+  function animarSecciones(nav, antes) {
+    if (!nav || !antes || sinMovimiento()) return;
+    var items = nav.querySelectorAll('.pos-grupo-items > .pos-item'), despues = {}, volver = [], anims = [];
+    items.forEach(function (it) { despues[claveItem(it)] = it.getBoundingClientRect().height; });
+    nav.querySelectorAll('.pos-grupo-items.cerrado').forEach(function (c) {
+      if ([].some.call(c.children, function (it) { return antes[claveItem(it)] > 0; })) { c.classList.remove('cerrado'); volver.push(c); }
+    });
+    /* El renglón en 0 lleva -1 px arriba: el espacio de 1 px entre renglones (gap) tampoco está cuando la sección se cierra.
+       Mientras es una franjita no se ve (se vería el medio del nombre): al desplegarse aparece en la segunda mitad, bajando
+       4 px, uno detrás del otro de arriba hacia abajo; al plegarse se desvanece primero. El alto va parejo igual: el menú
+       nunca necesita deslizar. */
+    function alto(h, extra) { var p = { flexBasis: h + 'px', minHeight: h + 'px', marginTop: h ? '0px' : '-1px' }; for (var x in extra) p[x] = extra[x]; return p; }
+    var nAbre = 0;
+    items.forEach(function (it) {
+      var k = claveItem(it), a = antes[k] || 0, d = despues[k] || 0, pasos;
+      if (Math.abs(a - d) < 0.5) return;
+      if (!a) {
+        var ve = Math.min(.35 + .05 * nAbre++, .65);
+        pasos = [alto(0, { opacity: 0, transform: 'translateY(-4px)', offset: 0 }), { opacity: 0, offset: ve }, alto(d, { opacity: 1, transform: 'none', offset: 1 })];
+      } else if (!d) {
+        pasos = [alto(a, { opacity: 1, offset: 0 }), { opacity: 0, offset: .45 }, alto(0, { opacity: 0, offset: 1 })];
+      } else {
+        pasos = [alto(a), alto(d)];
+      }
+      anims.push(it.animate(pasos, { duration: DURA, easing: CURVA, fill: 'forwards' }));
+    });
+    if (!anims.length) { ajustarSecciones(nav); return; }
+    nav._anims = anims;
+    nav.classList.add('animando');
+    Promise.all(anims.map(function (a) { return a.finished; })).then(function () {
+      if (nav._anims !== anims) return;   // otra la reemplazó
+      ajustarSecciones(nav);               // las que se plegaron, escondidas otra vez
+      anims.forEach(function (a) { a.cancel(); });
+      nav._anims = [];
+      nav.classList.remove('animando');
+    }, function () {});
+  }
+  function fijo(clases) { return !/\bmenu-(chico|flota)\b/.test(clases); }
+  /** Recién hecho el menú (otra pantalla), si el ancho cambia (fijo ↔ achicado: la venta arranca achicada), arranca con el
+      de antes, antes de que nadie lo mida: si el navegador ya lo vio con el ancho nuevo, la transición no arranca.
+      Devuelve las clases nuevas, para pasarSuave. */
+  function conElAnchoDeAntes(clasesViejas) {
+    var g = app.querySelector('.pos-grid');
+    if (!g || !clasesViejas || sinMovimiento() || fijo(clasesViejas) === fijo(g.className)) return null;
+    var nuevas = g.className;
+    g.className = clasesViejas;
+    return nuevas;
+  }
+  /** Después de rehacer el menú: el ancho nuevo (suave, por CSS) y las secciones que se abren o se cierran. */
+  function pasarSuave(nuevas, antes) {
+    var g = app.querySelector('.pos-grid'), nav = g && g.querySelector('.pos-menu');
+    if (!nav) return;
+    if (nuevas) {
+      void g.offsetWidth;   // que se vea con el ancho de antes, así la transición arranca de ahí
+      g.className = nuevas;
+      tituloPlegar();
+    }
+    animarSecciones(nav, antes);
+  }
+  /** El botón de arriba: achicado o abierto por encima lo deja fijo; fijo, lo achica. */
+  function tituloPlegar() {
+    var pl = app.querySelector('.pos-menu .plegar-panel'), g = app.querySelector('.pos-grid');
+    if (!pl || !g) return;
+    var chico = g.classList.contains('menu-chico'), t = chico || g.classList.contains('menu-flota') ? 'Dejar el panel abierto' : 'Achicar el panel';
+    pl.title = t;
+    pl.setAttribute('aria-label', t);
+    pl.setAttribute('aria-expanded', String(!chico));
+  }
 
   /** El botón de achicar: se busca cada vez el que está (al tocarlo se rehace con el texto contrario). */
   function engancharMenu() {
-    clearTimeout(_tFlota);   // la pantalla se rehízo (se tocó una sección): no se abre sola por un mouse de antes
-    var pl = app.querySelector('.pos-menu .plegar-panel'), grid = app.querySelector('.pos-grid'), nav = app.querySelector('.pos-menu');
-    if (pl && grid && grid.classList.contains('menu-chico')) {
-      /* Achicado, el botón lo deja abierto fijo (al pasar el mouse ya se abre solo). */
-      pl.title = 'Dejar el panel abierto';
-      pl.setAttribute('aria-label', 'Dejar el panel abierto');
-    }
+    pararTiempos();   // la pantalla se rehízo (se tocó una sección): los tiempos de antes no valen
+    var pl = app.querySelector('.pos-menu .plegar-panel'), nav = app.querySelector('.pos-menu');
+    tituloPlegar();   // achicado, el botón lo deja abierto fijo (al pasar el mouse ya se abre solo)
     if (pl) pl.onclick = function () {
       var g = app.querySelector('.pos-grid'), ch = g.classList.contains('menu-flota') ? false : !g.classList.contains('menu-chico');
-      clearTimeout(_tFlota);
+      pararTiempos();
+      _flota = false;
+      if (ch) _esperarSalida = true;   // se achicó con el mouse encima: que no se vuelva a abrir solo
       g.classList.remove('menu-flota');
       guardarMenu(ch);
       g.classList.toggle('menu-chico', ch);
@@ -801,38 +932,31 @@
       var nuevo = app.querySelector('.pos-menu .plegar-panel');
       if (nuevo) nuevo.focus();
     };
-    if (nav && !nav._mouse) {   // el botón de arriba vuelve a llamar a engancharMenu con el mismo menú: una sola vez
-      nav._mouse = true;
-      nav.addEventListener('mouseenter', function () {
-        clearTimeout(_tFlota);
-        var g = app.querySelector('.pos-grid');
-        if (!compuGrande() || !g || !g.classList.contains('menu-chico')) return;
-        _tFlota = setTimeout(function () { flotar(true); }, 250);
-      });
-      nav.addEventListener('mouseleave', function () {
-        clearTimeout(_tFlota);
-        _tFlota = setTimeout(function () { flotar(false); }, 150);
-      });
+    if (nav && !nav._foco) {   // el botón de arriba vuelve a llamar a engancharMenu con el mismo menú: una sola vez
+      nav._foco = true;
       /* Con el teclado (Tab) también se abre, y se cierra al salir del foco. Con el mouse no: al achicarlo con el botón, el
          foco queda en el botón y se volvería a abrir. */
       nav.addEventListener('focusin', function (e) {
         var visible = true;
         try { visible = e.target.matches(':focus-visible'); } catch (x) {}
         var g = app.querySelector('.pos-grid');
-        if (visible && compuGrande() && g && g.classList.contains('menu-chico')) { clearTimeout(_tFlota); flotar(true); }
+        if (visible && compuGrande() && g && g.classList.contains('menu-chico')) { pararTiempos(); flotar(true); }
       });
-      nav.addEventListener('focusout', function (e) { if (!nav.contains(e.relatedTarget) && !nav.matches(':hover')) { clearTimeout(_tFlota); flotar(false); } });
+      nav.addEventListener('focusout', function (e) { if (!nav.contains(e.relatedTarget) && !nav.matches(':hover')) { pararTiempos(); flotar(false); } });
     }
     app.querySelectorAll('.pos-menu [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
     app.querySelectorAll('.pos-menu [data-grupo]').forEach(function (b) {
       b.onclick = function () {
-        var cont = b.nextElementSibling, ab = cont.classList.contains('cerrado');
-        cont.classList.toggle('cerrado', !ab);
+        /* Abierta o cerrada la dice el botón: mientras se pliega, la sección todavía se ve. */
+        var m = b.closest('.pos-menu'), antes = altosMenu(m), ab = b.getAttribute('aria-expanded') !== 'true';
+        pararAnimaciones(m);
         b.setAttribute('aria-expanded', String(ab));
+        ajustarSecciones(m);
         var e = leerJSON(K_GRUPOS, {}) || {};
         e[b.getAttribute('data-grupo')] = ab ? Date.now() : 0;
         guardarJSON(K_GRUPOS, e);
         if (ab) queEntre(b.getAttribute('data-grupo'));
+        animarSecciones(m, antes);
       };
     });
     queEntre();   // fijo abierto: lo que quedó guardado de una pantalla más alta puede no entrar en esta
