@@ -123,8 +123,9 @@
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock'],
                       ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
-         los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión. */
-      ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierre', 'Cierre de caja', 'caja']]]
+         los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión.
+         Los cierres (Mauricio, 5/11): como en BlueSoft, primero la lista de los cierres y ahí «Nuevo cierre de caja», como un ticket. */
+      ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierres', 'Cierres de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
@@ -141,11 +142,13 @@
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
-  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general' },
+  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general', cierre: 'cierres' },
                  gestion: { remito_nuevo: 'remitos', general_modulo: 'general' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
+  /* Los cierres del mostrador son de la caja; los de Gestión, de la oficina (entra quien tiene la Gestión). */
+  if (MODO === 'mostrador') REQUIERE.cierres = 'caja';
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
@@ -353,7 +356,7 @@
   }
 
   /* ── La base ── */
-  var S = { ini: null, precios: {}, preciosVer: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
+  var S = { ini: null, precios: {}, preciosVer: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, ciMarcar: null,
             cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {}, dep: {} };
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
@@ -662,9 +665,9 @@
 
   function ponerPrueba(si) {
     try { if (si) sessionStorage.setItem(K_PRUEBA, '1'); else sessionStorage.removeItem(K_PRUEBA); } catch (e) {}
-    /* El cartel de la última venta guardada (y el del último cierre y el del último cambio) es de la otra numeración: no se mezcla. */
+    /* El cartel de la última venta guardada (y el último cierre marcado en la lista y el último cambio) es de la otra numeración: no se mezcla. */
     S.ultimo = null;
-    S.cajaHecho = null;
+    S.ciMarcar = null;
     S.cambioHecho = null;
     marcarPrueba();
     ir(S.vista);
@@ -4943,6 +4946,23 @@
         .format(new Date(new Date(ts).getTime() - 5 * 3600e3));
     } catch (e) { return String(ts || '').slice(0, 10); }
   }
+  /** La hora sola, en la Argentina: «20:51». */
+  function horaDe(ts) {
+    try { return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts)); }
+    catch (e) { return String(ts || '').slice(11, 16); }
+  }
+  /** La caja que toca cerrar es la de hoy y hoy ya se cerró una vez (con el SQL 247 el último cierre dice su día). d: lo
+      que manda pos_caja o pos_caja_contar. */
+  function mismoDia(d) {
+    return !!(d && d.hoy && !d.pendiente && d.ultimo && d.ultimo.dia && String(d.ultimo.dia).slice(0, 10) === String(d.dia).slice(0, 10));
+  }
+  /** Hoy ya se cerró y después no entró nada (ni ventas, ni cambios, ni movimientos de la caja chica): no hay nada que cerrar.
+      Mauricio (5/11): al cerrar "queda listo y no se puede volver a cerrar". */
+  function yaCerrada(d) {
+    if (!mismoDia(d)) return false;
+    return !Number(d.tickets) && !Number(d.cambios) && !cent(d.ventas_total || 0) && !(d.movimientos || []).length &&
+      !cent(d.gastos || 0) && !cent(d.otras_salidas || 0) && !cent(d.otros_ingresos || 0) && !cent(d.a_caja_fuerte || 0) && !cent(d.retiros_fondos || 0);
+  }
   /** Un cierre hecho otro día que el suyo (el día quedó abierto y se cerró después). */
   function cierreTarde(c) { return !!(c && c.dia && c.fecha) && diaCajaDe(c.fecha) > String(c.dia).slice(0, 10); }
   /** El número del movimiento, para escribirlo en el ticket que se guarda con la caja (SQL 179): G-12 el gasto, o GP-3 el de prueba;
@@ -5019,10 +5039,10 @@
     /* d: la caja abierta (con el efectivo desde el SQL 175); k: lo que devolvió el conteo (con lo que tendría que haber y la diferencia). */
     var K = { d: null, k: null, clave: nuevaClave() }, pedido = 0;
     c.classList.add('lleno');
-    c.innerHTML = cabeza('Cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
-        '<div id="cjHecho"></div>' +
-        (puede('gestion') ? '<a class="btn btn-sec btn-chico" href="gestion.html#cierres" title="Los cierres anteriores, en Gestión">Ver los cierres</a>' : '')) +
-      '<div class="cj">' +
+    /* Se entra desde la lista de los cierres («Nuevo cierre de caja») y se vuelve a ella al cerrar (Mauricio, 5/11). */
+    c.innerHTML = cabeza('Nuevo cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="cierres" title="La lista de los cierres">‹ Cierres de caja</button>') +
+      '<div class="cj" id="cjCuerpo">' +
         '<section class="cj-izq" aria-label="Los pasos del cierre">' +
           '<div class="tk-datos cj-datos">' +
             campo('c3', 'Fecha', '<input type="text" id="cjFecha" readonly>') +
@@ -5031,6 +5051,8 @@
             campo('c4', 'Caja', '<input type="text" value="Caja chica" readonly>') +
             campo('c8', 'Responsable', '<input type="text" id="cjResp" readonly title="Quien entró al POS">') +
           '</div>' +
+          /* La caja de hoy ya se cerró y después no entró nada: no se vuelve a cerrar (Mauricio, 5/11). */
+          '<div class="cj-ya" id="cjYa" hidden></div>' +
           '<div class="cj-paso" id="cjPaso1"><div class="cj-paso-cab"><b>Paso 1</b><span id="cjPaso1Txt">Ingresá el total de efectivo que hay en el local</span></div>' +
             '<div class="cj-fila"><div class="cj-saldo" id="cjSaldoIni"></div>' +
               campo('cj-monto', 'Total efectivo', '<input type="text" inputmode="decimal" id="cjContado" autocomplete="off" placeholder="$0">') +
@@ -5044,6 +5066,7 @@
         '</section>' +
         '<aside class="cj-res" id="cjRes" aria-label="Resultados del día"><p class="cargando">Cargando…</p></aside>' +
       '</div>';
+    engancharIr(c);
 
     function cargar() {
       var n = ++pedido;
@@ -5065,22 +5088,49 @@
       /* SQL 247: un día anterior que quedó sin cerrar se marca en la fecha. */
       $('cjFecha').classList.toggle('cj-tarde', pend());
       $('cjFecha').title = pend() ? 'Es el ' + diaCaja(d.dia) + ': quedó sin cerrar' : '';
-      $('cjNum').value = (prueba ? 'P-' : '') + d.numero;
+      var ya = yaCerrada(d), deNuevo = !ya && mismoDia(d);
+      /* Ya cerrada, no hay un número que venga: sin el «3» que parece otro cierre. */
+      $('cjNum').value = ya ? '—' : (prueba ? 'P-' : '') + d.numero;
       $('cjResp').value = d.responsable || '';
       /* En el modo prueba lo dice acá y no en un cartel: con el cartel, el cierre no entra en la PC del local. */
-      $('cjSub').textContent = (prueba ? 'Caja de prueba: sólo las ventas de prueba. ' : '') + (pend()
+      $('cjSub').textContent = (prueba ? 'Caja de prueba: sólo las ventas de prueba. ' : '') + (ya
+        ? 'La caja de hoy ya está cerrada.'
+        : pend()
         ? 'Quedó sin cerrar el ' + diaCaja(d.dia) + ': primero se cierra ese día, sólo con lo suyo. ' + despuesTxt(d)
         : d.primer
         ? 'El primer cierre de ' + nombreLocal(localDe(S.cajaLocal)) + ' en el POS: toma las ventas de hoy.'
+        : deNuevo
+        /* Ya se cerró hoy, pero después entró algo (una venta, un gasto): este cierre es sólo de lo nuevo. */
+        ? 'Hoy ya se cerró a las ' + horaDe(d.ultimo.fecha) + ' (cierre ' + refCierre({ prueba: prueba, numero: d.ultimo.numero }) + '), pero después entró algo: este cierre es sólo de lo nuevo.'
         : 'La caja está abierta desde el cierre ' + refCierre({ prueba: prueba, numero: d.ultimo.numero }) + ' (' + fechaHora(d.ultimo.fecha) + ').');
+      pintarYa(ya);
       /* El primer cierre no tiene de dónde sacar el saldo inicial: lo escriben (con cuánto arrancó la caja). */
       $('cjSaldoIni').innerHTML = d.primer ? campo('cj-monto', 'Saldo inicial', '<input type="text" inputmode="decimal" id="cjSaldo" autocomplete="off" placeholder="$0" title="Con cuánto efectivo arrancó la caja (el cambio)">') : '';
       /* Lo que tendría que haber cambia mientras escriben el saldo inicial. */
       if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = function () { if (K.k) olvidarCuenta(); else pintarPasos(); }; }
       /* Un día anterior trae lo que contaron esa noche (o se cierra sin contar): ya se puede cerrar. */
       if (pend() && !$('cjContado').value.trim()) K.k = cuentaGuardada();
-      pintarHecho();
       pintarPasos();
+    }
+    /* La caja de hoy ya está cerrada: en vez de los pasos, el cartel con el cierre (Mauricio, 5/11: "que no permita volver
+       a cerrar la caja"). Si después del cierre entra algo (una venta tarde, un gasto), los pasos vuelven: eso sí se cierra. */
+    function pintarYa(ya) {
+      var z = $('cjYa'), d = K.d;
+      z.hidden = !ya;
+      $('cjCuerpo').classList.toggle('cj-cerrada', ya);
+      ['cjPaso1', 'cjPaso2', 'cjRes'].forEach(function (id) { $(id).hidden = ya; });
+      if (!ya) { z.innerHTML = ''; return; }
+      var u = d.ultimo, de = nombreLocal(localDe(S.cajaLocal));
+      z.innerHTML = '<div class="cj-ya-ico">' + icono('ok') + '</div>' +
+        '<h3>La caja de hoy ya está cerrada</h3>' +
+        '<p>Cerraste la caja de ' + esc(de) + ' el ' + esc(diaCaja(u.dia)) + ' a las ' + esc(horaDe(u.fecha)) + '. Quedó guardada: cierre <b>' +
+          esc(refCierre({ prueba: prueba, numero: u.numero })) + '</b>.</p>' +
+        '<p class="cj-ya-queda">Quedan en la caja chica: <b>' + plata(cent(u.queda)) + '</b></p>' +
+        '<p class="cj-ya-sig">El próximo cierre es el de mañana.</p>' +
+        '<div class="cj-ya-btns"><button type="button" class="btn btn-sec btn-chico" id="cjYaVer">Ver el cierre</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="cjYaLista">Ir a los cierres</button></div>';
+      $('cjYaVer').onclick = function () { abrirCierre(u.id, function () { if (S.vista === 'cierre') cargar(); }); };
+      $('cjYaLista').onclick = function () { ir('cierres'); };
     }
     /* SQL 247: el día que se cierra es uno anterior (quedó sin cerrar). Sin el 247, nunca. */
     function pend() { return !!(K.d && K.d.pendiente); }
@@ -5107,14 +5157,6 @@
     function textoCerrar() {
       if (!pend()) return 'Cerrar caja';
       return K.k && K.k.sin ? 'Cerrar sin contar' : 'Cerrar el ' + DIAS_CJ[new Date(K.d.dia + 'T12:00:00Z').getUTCDay()];
-    }
-    function pintarHecho() {
-      var h = S.cajaHecho, z = $('cjHecho');
-      if (!h || h.local !== S.cajaLocal || h.prueba !== prueba) { z.innerHTML = ''; return; }
-      var dv = desvioDe(h.desvio, h.tol);
-      z.innerHTML = '<div class="pos-hecho' + (h.prueba ? ' prueba' : '') + '">' + icono('ok') + '<span>Cierre ' + esc(refCierre(h)) + (h.tarde ? ' del ' + esc(diaCaja(h.dia)) : '') +
-        ' guardado · ' + esc(h.sin ? 'sin contar' : dv.corto) + ' · quedan ' + plata(h.queda) + '</span><button type="button" id="cjVerHecho">Ver</button></div>';
-      $('cjVerHecho').onclick = function () { abrirCierre(h.id, function () { S.cajaHecho = null; if (S.vista === 'cierre') verCierre(); }); };
     }
     /* SQL 175: la base manda el efectivo desde que se abre el cierre. Sin el 175, recién al contar (como antes). */
     function aLaVista() { return !!K.d && K.d.ventas.efectivo != null; }
@@ -5304,6 +5346,8 @@
       llamar('pos_caja_contar', { p_local: S.cajaLocal, p_prueba: prueba, p_contado: aPesos(cont), p_saldo_inicial: saldo === null ? null : aPesos(saldo) }).then(function (k) {
         b.disabled = false;
         if (!$('cjRes')) return;
+        /* Mientras tenían la pantalla abierta la cerró otra compu (o esta, en otra pestaña): el cartel, no un cierre vacío. */
+        if (yaCerrada(k)) { $('cjContado').value = ''; avisar('info', 'Esta caja ya se cerró hoy: no hace falta cerrarla de nuevo.'); cargar(); return; }
         K.k = k;
         K.d.conteos = k.conteos;
         pintarPasos();
@@ -5337,10 +5381,14 @@
       }
       llamar('pos_caja_cerrar', { p: pc }).then(function (x) {
         S.guardando = false;
-        S.cajaHecho = { id: x.id, numero: x.numero, prueba: !!x.prueba, desvio: cent(x.desvio), queda: cent(x.queda), local: S.cajaLocal, tol: cent(k.tolerancia),
-                        dia: x.dia, tarde: tarde, sin: !!x.sin_contar };
-        avisar('ok', 'Caja cerrada: cierre ' + refCierre(x) + (tarde ? ' del ' + diaCaja(x.dia) : '') + '.');
-        if (S.vista === 'cierre') verCierre();
+        /* Mauricio (5/11), como BlueSoft: el cartel de que se guardó y a la lista de los cierres, con el nuevo marcado. Ya no
+           se queda en el cierre (antes, al guardar, la pantalla seguía ahí y se podía cerrar otra vez). */
+        var h = { id: x.id, numero: x.numero, prueba: !!x.prueba, desvio: cent(x.desvio), queda: cent(x.queda), tol: cent(k.tolerancia),
+                  dia: x.dia || d.dia, tarde: tarde, sin: !!x.sin_contar, local: S.cajaLocal, cuando: new Date(),
+                  falta: tarde ? (d.dias_despues || []).map(function (z) { return z === d.hoy ? 'el de hoy' : 'el del ' + diaCaja(z); }) : [] };
+        S.ciMarcar = { id: h.id, dia: String(h.dia || '').slice(0, 10) };
+        if (S.vista === 'cierre') ir('cierres');
+        cartelCerrada(h);
       }).catch(function (e) {
         S.guardando = false;
         if (b.isConnected) { b.disabled = false; b.textContent = textoCerrar(); }
@@ -5418,6 +5466,28 @@
       if (habia) avisar('info', 'Los números se trajeron de nuevo: tocá «Ver la cuenta» otra vez.');
     });
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var x = $('cjContado'); if (x) x.focus(); }, 0);
+  }
+
+  /* El cartel de la caja cerrada (Mauricio, 5/11): "tiene que aparecer un cartel indicando que se guardó el cierre … «Cerraste
+     la caja el día tal, quedó guardada»". Sale encima de la lista de los cierres, con el nuevo marcado. h: lo que devolvió
+     pos_caja_cerrar, en centavos, con el día, si era un día anterior y lo que queda abierto después. */
+  function cartelCerrada(h) {
+    var dv = desvioDe(h.desvio, h.tol), cuando = horaDe(h.cuando), de = nombreLocal(localDe(h.local));
+    var cual = h.tarde ? 'del ' + diaCaja(h.dia) + ' (hoy, a las ' + cuando + ')' : 'de hoy, ' + diaCaja(h.dia) + ', a las ' + cuando;
+    var caja = ventana('<div class="cj-listo">' +
+        '<div class="cj-ya-ico">' + icono('ok') + '</div>' +
+        '<h3 id="posVentTit">Se cerró la caja</h3>' +
+        '<p>Cerraste la caja ' + esc(cual) + ' en ' + esc(de) + '. Quedó guardada: cierre <b>' + esc(refCierre(h)) + '</b>.</p>' +
+        (h.prueba ? '<div class="pos-cartel prueba">Es un cierre de prueba: no cuenta para nada.</div>' : '') +
+        (h.sin ? '<div class="cj-dif warn"><b>Sin contar</b><span>Quedó lo que tendría que haber.</span></div>'
+               : '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b></div>') +
+        '<p class="cj-ya-queda">Quedan en la caja chica: <b>' + plata(h.queda) + '</b><small>Es el saldo inicial del próximo cierre.</small></p>' +
+        /* Un día anterior: lo que todavía queda abierto se cierra después, con «Nuevo cierre de caja». */
+        (h.falta.length ? '<p class="cj-ya-sig">Falta cerrar ' + esc(h.falta.join(', ')) + ': tocá «Nuevo cierre de caja».</p>' : '') +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="cjListoVer">Ver el cierre</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>' +
+      '</div>');
+    caja.querySelector('#cjListoVer').onclick = function () { abrirCierre(h.id, function () { if (S.actualizar && S.vista === 'cierres') S.actualizar(); }); };
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -6031,16 +6101,33 @@
   /* ════════════════════════════════════════════════════════════════════
      GESTIÓN → CIERRES DE CAJA (el listado de BlueSoft) Y MOVIMIENTOS
      ════════════════════════════════════════════════════════════════════ */
+  /* En el mostrador (Mauricio, 5/11): "cuando seleccionás «Cierres de caja» te tiene que llevar a la lista de todos los
+     cierres, como si fuera un ticket. Elegís «Nuevo cierre de caja» y se te abre la ventana con los datos para cerrar."
+     Es la misma lista que la de Gestión, arrancando en el local de la compu; al cerrar, se vuelve acá con el nuevo marcado. */
   function verCierres() {
-    var c = $('cuerpo');
-    c.innerHTML = cabeza('Cierres de caja', 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierre de caja.',
-        '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar una caja</a>') +
+    var c = $('cuerpo'), pos = MODO === 'mostrador', prueba = enPrueba(), marcar = S.ciMarcar;
+    /* El local: el del cierre que se acaba de hacer (o el que eligieron en el cierre); si no, el de la compu. En Gestión, todas. */
+    var lid = pos ? (localMio(S.cajaLocal) || localListado() || {}).id || '' : '';
+    if (pos && lid) S.cajaLocal = lid;
+    c.innerHTML = cabeza('Cierres de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), pos
+        ? 'Los cierres de la caja chica. Para cerrar la de hoy, «Nuevo cierre de caja».'
+        : 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierres de caja.',
+        pos ? '<button type="button" class="btn btn-pri btn-chico" id="ciNuevo">Nuevo cierre de caja</button>'
+            : '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar una caja</a>') +
       '<div class="pos-filtros"><div id="ciPer"></div>' +
-        campo('', 'Sucursal', '<select id="ciLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
+        campo('', 'Sucursal', '<select id="ciLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(lid) + '</select>') +
+        campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="ciLista"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
-    ['ciLocal', 'ciPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    /* El cierre recién hecho tiene que verse: si el período guardado no llega a su día, va su mes. */
+    if (marcar && marcar.dia && puede('dias')) {
+      var r0 = per.rango();
+      if (marcar.dia < r0.desde || marcar.dia > r0.hasta) per.poner({ desde: marcar.dia.slice(0, 8) + '01', hasta: hoyAR() }, false);
+    }
+    $('ciPrueba').onchange = cargar;
+    /* La sucursal elegida es también la del «Nuevo cierre de caja». */
+    $('ciLocal').onchange = function () { if (pos && this.value) S.cajaLocal = this.value; cargar(); };
+    if (pos) $('ciNuevo').onclick = function () { if ($('ciLocal').value) S.cajaLocal = $('ciLocal').value; ir('cierre'); };
     var pedido = 0;
     function cargar() {
       var r = per.rango(), n = ++pedido;
@@ -6048,7 +6135,12 @@
       llamar('pos_cierres', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('ciLocal').value || null, p_prueba: $('ciPrueba').value === '1' }).then(function (d) {
         if (n !== pedido || !$('ciLista')) return;
         pintarCierres(d);
-      }).catch(function (e) { if ($('ciLista')) $('ciLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+      }).catch(function (e) { if ($('ciLista')) $('ciLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin249(e)) + '</div>'; });
+    }
+    /* Sin el SQL 249 la lista es sólo de quien tiene la Gestión: el cierre se hace igual. */
+    function sin249(e) {
+      var m = mensajeDe(e);
+      return pos && /Esto es de la oficina/.test(m) ? 'La lista de los cierres todavía es sólo de la oficina (falta el SQL 249). La caja se cierra igual, con «Nuevo cierre de caja».' : m;
     }
     function pintarCierres(d) {
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
@@ -6075,7 +6167,7 @@
           /* SQL 247: el cierre de un día que quedó abierto dice de qué día es (la fecha es cuando se cerró). */
           var cuando = cierreTarde(f) ? '<small title="' + esc('El ' + diaCaja(f.dia) + ' quedó abierto y se cerró el ' + fechaHora(f.fecha)) + '">Del ' + esc(diaCaja(f.dia).split(' ')[1]) +
                                           ', cerró ' + esc(fechaHora(f.fecha)) + '</small>' : '<small>' + esc(fechaHora(f.fecha)) + '</small>';
-          return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '') + '">' +
+          return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba ' : '') + (marcar && f.id === marcar.id ? 'recien' : '') + '">' +
             '<td><b>' + esc(refCierre(f)) + '</b>' + cuando + '</td>' +
             '<td>' + esc(bonito(f.local)) + '<small>' + esc(f.responsable_nombre || '—') + '</small></td>' +
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
@@ -6091,6 +6183,9 @@
         tr.onclick = function () { abrirCierre(tr.getAttribute('data-cierre'), cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
+      /* El cierre recién hecho se marca una vez (la primera lista que lo trae). */
+      var m = $('ciLista').querySelector('tr.recien');
+      if (m) { if (m.scrollIntoView) m.scrollIntoView({ block: 'nearest' }); marcar = S.ciMarcar = null; }
     }
     cargar();
     actualizable(cargar);

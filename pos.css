@@ -656,6 +656,25 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
   .lleno .cj-res > .cj-r.barra { flex: none; max-height: none; }
   .lleno .cj-res-pie { padding-top: 6px; }
 }
+/* La caja de hoy ya está cerrada (5/11): en vez de los pasos, el cartel con el cierre, a todo el ancho (los resultados se
+   van). Y el cartel de «Se cerró la caja», encima de la lista de los cierres. */
+@media (min-width: 1000px) {
+  .cj.cj-cerrada { grid-template-columns: minmax(0, 1fr); }
+  .lleno .cj-izq > .cj-ya { flex: 1 1 auto; align-content: center; }
+}
+.cj-ya, .cj-listo { display: grid; justify-items: center; gap: 6px; text-align: center; }
+.cj-ya { padding: 28px 20px 24px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
+.cj-ya-ico { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 4px; border-radius: 50%; background: var(--ok-soft); color: var(--ok-txt); }
+.cj-ya-ico svg { width: 30px; height: 30px; }
+.cj-ya h3, .cj-listo h3 { margin: 0; font: 700 20px/1.25 var(--sans); color: var(--txt); }
+.cj-ya p, .cj-listo p { margin: 0; max-width: 46ch; font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+.cj-ya p b, .cj-listo p b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.cj-ya-queda small { display: block; font-size: 12px; color: var(--txt-3); }
+.cj-ya p.cj-ya-sig, .cj-listo p.cj-ya-sig { font-size: 13px; color: var(--txt-3); }
+.cj-ya-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+.cj-listo .cj-dif, .cj-listo .pos-cartel, .cj-listo .pos-pie { justify-self: stretch; }
+.cj-listo .cj-dif { margin: 4px 0; text-align: center; }
+.cj-listo .pos-cartel { margin: 0; }
 /* Un monitor alto (desde 1920×1080): la columna de la derecha más ancha y los números más grandes. */
 @media (min-width: 1500px) {
   .lleno .cj { grid-template-columns: minmax(0, 1fr) clamp(330px, 24vw, 440px); }
