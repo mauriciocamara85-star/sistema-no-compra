@@ -164,7 +164,7 @@ export async function leerFotoCaja(opts: {
     r.total_de_lista = true;
   }
   if (opts.tipo === "lote") sumarPosnets(r);
-  if (opts.tipo === "sistema") efectivoContado(r);
+  if (opts.tipo === "sistema") { efectivoContado(r); ventasEnCero(r); }
   r.fecha = fechaValida(r.fecha);
   // Sin motivo, null como antes (la base y la app preguntan si hay motivo).
   if (typeof r.motivo !== "string" || !r.motivo.trim()) r.motivo = null;
@@ -181,6 +181,38 @@ export function efectivoContado(r: Record<string, unknown>) {
     r.total_efectivo = null;
     r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), "TOTAL EFECTIVO en $ 0: todavía no se había contado el efectivo"];
   }
+}
+
+/** Los renglones de ventas de "Resultados del día" (la foto del sistema), con el nombre que ve el supervisor. */
+export const VENTAS_SISTEMA: Record<string, string> = {
+  ventas_tarjeta: "Tarjeta", ventas_efectivo: "Efectivo", ventas_mercado_pago: "Mercado Pago",
+  ventas_cuenta_corriente: "Cuenta Corriente", ventas_deposito_bancario: "Depósito Bancario", ventas_debito_go: "Go Cuotas",
+};
+
+/** (6/11, San Justo Shopping 2/11) Renglones de ventas que no se ven en la foto del sistema (la lista corrida, la fila
+ *  tapada por la barra): si los que se ven ya suman las Ventas Totales del Día, los otros dan $ 0. Así Mercado Pago o
+ *  Go Cuotas salen «No hace falta» en vez de pedir la foto de algo que no se vendió (Mauricio: "me gusta"). En las 57
+ *  fotos leídas con los seis renglones a la vista, la suma dio exacto el total. Lado seguro: si falta plata en lo que
+ *  no se ve, no se toca nada; y si el efectivo es uno de los que no se ven y la cuenta del efectivo (saldo inicial +
+ *  ventas en efectivo − gastos − salidas = saldo final) dice que hubo, tampoco. */
+export function ventasEnCero(r: Record<string, unknown>) {
+  const n = (k: string) => (typeof r[k] === "number" && Number.isFinite(r[k]) ? r[k] as number : null);
+  const total = n("ventas_totales");
+  const claves = Object.keys(VENTAS_SISTEMA);
+  const faltan = claves.filter((k) => n(k) == null);
+  if (total == null || !faltan.length) return;
+  const suma = claves.reduce((s, k) => s + (n(k) ?? 0), 0);
+  if (Math.abs(total - suma) >= 0.01) return;
+  if (faltan.includes("ventas_efectivo")) {
+    const [ini, fin, g, og, sal] = ["saldo_inicial", "saldo_final_efectivo", "gastos_efectivo", "otros_gastos", "otras_salidas"].map(n);
+    if (ini != null && fin != null && g != null && og != null && sal != null && Math.abs(fin - ini + g + og + sal) >= 0.01) return;
+  }
+  for (const k of faltan) r[k] = 0;
+  r.ventas_en_cero = faltan;
+  const nombres = faltan.map((k) => VENTAS_SISTEMA[k]);
+  const lista = nombres.length > 1 ? `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}` : nombres[0];
+  r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []),
+    `${lista} en $ 0: no ${nombres.length > 1 ? "se ven" : "se ve"}, pero lo que se ve ya suma las Ventas Totales del Día`];
 }
 
 /** (4/11) El lote con dos o más posnet en la foto: el total es la suma de los de cada uno (la cuenta la hace el

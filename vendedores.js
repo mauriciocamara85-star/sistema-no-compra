@@ -3587,7 +3587,9 @@ function volverAlDiaCaja(id) {
 var INSTRUCTIVO_CAJA = {
   sistema: { titulo: 'Foto del cierre del sistema', bajada: 'La pantalla «Cierre de caja» de la compu.',
     pasos: ['En la compu, poné el cierre a <b>pantalla completa</b>.',
-            'Que entre <b>toda la pantalla</b> en la foto, de borde a borde.',
+            /* (6/11, San Justo Shopping 2/11) La lista de ventas corrida dejó afuera Efectivo y Mercado Pago, y la caja
+               pedía la foto de Mercado Pago de un día sin ventas así. En dos renglones: a 360x640 entran los 3 pasos. */
+            'Que entre <b>toda la pantalla</b>, con <b>todas las ventas</b> a la vista.',
             'De frente y sin reflejos: que se lea el <b>TOTAL EFECTIVO</b>.'] },
   lote: { titulo: 'Foto del cierre de lote', bajada: 'El ticket del cierre o la pantalla del posnet.',
     pasos: ['El <b>cierre de lote</b>, en el ticket o en la pantalla: el cupón de una venta no sirve.',

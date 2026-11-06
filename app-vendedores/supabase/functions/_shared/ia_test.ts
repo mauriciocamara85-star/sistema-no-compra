@@ -285,6 +285,7 @@ Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con
 
 import {
   aNumero, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets, ventasDeLaLista,
+  ventasEnCero,
 } from "./caja_ia.ts";
 
 /** Las propiedades con anyOf o con una lista de tipos, en todo el esquema (la API acepta hasta 16). */
@@ -359,6 +360,55 @@ Deno.test("caja: el efectivo contado sale del TOTAL EFECTIVO de la foto del sist
   igual(cero.total_efectivo, null, "en $ 0 todavía no se contó");
   igual((cero.dudas as string[]).length, 1, "y queda en dudas");
   igual(leido({ total_efectivo: 0, sobrante_faltante: 0, saldo_final_efectivo: 0 }).total_efectivo, 0, "sin efectivo de verdad: 0");
+});
+
+Deno.test("caja: lo que no se ve de las ventas da $ 0 si lo que se ve ya suma el total (6/11, San Justo Shopping)", async () => {
+  const cero = (r: Record<string, unknown>) => (ventasEnCero(r), r);
+  // San Justo Shopping 2/11: la lista corrida, sin Efectivo ni Mercado Pago a la vista (la lectura real).
+  const sjs = {
+    saldo_inicial: 271650, ventas_tarjeta: 153000, ventas_efectivo: null, ventas_mercado_pago: null, ventas_cuenta_corriente: 0,
+    ventas_deposito_bancario: 0, ventas_debito_go: 0, ventas_totales: 153000, gastos_efectivo: 0, otros_gastos: 0,
+    otras_salidas: 250000, descuentos: 54000, saldo_final_efectivo: 21650, total_efectivo: 21650, sobrante_faltante: 0,
+    dudas: ["Ventas Efectivo y Ventas Mercado Pago no se ven: la lista de ventas está desplazada"],
+  };
+  const a = cero({ ...sjs, dudas: [...sjs.dudas] });
+  igual([a.ventas_efectivo, a.ventas_mercado_pago, a.ventas_en_cero], [0, 0, ["ventas_efectivo", "ventas_mercado_pago"]], "SJS 2/11: los dos en $ 0");
+  igual((a.dudas as string[])[1], "Efectivo y Mercado Pago en $ 0: no se ven, pero lo que se ve ya suma las Ventas Totales del Día", "y se explica");
+  // San Justo Shopping 1/11: Go Cuotas tapado por la barra.
+  const b = cero({ ventas_tarjeta: 1051300, ventas_efectivo: 419000, ventas_mercado_pago: 0, ventas_cuenta_corriente: 0,
+    ventas_deposito_bancario: 0, ventas_debito_go: null, ventas_totales: 1470300, dudas: [] });
+  igual([b.ventas_debito_go, (b.dudas as string[])[0]], [0, "Go Cuotas en $ 0: no se ve, pero lo que se ve ya suma las Ventas Totales del Día"], "uno solo");
+  // Falta plata en lo que no se ve (la otra foto del 2/11, sin Tarjeta): no se toca.
+  const c = cero({ ...sjs, ventas_tarjeta: null, ventas_debito_go: null, ventas_efectivo: 0, ventas_mercado_pago: 0, dudas: [] });
+  igual([c.ventas_tarjeta, c.ventas_debito_go, c.ventas_en_cero, (c.dudas as string[]).length], [null, null, undefined, 0], "faltan $ 153.000: nada");
+  // Mercado Pago sin ver y con plata: la suma no llega al total.
+  const d = cero({ ...sjs, ventas_efectivo: 165000, ventas_mercado_pago: null, ventas_totales: 338000, dudas: [] });
+  igual(d.ventas_mercado_pago, null, "MP con $ 20.000 sin ver: nada");
+  // El efectivo sin ver, la suma da, pero la cuenta del efectivo dice que hubo $ 20.000 (no cierra): nada.
+  const e = cero({ ...sjs, saldo_final_efectivo: 41650, dudas: [] });
+  igual([e.ventas_efectivo, e.ventas_mercado_pago], [null, null], "la cuenta del efectivo no da 0: nada");
+  // El efectivo sin ver y la cuenta del efectivo incompleta: alcanza con la suma.
+  const f = cero({ ...sjs, otras_salidas: null, dudas: [] });
+  igual(f.ventas_efectivo, 0, "sin la cuenta del efectivo, vale la suma");
+  // Sin el total, o con todo a la vista: nada.
+  igual(cero({ ...sjs, ventas_totales: null, dudas: [] }).ventas_mercado_pago, null, "sin el total");
+  const g = cero({ ventas_tarjeta: 1, ventas_efectivo: 2, ventas_mercado_pago: 3, ventas_cuenta_corriente: 0, ventas_deposito_bancario: 0,
+    ventas_debito_go: 0, ventas_totales: 6, dudas: [] });
+  igual([g.ventas_en_cero, (g.dudas as string[]).length], [undefined, 0], "todo a la vista");
+  // Por leerFotoCaja (los montos llegan como texto) y sólo en la del sistema.
+  const respuesta = (lectura: Record<string, unknown>) => (async () =>
+    new Response(JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(lectura) }] }),
+      { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+  const leida = await leerFotoCaja({
+    tipo: "sistema", fecha: "2026-11-02", local: "San Justo Shopping", foto: { media_type: "image/jpeg", data: "eA==" }, modelo: "m", apiKey: "k",
+    pedir: respuesta({ ...sjs, foto_valida: true, motivo: "", fecha: "2026-11-02", lista_cortada: true, ventas_tarjeta: "$ 153.000,00", ventas_totales: "153.000,00" }),
+  });
+  igual([leida.ventas_mercado_pago, leida.ventas_efectivo, leida.total_efectivo, leida.fecha], [0, 0, 21650, "2026-11-02"], "de punta a punta");
+  const lote = await leerFotoCaja({
+    tipo: "lote", fecha: "2026-11-02", local: "San Justo Shopping", foto: { media_type: "image/jpeg", data: "eA==" }, modelo: "m", apiKey: "k",
+    pedir: respuesta({ foto_valida: true, motivo: "", fecha: "2026-11-02", total: 153000, posnets: [], lista_cortada: false, dudas: [] }),
+  });
+  igual(lote.ventas_en_cero, undefined, "el lote no");
 });
 
 Deno.test("caja: dos posnet en la foto del lote se suman en el código, no en la IA (4/11, Parque Brown)", async () => {
