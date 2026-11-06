@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v384';
+const CACHE = 'no-compra-v385';
 
 const BASICOS = [
   './',
@@ -35,6 +35,8 @@ const BASICOS = [
   /* El POS (20/10/2026), en construcción: por ahora lo usa sólo Administración. */
   './pos.html',
   './gestion.html',
+  /* La Fábrica (6/11/2026): los remitos a los locales y sus diferencias. */
+  './fabrica.html',
   './pos.js',
   './pos.css',
   './estilos.css',

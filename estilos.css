@@ -1399,7 +1399,9 @@ html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="vendedor
 /* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, a quien le prendió
    «Entra a Gestión» (data-nc-gestion, SQL 229). SQL 236: Administración también, sólo con el POS prendido. */
 html:not([data-nc-pos]) .rail-item[href="pos.html"],
-html:not([data-nc-gestion]) .rail-item[href="gestion.html"] { display: none; }
+html:not([data-nc-gestion]) .rail-item[href="gestion.html"],
+/* 6/11: la Fábrica, por ahora sólo Administración con la Gestión (data-nc-fabrica, persona.js). */
+html:not([data-nc-fabrica]) .rail-item[href="fabrica.html"] { display: none; }
 /* "Venta fallida" desde el POS abre la Carga con ?volver=pos: arriba, el camino de vuelta (interfaz.js). */
 .volver-pos {
   display: flex; width: fit-content; justify-self: start; align-items: center; gap: 6px; margin: 0 0 12px; padding: 7px 14px 7px 10px;
@@ -1782,6 +1784,10 @@ html[data-nc-inicio] body > :not(.inicio):not(.ncp-velo) { visibility: hidden; }
   .rail-in { gap: 2px; }
   .rail-item { padding-top: 3px; padding-bottom: 3px; }
   .rail-icono { height: 28px; }
+  /* 6/11: con la Fábrica, Administración tiene 14 botones y en la Carga a 657 de alto «Config.» quedaba tapado por la
+     ficha del local (466 px de 466 antes; 502 de 481 con la Fábrica). Sólo a quien la ve, cada renglón 4 px más bajo. */
+  html[data-nc-fabrica] .rail-item { padding-top: 2px; padding-bottom: 2px; }
+  html[data-nc-fabrica] .rail-icono { height: 26px; }
 }
 /* ── Las secciones con su propia barra, sin la negra (31/10/2026) ─────────
    Gestión, Supervisión y el CRM, como el POS: a pantalla completa, sólo con el

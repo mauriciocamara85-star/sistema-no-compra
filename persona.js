@@ -36,18 +36,19 @@ var persona = (function () {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
     /* El POS (pos.html): quien tenga «Usa el POS» en Config → Usuarios (SQL 190; ver usaPos). Su Gestión (gestion.html),
-       quien tenga además «Entra a Gestión» (SQL 229; ver usaGestion). */
-    vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html', 'gestion.html'],
+       quien tenga además «Entra a Gestión» (SQL 229; ver usaGestion). La Fábrica (fabrica.html, 6/11): por ahora,
+       sólo Administración con la Gestión (ver usaFabrica). */
+    vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html', 'gestion.html', 'fabrica.html'],
     /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
        "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
        oficina (la base sólo los abre a Administración, Atención y Gerencia), como para el
        encargado. */
-    supervisor: ['panel.html', 'club-numeros.html', 'pos.html', 'gestion.html'],
-    atencion: ['impecable-admin.html', 'pos.html', 'gestion.html'],
+    supervisor: ['panel.html', 'club-numeros.html', 'pos.html', 'gestion.html', 'fabrica.html'],
+    atencion: ['impecable-admin.html', 'pos.html', 'gestion.html', 'fabrica.html'],
     /* SQL 236. Mauricio (3/11): el POS y la Gestión, "sólo los administradores: Anto, Daky y yo". El administrador
        también los abre sólo si tiene «Usa el POS y la Gestión» en Config → Usuarios (usaPos). */
-    admin: ['pos.html', 'gestion.html'],
-    gerencia: ['pos.html', 'gestion.html']
+    admin: ['pos.html', 'gestion.html', 'fabrica.html'],
+    gerencia: ['pos.html', 'gestion.html', 'fabrica.html']
   };
 
   function leerLS(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
@@ -155,6 +156,9 @@ var persona = (function () {
     /* SQL 229: con «Entra a Gestión», tampoco la Gestión. */
     if (usaGestion()) document.documentElement.setAttribute('data-nc-gestion', '');
     else document.documentElement.removeAttribute('data-nc-gestion');
+    /* 6/11: la Fábrica, por ahora sólo Administración con la Gestión. */
+    if (usaFabrica()) document.documentElement.setAttribute('data-nc-fabrica', '');
+    else document.documentElement.removeAttribute('data-nc-fabrica');
     /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
        vendedor: sin CRM, Socios, Config ni Supervisión). Al entrar alguien, manda su rol. Es sólo la
        barra: cada pantalla de la oficina sigue con su portón. */
@@ -175,6 +179,9 @@ var persona = (function () {
   function usaPos() { return vigente(_yo) && _yo.pos === true; }
   /* SQL 229: la oficina le prendió la Gestión del POS (nc_yo trae 'gestion'; pide también el POS). */
   function usaGestion() { return vigente(_yo) && _yo.gestion === true; }
+  /* 6/11/2026: la Fábrica (los remitos de la fábrica a los locales y sus diferencias), por ahora sólo Administración con
+     la Gestión. Cuando entre la gente de la fábrica (Lucas), una casilla propia en Config → Usuarios (con SQL). */
+  function usaFabrica() { return usaGestion() && _yo.rol === 'admin'; }
   /* SQL 230 (2/11, de prueba): su local tiene el fichero de prueba (Rivadavia): «Fichero» con su usuario, en
      cualquier compu (nc_yo trae 'fichero'). */
   function fichaPrueba() { return vigente(_yo) && _yo.fichero === true; }
@@ -182,9 +189,10 @@ var persona = (function () {
     var r = rol(), p = pag || pagina();
     if (p === 'pos.html' && usaPos()) return true;
     if (p === 'gestion.html' && usaGestion()) return true;
+    if (p === 'fabrica.html' && usaFabrica()) return true;
     /* SQL 236: mientras la base no contestó quién es (recién entró, o la compu tiene guardado a otro), el POS y la
        Gestión no se tapan: pos.js espera esa respuesta y tiene su propio portón. */
-    if ((p === 'pos.html' || p === 'gestion.html') && _yo && _yo.provisorio) return true;
+    if ((p === 'pos.html' || p === 'gestion.html' || p === 'fabrica.html') && _yo && _yo.provisorio) return true;
     return !r || NO_VE[r].indexOf(p) < 0 || (conAtencion() && NO_VE.atencion.indexOf(p) < 0);
   }
   /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
@@ -553,7 +561,7 @@ var persona = (function () {
      EL AVISO DE LAS DIFERENCIAS DE LOS REMITOS (SQL 167, 24/10/2026)
      Mauricio: "el mismo sistema tendría que avisar. Cuando abra el
      sistema, le tendría que aparecer un mensaje". A Administración (la que
-     las resuelve, por ahora): en "Gestión" de la barra, cuántas faltan
+     las resuelve, por ahora): en "Fábrica" de la barra (hasta el 6/11, "Gestión"), cuántas faltan
      resolver; y si llegó alguna desde la última vez que las vio, un cartel
      abajo con lo que pasó, "Ver las diferencias" y la ×. El mail queda para
      cuando haya una dirección. Nunca frena nada: sin el SQL 167 o sin
@@ -563,9 +571,9 @@ var persona = (function () {
   var K_DIF_VISTO = 'nc_dif_visto';   // la última diferencia que ya vio (su número): el cartel sale por las que vengan después
   var _dif = null;
 
-  function enDiferencias() { return pagina() === 'gestion.html' && /^#\/?diferencias$/.test(location.hash); }
+  function enDiferencias() { return pagina() === 'fabrica.html' && /^#\/?diferencias$/.test(location.hash); }
   function difVisto() { try { return Number(localStorage.getItem(K_DIF_VISTO)) || 0; } catch (e) { return 0; } }
-  /** Ya las vio (abrió Gestión → Diferencias, tocó "Ver" o la ×): el cartel se va y no vuelve por éstas. */
+  /** Ya las vio (abrió Fábrica → Diferencias, tocó "Ver" o la ×): el cartel se va y no vuelve por éstas. */
   function difVistas() {
     var c = document.getElementById('ncpDif');
     if (c) c.remove();
@@ -573,8 +581,8 @@ var persona = (function () {
   }
 
   function avisoDiferencias() {
-    if (rol() !== 'admin' || !usaGestion() || !document.querySelector('.rail')) {
-      /* Si entró otro que no es de Administración (o no tiene la Gestión, SQL 236), lo del anterior se va. */
+    if (!usaFabrica() || !document.querySelector('.rail')) {
+      /* Si entró otro que no es de Administración (o no tiene la Gestión, SQL 236: no ve la Fábrica), lo del anterior se va. */
       _dif = null;
       pintarCuentaDif();
       var c = document.getElementById('ncpDif');
@@ -589,10 +597,10 @@ var persona = (function () {
     }).catch(function () { return null; });
   }
 
-  /* El número, en la esquina del ícono de "Gestión" (en la barra parada y en la de abajo del celular). */
+  /* El número, en la esquina del ícono de "Fábrica" (en la barra parada y en la de abajo del celular; hasta el 6/11, en "Gestión"). */
   function pintarCuentaDif() {
     var n = _dif ? _dif.pendientes : 0;
-    document.querySelectorAll('.rail-item[href="gestion.html"] .rail-icono').forEach(function (ic) {
+    document.querySelectorAll('.rail-item[href="fabrica.html"] .rail-icono').forEach(function (ic) {
       var b = ic.querySelector('.rail-cuenta');
       if (!n) { if (b) b.remove(); return; }
       if (!b) { b = document.createElement('span'); b.className = 'rail-cuenta'; ic.appendChild(b); }
@@ -630,7 +638,7 @@ var persona = (function () {
       }).join('') + '</ul>' +
       (nuevos.length > 3 ? '<p>Y ' + (nuevos.length - 3) + ' más.</p>' : '') +
       '<div class="ncp-dif-pie"><span>' + _dif.pendientes + (_dif.pendientes === 1 ? ' sin resolver' : ' sin resolver en total') + '</span>' +
-        '<a class="btn btn-pri btn-chico" href="gestion.html#diferencias">Ver las diferencias</a></div>';
+        '<a class="btn btn-pri btn-chico" href="fabrica.html#diferencias">Ver las diferencias</a></div>';
     d.querySelector('.ncp-dif-x').onclick = difVistas;
     d.querySelector('a').addEventListener('click', difVistas);
     document.body.appendChild(d);

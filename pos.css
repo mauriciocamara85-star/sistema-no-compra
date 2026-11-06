@@ -79,7 +79,8 @@
   [data-pos="mostrador"] .menu-chico .pos-menu-cab .plegar-panel { width: 0; opacity: 0; pointer-events: none; transition: opacity .1s, width .24s var(--curva-menu); }
   [data-pos="mostrador"] .pos-menu-cab .plegar-panel svg { transition: transform .24s var(--curva-menu); }
   [data-pos="mostrador"] .menu-chico .pos-menu-cab .plegar-panel svg { transform: scale(0); }
-  [data-pos="gestion"] .menu-chico .pos-menu-cab > span { flex-grow: 0; }
+  [data-pos="gestion"] .menu-chico .pos-menu-cab > span,
+  [data-pos="fabrica"] .menu-chico .pos-menu-cab > span { flex-grow: 0; }
 }
 /* En el celular el menú es una tira que se desliza. */
 @media (max-width: 999px) {
@@ -969,7 +970,7 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 
 /* ═════════ LAS DIFERENCIAS DE LOS REMITOS (SQL 167) ═════════
    La planilla de errores: se arma sola al recibir con diferencias, y en
-   Gestión → Diferencias se resuelve. El número del menú, como el de la
+   Fábrica → Diferencias se resuelve. El número del menú, como el de la
    barra (estilos.css, .rail-cuenta). */
 .pos-cuenta {
   margin-left: auto; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;

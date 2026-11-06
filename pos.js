@@ -24,6 +24,10 @@
    · pos.html, el mostrador: a pantalla completa, sin la barra negra.
    · gestion.html, la parte de atrás (artículos, stock, caja, clientes y
      configuración), adentro del sistema, con los grupos que se despliegan.
+   · fabrica.html (6/11, Mauricio: "una sección nueva que diga Fábrica… de
+     ahí le voy agregando todas las cosas que tiene la fábrica"): los remitos
+     que la fábrica les manda a los locales y sus diferencias. Como Gestión,
+     es de la oficina (todas las sucursales); por ahora, sólo Administración.
    Y el SQL 147: la letra X (el comprobante interno de BlueSoft, sólo con
    efectivo) y el modo prueba (numera aparte y no cuenta para nada).
    El SQL 149 (21/10, "dalee"): el cierre de caja de BlueSoft en el
@@ -35,12 +39,12 @@
    y si sale menos no se guarda (no se devuelve plata).
    El SQL 160 (22/10, "primero arranquemos con esto, con lo básico"): el
    stock de cada local y los remitos. La venta y el cambio lo mueven solos;
-   la fábrica (por ahora, la oficina desde Gestión) carga el remito y el
+   la fábrica (desde el 6/11, en Fábrica → Remitos) carga el remito y el
    local lo cuenta a ciegas, producto por producto: recién ahí entra a su
    stock. La primera carga sale del Excel de "Consulta de stock" de BlueSoft.
    El SQL 167 (24/10, "si no da, tenemos una planilla de error donde
    anotamos"): las diferencias de los remitos se anotan solas, con quién lo
-   recibió y qué pasó; en Gestión → Diferencias se ven con sus estadísticas
+   recibió y qué pasó; en Fábrica → Diferencias se ven con sus estadísticas
    y se resuelven (mandar lo que faltó, que devuelvan lo que sobró…), y el
    sistema avisa al abrirlo (persona.js).
    El SQL 171 (24/10, "el tráfico son las ventas que vendimos más las ventas
@@ -78,21 +82,24 @@
   var app = document.getElementById('app');
   function $(id) { return document.getElementById(id); }
 
-  /* pos.html (el mostrador) o gestion.html (la parte de atrás): lo dice el <body>. */
-  var MODO = document.body.getAttribute('data-pos') === 'gestion' ? 'gestion' : 'mostrador';
-  var PAGINA = { mostrador: 'pos.html', gestion: 'gestion.html' };
+  /* pos.html (el mostrador), gestion.html (la parte de atrás) o fabrica.html (la fábrica, 6/11): lo dice el <body>. */
+  var MODO = { gestion: 'gestion', fabrica: 'fabrica' }[document.body.getAttribute('data-pos')] || 'mostrador';
+  var PAGINA = { mostrador: 'pos.html', gestion: 'gestion.html', fabrica: 'fabrica.html' };
+  /* Gestión y Fábrica son de la oficina: todas las sucursales, el remito entero, anular. El mostrador, el de un local. */
+  var OFICINA = MODO !== 'mostrador';
+  var NOMBRE = { mostrador: 'POS', gestion: 'Gestión', fabrica: 'Fábrica' }[MODO];
 
   /* El menú (5/11): achicado salvo que lo dejen abierto con el botón de arriba; al pasar el mouse se abre por encima.
      Antes (nc_panel_pos / nc_panel_gestion) arrancaba abierto: la clave es otra para que arranque achicado en todas. */
-  var K_FIJO = MODO === 'gestion' ? 'nc_menu_gestion_fijo' : 'nc_menu_pos_fijo';   // '1': lo dejaron abierto (menos en la venta)
+  var K_FIJO = { gestion: 'nc_menu_gestion_fijo', fabrica: 'nc_menu_fabrica_fijo' }[MODO] || 'nc_menu_pos_fijo';   // '1': lo dejaron abierto (menos en la venta)
   var K_MENU_VENTA = 'nc_panel_pos_venta'; // en la venta arranca achicado: necesita el ancho, como el ticket de BlueSoft
-  /* Los grupos que se abrieron o se cerraron a mano: cada pantalla los suyos (las dos tienen un grupo «Caja»). */
-  var K_GRUPOS = MODO === 'gestion' ? 'nc_gestion_grupos' : 'nc_pos_grupos';
+  /* Los grupos que se abrieron o se cerraron a mano: cada pantalla los suyos (el mostrador y Gestión tienen un grupo «Caja»). */
+  var K_GRUPOS = { gestion: 'nc_gestion_grupos', fabrica: 'nc_fabrica_grupos' }[MODO] || 'nc_pos_grupos';
   var K_RECUERDO = 'pos_recuerdo';         // la sucursal y el vendedor de cada una
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
   var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
   var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
-  var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Gestión)
+  var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Fábrica)
   var K_DEVOL = 'pos_borrador_devolucion'; // la devolución a fábrica a medio cargar (el mostrador, SQL 189)
   var K_ENVIO = 'pos_borrador_envio';      // el envío interno a medio cargar (el mostrador)
   var K_SG = 'pos_borrador_sg';            // SQL 222: cada módulo del stock general a medio cargar (+ :local:módulo)
@@ -129,8 +136,8 @@
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      ['Stock', [['stock', 'Stock', 'stock'], ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'],
-                 ['inventario', 'Inventario', 'inventario']]],
+      /* Los remitos de la fábrica y sus diferencias se mudaron a Fábrica (6/11): acá queda lo de los locales. */
+      ['Stock', [['stock', 'Stock', 'stock'], ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
       /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
@@ -138,13 +145,23 @@
       /* El registro de tiempos (SQL 206): las entradas y salidas de cada uno, como el "Registro de tiempos" de BlueSoft (la huella viene después). */
       ['Personal', [['tiempos', 'Registro de tiempos', 'reloj']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
+    ],
+    /* La fábrica (Mauricio, 6/11: "la parte de remitos que tenemos para crear remitos y que nos llegue acá tiene que estar
+       dentro de la fábrica, no en gestión"): lo que sale del depósito de la fábrica a los locales y lo que llegó mal.
+       Después, el depósito de la fábrica con su stock, los clientes, los transportes y la producción. */
+    fabrica: [
+      ['Depósito', [['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif']]]
     ]
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general', cierre: 'cierres' },
-                 gestion: { remito_nuevo: 'remitos', general_modulo: 'general' } };
-  var INICIO = { mostrador: 'venta', gestion: 'listas' };
+                 gestion: { general_modulo: 'general' },
+                 fabrica: { remito_nuevo: 'remitos' } };
+  var INICIO = { mostrador: 'venta', gestion: 'listas', fabrica: 'remitos' };
+  /* Una dirección que es de otra pantalla (gestion.html#remitos, de antes del 6/11): adónde se busca primero. La oficina,
+     en la otra de la oficina (los Remitos de Gestión son los de la fábrica, no los que recibe el local). */
+  var OTRAS = { mostrador: ['gestion', 'fabrica'], gestion: ['fabrica', 'mostrador'], fabrica: ['gestion', 'mostrador'] };
   /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   /* Los cierres del mostrador son de la caja; los de Gestión, de la oficina (entra quien tiene la Gestión). */
@@ -634,8 +651,9 @@
   function arrancar() {
     var y = persona.yo();
     /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, quien tenga «Entra a Gestión» (SQL 229).
-       SQL 236: también el administrador (Mauricio, 3/11: "sólo Anto, Daky y yo"). La base lo vuelve a mirar. */
-    if (!y || (MODO === 'gestion' ? y.gestion !== true : y.pos !== true)) { pantallaPorton(y); return; }
+       SQL 236: también el administrador (Mauricio, 3/11: "sólo Anto, Daky y yo"). La base lo vuelve a mirar.
+       La Fábrica (6/11), por ahora sólo Administración con la Gestión (los remitos de la base piden lo mismo que en Gestión). */
+    if (!entra(y)) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
     llamarCorto('pos_inicio').then(function (ini) {
       /* SQL 212: lo de hoy queda en la compu (de quien entró), para poder abrir el mostrador sin internet. */
@@ -646,11 +664,16 @@
       /* Sin internet, el mostrador abre con lo de la última vez: se puede vender y las ventas se mandan solas cuando vuelve. */
       var cp = MODO === 'mostrador' && esDeRed(e) ? leerJSON(K_INI_COPIA, null) : null;
       if (cp && cp.ini && cp.id === y.id) { empezar(cp.ini, true); return; }
-      app.innerHTML = '<div class="pos-porton"><h2>' + (MODO === 'gestion' ? 'Gestión' : 'POS') + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
+      app.innerHTML = '<div class="pos-porton"><h2>' + NOMBRE + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="reintentar">Probar de nuevo</button>' +
         '<a class="btn btn-sec btn-chico pos-porton-volver" href="' + esc(volverAlSistema()) + '">‹ Volver al sistema</a></div>';
       $('reintentar').onclick = arrancar;
     });
+  }
+  function entra(y) {
+    if (!y) return false;
+    if (MODO === 'fabrica') return y.gestion === true && y.rol === 'admin';
+    return MODO === 'gestion' ? y.gestion === true : y.pos === true;
   }
   function empezar(ini, sinRed) {
     S.ini = ini;
@@ -669,20 +692,23 @@
   }
 
   function pantallaPorton(y) {
-    var titulo = MODO === 'gestion' ? 'Gestión' : 'POS';
-    app.innerHTML = '<section class="pos-porton"><h2>' + titulo + '</h2>' +
-      '<p>' + (MODO === 'gestion' ? 'La parte de atrás del POS: precios, promociones, stock y sucursales.' :
-                                    'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
+    app.innerHTML = '<section class="pos-porton"><h2>' + NOMBRE + '</h2>' +
+      '<p>' + ({ gestion: 'La parte de atrás del POS: precios, promociones, stock y sucursales.',
+                 fabrica: 'La fábrica: los remitos que les manda a los locales y lo que llegó con diferencias.' }[MODO] ||
+                'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
       '<div id="posPorton"></div>' +
       /* No hay barra (en Gestión, desde el 31/10): el camino de vuelta va acá. */
       '<a class="btn btn-sec btn-chico pos-porton-volver" href="' + esc(volverAlSistema()) + '">‹ Volver al sistema</a></section>';
     var c = $('posPorton');
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
-        (MODO === 'gestion' ? 'Todavía no tenés la Gestión: la prende la oficina en Config → Usuarios («Entra a Gestión»).' : 'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
+        ({ gestion: 'Todavía no tenés la Gestión: la prende la oficina en Config → Usuarios («Entra a Gestión»).',
+           fabrica: 'La Fábrica, por ahora, es sólo de Administración (con «Entra a Gestión» en Config → Usuarios).' }[MODO] ||
+         'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
       return;
     }
-    persona.porton(c, MODO === 'gestion' ? 'Entrá con tu usuario: la usa quien tiene la Gestión prendida.' : 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
+    persona.porton(c, { gestion: 'Entrá con tu usuario: la usa quien tiene la Gestión prendida.',
+                        fabrica: 'Entrá con tu usuario: por ahora la usa Administración.' }[MODO] || 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
   }
 
   function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
@@ -691,9 +717,9 @@
   function esDe(modo, v) { return enMenu(MENUS[modo], v) || !!DENTRO[modo][v]; }
 
   function ir(v) {
-    /* Una dirección vieja (pos.html#listas) o un enlace a la otra pantalla: se va para allá. */
-    var otro = MODO === 'gestion' ? 'mostrador' : 'gestion';
-    if (!esDe(MODO, v) && esDe(otro, v)) { location.replace(PAGINA[otro] + '#' + v); return; }
+    /* Una dirección vieja (pos.html#listas, gestion.html#remitos) o un enlace a otra pantalla: se va para allá. */
+    var otro = esDe(MODO, v) ? null : OTRAS[MODO].filter(function (m) { return esDe(m, v); })[0];
+    if (otro) { location.replace(PAGINA[otro] + '#' + v); return; }
     if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
     S.recargar = null;   // la vista que se abre pone el suyo (Tickets, el cierre): lo llama la fila al mandar ventas (SQL 212)
@@ -748,12 +774,12 @@
     return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
       (activa ? ' aria-current="page"' : '') + '>' + dentro + '</button>';
   }
-  /* Las diferencias de los remitos sin resolver (SQL 167): el número al lado de "Diferencias", en Gestión. */
+  /* Las diferencias de los remitos sin resolver (SQL 167): el número al lado de "Diferencias", en Fábrica (antes, Gestión). */
   function cuentaHtml(n) {
     return '<em class="pos-cuenta" title="' + n + (n === 1 ? ' diferencia sin resolver' : ' diferencias sin resolver') + '">' + (n > 99 ? '99+' : n) + '</em>';
   }
   function cuentaDif() {
-    if (MODO !== 'gestion') return;
+    if (MODO !== 'fabrica') return;
     llamar('pos_diferencias_aviso').then(function (a) { ponerCuentaDif(Number(a && a.pendientes) || 0); }, function () {});
   }
   function ponerCuentaDif(n) {
@@ -806,8 +832,8 @@
     var chico = menuChico(), y = persona.yo();
     var flota = chico && _flota && compuGrande();   // se tocó una sección con el menú abierto por encima: sigue abierto
     /* Los dos sin la barra del sistema (Gestión desde el 31/10): "‹ Sistema" arriba de las secciones. */
-    var cab = (MODO === 'gestion'
-      ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>'
+    var cab = (OFICINA
+      ? '<div class="pos-menu-cab"><span>' + NOMBRE + '</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>'
       : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>') +
       '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
     /* Las secciones se despliegan y se pliegan, en Gestión (20/10) y desde el 5/11 también en el mostrador (Mauricio:
@@ -819,7 +845,7 @@
         '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
         '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
     }).join('');
-    var cuerpo = MODO === 'gestion' ? grupos
+    var cuerpo = OFICINA ? grupos
       : grupos +
         /* Abajo: sin internet y las ventas sin mandar (SQL 212), el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
         '<div class="pos-menu-pie">' +
@@ -830,7 +856,7 @@
             '<span>' + esc(y ? String(y.nombre || '').split(' ')[0] : 'Entrar') + '</span></button>' +
         '</div>';
     return '<div class="pos-grid' + (flota ? ' menu-flota' : chico ? ' menu-chico' : '') + '">' +
-      '<nav class="pos-menu" id="menuPos" aria-label="Secciones ' + (MODO === 'gestion' ? 'de Gestión' : 'del POS') + '">' + cab + cuerpo + '</nav>' +
+      '<nav class="pos-menu" id="menuPos" aria-label="Secciones ' + (OFICINA ? 'de ' + NOMBRE : 'del POS') + '">' + cab + cuerpo + '</nav>' +
       '<section class="pos-cuerpo" id="cuerpo"></section></div>';
   }
 
@@ -1144,7 +1170,7 @@
   /** Dónde arranca un listado del mostrador (Tickets, Ventas fallidas): en el local de la compu; si no se sabe y puede ver
       todos, en «Todas» (null). En Gestión, en «Todas». */
   function localListado() {
-    if (puede('locales')) return MODO === 'gestion' ? null : localSabido();
+    if (puede('locales')) return OFICINA ? null : localSabido();
     return localInicial();
   }
   function vendedoresDe(localId) { return ((S.ini.vendedores || {})[localId] || []).slice(); }
@@ -3432,7 +3458,7 @@
   function verIva() {
     var c = $('cuerpo');
     /* En el mostrador arranca en su local; en Gestión, en todas (como Ventas por vendedor). */
-    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    var l = OFICINA && puede('locales') ? null : localInicial();
     c.innerHTML = cabeza('IVA Ventas', 'Las facturas A y B y las notas de crédito, con el IVA separado: lo que se le manda a la fábrica el 1.º de cada mes. Las X no van.',
         /* El «Agrupar por día» de BlueSoft: un renglón por día. */
         '<label class="pos-check iv-dia"><input type="checkbox" id="ivDia"' + (leer('pos_iva_dia') === '1' ? ' checked' : '') + '> Agrupar por día</label>' +
@@ -3598,7 +3624,7 @@
   function verVendedores() {
     var c = $('cuerpo'), prueba = enPrueba();
     /* En el mostrador arranca en su local; en Gestión, en todas. */
-    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    var l = OFICINA && puede('locales') ? null : localInicial();
     var por = leer('pos_vendedores_vista') || 'vendedor';
     if (!VV_POR.some(function (x) { return x[0] === por; })) por = 'vendedor';
     c.innerHTML = cabeza('Ventas por vendedor' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
@@ -3777,7 +3803,7 @@
     if (!volver) S.vpFiltro = null;
     var F = S.vpFiltro || {};
     /* En el mostrador arranca en su local; en Gestión, en todas (como Ventas por vendedor). */
-    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    var l = OFICINA && puede('locales') ? null : localInicial();
     var local = F.local !== undefined ? F.local : l ? l.id : '';
     c.innerHTML = cabeza('Ventas por productos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Cuánto se vendió de cada producto (las ventas cobradas, como Tickets). Tocá uno para ver sus ventas una por una.',
@@ -4141,7 +4167,7 @@
       var h = c.querySelector('.pos-cab h2');
       if (h && d.id) h.textContent = d.nombre;
       formCliente($('clFicha'), d, {
-        oficina: MODO === 'gestion',
+        oficina: OFICINA,
         alGuardar: function (x, otro) {
           avisar('ok', (d.id ? 'Listo: se guardó la ficha de ' : 'Listo: ') + x.nombre + (d.id ? '.' : ' quedó cargado (Nº ' + x.numero + ').'));
           S.cliVer = otro ? { nuevo: '' } : { id: x.id };
@@ -7996,7 +8022,7 @@
   var ST_VISTAS = [['producto', 'Por producto'], ['lista', 'Lista'], ['rubro', 'Por rubro']], ST_TANDA = 40;
 
   function verStock() {
-    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
     var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false, dep: '' };
     if (!gestion && !localDe(F.local)) F.local = l.id;
     var vista = leerJSON('pos_stock_vista', 'producto');
@@ -8330,7 +8356,7 @@
             }).join('') + '</tbody></table></div>' + (movs.length >= 200 ? '<p class="pos-mas">Se ven los últimos 200 movimientos.</p>' : '')
           : '<div class="pos-cartel">Todavía no tuvo movimientos ' + (dep ? 'en este depósito.' : 'en esta sucursal.') + '</div>') +
         '<div id="vaAjuste"></div><div class="pos-pie">' +
-          (MODO === 'gestion' ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) se hacen en Gestión → Stock.</span>') +
+          (OFICINA ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) se hacen en Gestión → Stock.</span>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       dentro.querySelectorAll('.va-deps tr[data-dep]').forEach(function (tr) {
         tr.onclick = function () { abrirVariante(localId, cod, talle, color, alCambiar, tr.getAttribute('data-dep')); };
@@ -8383,7 +8409,7 @@
      encontró (con el tilde, deja de contar para la consulta de stock).
      ════════════════════════════════════════════════════════════════════ */
   function verDepositos() {
-    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
     var F = S.dpF = S.dpF || { local: gestion && puede('locales') ? '' : l.id, q: '', activos: true };
     if (F.local && !localMio(F.local)) F.local = l.id;
     c.innerHTML = cabeza('Depósitos', 'Dónde está la mercadería de cada sucursal. Las ventas, los cambios y los remitos van al predeterminado. Tocá uno para verlo o cambiarlo.',
@@ -8549,9 +8575,9 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
-     REMITOS: el listado (el mostrador recibe; Gestión los carga y los anula)
+     REMITOS: el listado (el mostrador recibe; Fábrica los carga y los anula)
      ════════════════════════════════════════════════════════════════════ */
-  function verRemitos() { if (MODO === 'gestion') verRemitosGestion(); else verRemitosLocal(); }
+  function verRemitos() { if (OFICINA) verRemitosGestion(); else verRemitosLocal(); }
 
   function abrirRecepcion(id) {
     try { sessionStorage.setItem(K_REMITO_VER, id); } catch (e) {}
@@ -8769,7 +8795,7 @@
      lista de lo que el local devolvió, con el período y la sucursal, y
      «Nueva devolución». En la base es un remito sin destino (SQL 167): sale
      del stock al guardarlo y la oficina lo da por recibido cuando llega
-     (Gestión → Remitos, «Llegó a la fábrica»).
+     (Fábrica → Remitos, «Llegó a la fábrica»).
      ════════════════════════════════════════════════════════════════════ */
   /* Los estados de BlueSoft: "Enviado" mientras viaja; "Recibido" cuando la oficina dice que llegó. */
   var ESTADO_DEV = { pendiente: ['Enviado', ''], recibido: ['Recibido en la fábrica', 'pill-ok'], con_diferencias: ['Recibido en la fábrica', 'pill-ok'],
@@ -9138,7 +9164,7 @@
   /** Un remito entero, para verlo. En Gestión, con lo que mandaron aunque falte recibir, y para anularlo.
       op.salida: lo abrió el local que lo mandó (Envíos internos): lo ve entero, no a ciegas, y lo anula mientras nadie recibió nada. */
   function abrirRemito(id, alCambiar, op) {
-    var gestion = MODO === 'gestion', salida = !gestion && !!(op && op.salida);
+    var gestion = OFICINA, salida = !gestion && !!(op && op.salida);
     var caja = ventana('<h3 id="posVentTit">Remito</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_remito', { p_id: id, p_completo: gestion || salida }).then(function (r) {
       if (!caja.isConnected) return;
@@ -9261,7 +9287,7 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
-     DIFERENCIAS (Gestión, SQL 167): la planilla de errores de los remitos
+     DIFERENCIAS (Fábrica, SQL 167; hasta el 6/11 en Gestión): la planilla de errores de los remitos
      Mauricio (24/10): "nosotros tenemos una planilla de error donde
      anotamos… también estaría bueno que tenga estadísticas de errores,
      porque las estadísticas te sirven para mejorar… y ver qué solución nos
@@ -9847,7 +9873,7 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
-     NUEVO REMITO (Gestión): lo que manda la fábrica, o un envío entre locales
+     NUEVO REMITO (Fábrica; hasta el 6/11 en Gestión): lo que manda la fábrica, o un envío entre locales
      ════════════════════════════════════════════════════════════════════ */
   var RN = null;   // el remito que se está cargando
   /* La devolución a fábrica del mostrador (SQL 189) es este mismo remito, siempre del local a la fábrica,
@@ -10259,7 +10285,7 @@
                           ' Salen del stock ahora. Cuando llegue, la oficina la da por recibida.' :
                    '¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
                    (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') +
-                   (fab ? ' Cuando llegue, se da por recibido en Gestión → Remitos.' : ' ' + nombreLocal(ld) + ' lo recibe contándolo.')) + extra)) return;
+                   (fab ? ' Cuando llegue, se da por recibido en Fábrica → Remitos.' : ' ' + nombreLocal(ld) + ' lo recibe contándolo.')) + extra)) return;
       S.guardando = true;
       var b = $('rnGuardar');
       if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
@@ -10362,7 +10388,7 @@
   function claveSg(g) { return K_SG + ':' + g.local + ':' + (g.mod.otro ? 'otro' : g.mod.id); }
 
   function verStockGeneral() {
-    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
     var F = S.sgF = S.sgF || { local: gestion && puede('locales') ? '' : l.id };
     if (F.local && !localMio(F.local)) F.local = l.id;
     c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero al depósito de la temporada nueva y se controla con dos productos testigo. Mientras tanto se sigue vendiendo del de antes.') +   // el «Actualizar» con letras es ahora el botón común (5/11)

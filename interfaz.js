@@ -114,9 +114,9 @@
 
   /* Las secciones con su propia barra van sin la negra (Mauricio, 31/10/2026: "cada vez que entremos a una sección
      como esta, es mejor que la barra no esté, que aparezca sólo la barra de la sección, como ya tenemos hecho en el
-     POS"): el POS, Gestión, Supervisión y el CRM (<body class="sin-barra">, estilos.css). Arriba de su menú,
+     POS"): el POS, Gestión, Fábrica (6/11), Supervisión y el CRM (<body class="sin-barra">, estilos.css). Arriba de su menú,
      "‹ Sistema" vuelve a la última pantalla con la barra que se usó en esta pestaña. */
-  var SIN_BARRA = ['pos.html', 'gestion.html', 'impecable-admin.html', 'panel.html'];
+  var SIN_BARRA = ['pos.html', 'gestion.html', 'fabrica.html', 'impecable-admin.html', 'panel.html'];
   var K_VOLVER = 'nc_volver_sistema';
   function pagina(u) { return u.pathname.split('/').pop() || 'index.html'; }
   function anotarVuelta() {
