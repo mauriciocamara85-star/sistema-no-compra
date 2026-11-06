@@ -673,26 +673,82 @@
   .crm-menu .cuenta, .crm-punto { flex: none; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill);
                                   background: var(--warn-soft); color: var(--warn-txt); }
   .crm-menu .cuenta.cero, .crm-punto.cero, .crm-grupo.abierto .crm-punto { display: none; }
-  .crm-flecha { flex: none; width: 16px; height: 16px; color: var(--txt-3); transition: transform .2s var(--curva); }
+  /* La curva del menú del POS y de Supervisión (5/11/2026): pareja, arranca y termina despacio, en un cuarto de
+     segundo (la --curva del sistema hace casi todo el recorrido de entrada y en el menú se veía brusco). */
+  .crm { --curva-menu: cubic-bezier(.4, 0, .2, 1); }
+  .crm-flecha { flex: none; width: 16px; height: 16px; color: var(--txt-3); transition: transform .24s var(--curva-menu), opacity .2s var(--curva) .04s; }
   .crm-flecha svg { width: 16px; height: 16px; }
   .crm-grupo.abierto .crm-flecha { transform: rotate(180deg); }
-  .crm-sub { display: none; flex-direction: column; gap: 1px; }
-  .crm-grupo.abierto .crm-sub { display: flex; }
+  /* Los grupos (Pipelines, Automatizaciones) se despliegan y se pliegan suave (6/11/2026, como las secciones del POS):
+     el alto va de 0 a lo que miden los renglones con la misma curva; al abrirse aparecen en la segunda mitad bajando
+     4 px, y al cerrarse se desvanecen primero. Cerrados quedan invisibles: el Tab no entra. */
+  .crm-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .24s var(--curva-menu); }
+  .crm-grupo.abierto .crm-sub { grid-template-rows: 1fr; }
+  .crm-sub-in { display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow: hidden;
+                opacity: 0; visibility: hidden; transform: translateY(-4px);
+                transition: opacity .12s, transform .24s var(--curva-menu), visibility 0s .24s; }
+  .crm-grupo.abierto .crm-sub-in { opacity: 1; visibility: visible; transform: none;
+                                   transition: opacity .14s .1s, transform .24s var(--curva-menu), visibility 0s; }
+  /* Adentro del grupo el borde de afuera del foco se cortaría: va por dentro. */
+  .crm-subitem:focus-visible { outline-offset: -2px; }
   .crm-seccion, .crm-velo { display: none; }
   @media (min-width: 900px) {
     /* Los anchos del panel son los de todas las secciones (estilos.css,
        15/10/2026): abierto y achicado miden lo mismo en el CRM, en Equipo VDH
        y en el Asistente. */
-    .crm { display: grid; grid-template-columns: var(--panel-ancho) minmax(0, 1fr); gap: 18px; align-items: start; }
-    .crm-menu { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
-    /* Achicado: sólo los íconos, con el numerito encima. */
-    .crm.chico { grid-template-columns: var(--panel-chico) minmax(0, 1fr); }
-    .crm.chico .crm-menu { padding: 10px 6px; }
-    .crm.chico .crm-menu-cab { justify-content: center; padding: 2px 0 8px; }
-    .crm.chico .crm-menu-cab b, .crm.chico .crm-txt, .crm.chico .crm-marca, .crm.chico .crm-flecha, .crm.chico .crm-sub { display: none; }
-    .crm.chico .crm-item { justify-content: center; padding: 7px 0; }
-    .crm.chico .crm-item .cuenta, .crm.chico .crm-punto { position: absolute; top: 1px; right: 1px; padding: 0 5px; font-size: 10px; }
-    .crm.chico .crm-grupo .crm-punto:not(.cero) { display: block; }
+    .crm { display: grid; grid-template-columns: var(--panel-ancho) minmax(0, 1fr); gap: 18px; align-items: start;
+           transition: grid-template-columns .24s var(--curva-menu); }
+    /* Quieto debajo de la cabecera (como Supervisión, v381): se pega donde ya está (la cabecera, --crm-cab, la mide
+       el script, + los 18 px de arriba de la hoja), así al bajar no se mueve ni se mete detrás, y mide lo que queda
+       de la ventana hasta el margen de abajo de la hoja (24 px): entra entero y al final de la página no se corre. */
+    .crm-menu { position: sticky; top: calc(var(--crm-cab, 64px) + 18px); max-height: calc(100vh - var(--crm-cab, 64px) - 42px);
+                overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; width: 100%; z-index: 5;
+                /* El z-index baja recién al terminar de achicarse: mientras se cierra, sigue por encima de la pantalla. */
+                transition: width .24s var(--curva-menu), box-shadow .24s var(--curva-menu), z-index 0s .24s; }
+    /* Achicado (Mauricio, 6/11/2026: "se tiene que recoger y ampliar automáticamente cuando traslado el mouse dentro
+       de esa columna, con una transición suave, lenta y prolija", como el POS y Supervisión): es el mismo menú,
+       angosto. Los renglones quedan a la misma altura y cada ícono en el mismo lugar; los nombres se esconden de a
+       poco. Con el mouse encima se ensancha POR ENCIMA de la pantalla (menu-flota: la columna sigue angosta, así la
+       pantalla no se mueve). El botón de arriba lo deja fijo abierto. El nombre de cada sección sigue en el title.
+       Achicado nada se sale de costado, ni escondido (si no, con Tab el menú se correría): cada renglón recorta lo
+       suyo. */
+    .crm.chico, .crm.menu-flota { grid-template-columns: var(--panel-chico) minmax(0, 1fr); }
+    .crm.menu-flota .crm-menu { width: var(--panel-ancho); z-index: 60; box-shadow: 0 22px 60px -14px rgba(0, 0, 0, .38), var(--sombra);
+                                transition: width .24s var(--curva-menu), box-shadow .24s var(--curva-menu), z-index 0s; }
+    /* Fijo abierto mide lo mismo: al pasar de abierto por encima a fijo, el menú no cambia y la pantalla se corre suave. */
+    .crm:not(.chico):not(.menu-flota) .crm-menu { width: var(--panel-ancho); }
+    /* El ícono, centrado en la columna angosta (60 px): el mismo lugar abierto y achicado. */
+    .crm-item, .crm-subitem { overflow: hidden; }
+    .crm-item { padding-left: 11px; }
+    .crm-txt, .crm-marca { transition: opacity .2s var(--curva) .04s; }
+    .crm.chico .crm-txt, .crm.chico .crm-marca, .crm.chico .crm-flecha { opacity: 0; transition: opacity .1s, transform .24s var(--curva-menu); }
+    /* Los numeritos, achicado, arriba a la derecha del ícono. */
+    .crm.chico .crm-menu .cuenta, .crm.chico .crm-punto { position: absolute; top: 1px; right: 1px; padding: 0 5px; font-size: 10px; }
+    /* Los renglones de un grupo no tienen ícono: achicados son un puntito en la columna de los íconos (el de la
+       sección en la que estás, del color de la marca). */
+    .crm-subitem::after { content: ''; position: absolute; left: 21px; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+                          transform: translate(-50%, -50%); background: var(--txt-3); opacity: 0; transition: opacity .12s; pointer-events: none; }
+    .crm.chico .crm-subitem::after { opacity: .6; transition: opacity .2s .05s; }
+    .crm.chico .crm-subitem.sel::after { background: var(--acc); opacity: 1; }
+    /* Arriba: achicado, el botón queda en la columna de los íconos y se corre suave a la derecha al ensancharse (el
+       nombre crece de 0 a todo el lugar). */
+    .crm-menu-cab { justify-content: flex-start; gap: 0; padding: 2px 0 8px 4px; }
+    .crm-menu-cab b { flex: 1 1 0; min-width: 0; margin: 0 6px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                      transition: opacity .2s var(--curva) .04s, flex-grow .24s var(--curva-menu), margin .24s var(--curva-menu); }
+    .crm.chico .crm-menu-cab b { flex-grow: 0; margin: 0; opacity: 0;
+                                 transition: opacity .1s, flex-grow .24s var(--curva-menu), margin .24s var(--curva-menu); }
+  }
+  /* La PC del local (657 de alto): con los grupos a la vista también achicado, los renglones más finos (abierto y
+     achicado iguales), así el menú entra entero sin deslizar. */
+  @media (min-width: 900px) and (max-height: 760px) {
+    .crm-menu { padding-top: 8px; padding-bottom: 8px; }
+    .crm-menu-cab { padding-bottom: 4px; }
+    .crm-item { min-height: 31px; padding-top: 4px; padding-bottom: 4px; }
+    .crm-subitem { min-height: 27px; padding-top: 3px; padding-bottom: 3px; }
+    .crm-raya { margin-top: 3px; margin-bottom: 3px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .crm, .crm-menu, .crm-menu *, .crm-menu *::after { transition: none !important; }
   }
   @media (max-width: 899px) {
     /* El botón de la sección: dónde estás y, al tocarlo, el menú. */
@@ -811,10 +867,9 @@
   .agx-punto { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line); }
   .agx-punto.on { background: var(--ok); box-shadow: none; }
   @media (min-width: 900px) {
-    /* Pegado debajo de la cabecera (64 px), no detrás. */
-    .crm.en-agentes .crm-menu { top: 76px; max-height: calc(100vh - 88px); }
-    .crm.chico .agx-cual { padding: 3px; }
-    .crm.chico .agx-cual-op { justify-content: center; padding: 6px 0; position: relative; }
+    /* Debajo de la cabecera va en todas las secciones (.crm-menu, 6/11/2026). Achicado, como el resto del menú: el
+       ícono en el mismo lugar (centrado en la columna angosta) y el puntito de prendido arriba a la derecha. */
+    .agx-cual-op { position: relative; overflow: hidden; padding-left: 7px; }
     .crm.chico .agx-punto { position: absolute; top: 5px; right: 5px; }
   }
   .agx { display: grid; gap: 18px; align-items: start; }
@@ -2095,6 +2150,14 @@
 <script src="datos.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
+  /* El menú de la izquierda queda quieto debajo de la cabecera (6/11/2026): el CSS usa su alto, --crm-cab. */
+  (function () {
+    var cab = document.querySelector('.app-head');
+    if (!cab) { return; }
+    function medir() { document.documentElement.style.setProperty('--crm-cab', Math.round(cab.getBoundingClientRect().height) + 'px'); }
+    medir();
+    if (window.ResizeObserver) { new ResizeObserver(medir).observe(cab); } else { addEventListener('resize', medir); }
+  })();
 
   var quien = '', VOCAB = null;
   var registros = [];
@@ -2179,7 +2242,8 @@
        vez arranca en la primera del menú, Mensajes (como Kommo, 10/10). */
     vista = VISTAS.indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : VISTAS[0];
     guardar(K_VISTA, vista);
-    $('crm').classList.toggle('chico', Interfaz.panelChico(K_MENU_CHICO));
+    $('crm').classList.toggle('chico', menuChico());
+    $('crm').classList.remove('menu-flota');
     if (!MS.reloj) {
       MS.reloj = setInterval(function () {
         if (document.visibilityState === 'visible' && !$('marco').hidden) { revisarMensajes(); }
@@ -2435,7 +2499,7 @@
   ];
   var VISTAS = [];
   MENU_CRM.forEach(function (o) { (o.hijos || [o]).forEach(function (h) { VISTAS.push(h.v); }); });
-  var K_MENU_CHICO = 'nc_crm_menu_chico', K_GRUPOS = 'nc_crm_grupos_cerrados';
+  var K_GRUPOS = 'nc_crm_grupos_cerrados';
   function gruposCerrados() { try { return JSON.parse(leer(K_GRUPOS) || '[]') || []; } catch (e) { return []; } }
   function tituloVista(v) {
     var t = '';
@@ -2459,7 +2523,7 @@
       '</button>';
     };
     $('vistas').innerHTML =
-      '<div class="crm-menu-cab"><b>CRM</b>' + Interfaz.botonPanel($('crm').classList.contains('chico')) + '</div>' +
+      '<div class="crm-menu-cab"><b>CRM</b>' + Interfaz.botonPanel($('crm').classList.contains('chico'), '', 'vistas') + '</div>' +
       /* Sin la barra del sistema (31/10/2026): "‹ Sistema" arriba de las secciones, como en el POS. */
       '<a class="crm-item crm-volver" href="' + esc(Interfaz.volverAlSistema()) + '" title="Volver al sistema">' +
         '<span class="crm-ico" aria-hidden="true">' + ICO.volver + '</span><span class="crm-txt">Sistema</span></a><div class="crm-raya" aria-hidden="true"></div>' +
@@ -2473,7 +2537,7 @@
             '<span class="crm-ico" aria-hidden="true">' + o.i + '</span><span class="crm-txt">' + esc(o.t) + '</span>' +
             '<span class="crm-punto' + (suma ? '' : ' cero') + '">' + suma + '</span>' +
             '<span class="crm-flecha" aria-hidden="true">' + ICO.flecha + '</span></button>' +
-          '<div class="crm-sub">' + o.hijos.map(function (h) { return item(h, true); }).join('') + '</div></div>';
+          '<div class="crm-sub"><div class="crm-sub-in">' + o.hijos.map(function (h) { return item(h, true); }).join('') + '</div></div></div>';
       }).join('');
     [].forEach.call($('vistas').querySelectorAll('[data-vista]'), function (b) {
       b.onclick = function () { cerrarMenuCrm(); cambiarVista(b.dataset.vista); };
@@ -2487,38 +2551,119 @@
     $('crmSeccion').innerHTML = ICO.menu + '<span>' + esc(tituloVista(vista)) + '</span>' +
       (n ? '<span class="cuenta">' + n + '</span>' : '');
   }
-  /* Un grupo: abrirlo o cerrarlo. Con el menú achicado, tocarlo lo agranda
-     con ese grupo abierto. */
+  /* Un grupo: abrirlo o cerrarlo. Se cambia ahí mismo, sin rehacer el menú,
+     así se despliega suave (6/11/2026). Con el menú achicado, tocarlo lo abre
+     por encima con ese grupo abierto. El grupo de la sección en la que estás
+     no se cierra (si no, al refrescarse el menú se volvería a abrir solo). */
   function tocarGrupo(g) {
-    var cerrados = gruposCerrados(), achicado = $('crm').classList.contains('chico');
-    if (achicado) {
-      cerrados = cerrados.filter(function (x) { return x !== g; });
-      achicarMenu(false);
-    } else if (cerrados.indexOf(g) > -1) {
-      cerrados = cerrados.filter(function (x) { return x !== g; });
-    } else {
-      cerrados.push(g);
-    }
+    var cab = $('vistas').querySelector('[data-grupo="' + g + '"]'), grupo = cab && cab.parentNode;
+    if (!grupo) { return; }
+    var achicado = $('crm').classList.contains('chico') && menuEnCompu();
+    var abrir = achicado || !grupo.classList.contains('abierto');
+    if (achicado) { menuTiempos(); menuFlotar(true); }
+    if (!abrir && grupo.querySelector('.sel')) { return; }
+    var cerrados = gruposCerrados().filter(function (x) { return x !== g; });
+    if (!abrir) { cerrados.push(g); }
     guardar(K_GRUPOS, JSON.stringify(cerrados));
-    pintarVistas();
+    grupo.classList.toggle('abierto', abrir);
+    cab.setAttribute('aria-expanded', String(abrir));
   }
-  /* Achicar el menú a los íconos (15/10/2026): el mismo botón, el mismo
-     ícono y el mismo lugar (arriba a la derecha) que el panel de Equipo VDH
-     y el del Asistente; lo arma interfaz.js. La llave sigue siendo
-     nc_crm_menu_chico, así cada uno lo encuentra como lo dejó. */
+
+  /* El menú de la izquierda, como el del POS y el de Supervisión (Mauricio,
+     6/11/2026: "se tiene que recoger y ampliar automáticamente cuando
+     traslado el mouse dentro de esa columna, con una transición suave, lenta
+     y prolija"). En la compu arranca achicado y se abre por encima con el
+     mouse: a los 250 ms de llegar (que no salte cada vez que el mouse cruza)
+     y se achica a los 150 ms de sacarlo. El botón de arriba lo deja fijo
+     abierto: nc_menu_crm_fijo = '1' (la llave vieja, nc_crm_menu_chico, ya
+     no se usa). Se mira dónde está el mouse en cada movimiento, no al entrar
+     y salir: al tocar una sección el menú se rehace debajo del mouse. Las
+     clases van en #crm, que no se rehace: abierto por encima sigue abierto. */
+  var K_MENU_FIJO = 'nc_menu_crm_fijo';
+  var MENU = { abrir: null, cerrar: null, esperar: false };   // esperar: se achicó con el mouse encima (Escape, el botón)
+  function menuEnCompu() { return !window.matchMedia || matchMedia('(min-width: 900px)').matches; }
+  function menuChico() { try { return localStorage.getItem(K_MENU_FIJO) !== '1'; } catch (e) { return true; } }
+  function guardarMenu(chico) {
+    try { if (chico) { localStorage.removeItem(K_MENU_FIJO); } else { localStorage.setItem(K_MENU_FIJO, '1'); } } catch (e) {}
+  }
+  function menuTiempos() { clearTimeout(MENU.abrir); clearTimeout(MENU.cerrar); MENU.abrir = MENU.cerrar = null; }
+  function menuFlotar(si) {
+    var c = $('crm');
+    if (si ? !c.classList.contains('chico') : !c.classList.contains('menu-flota')) { return; }
+    c.classList.toggle('chico', !si);
+    c.classList.toggle('menu-flota', si);
+    menuTitulo();
+  }
+  function menuCerrarEnUnRato() {
+    clearTimeout(MENU.abrir); MENU.abrir = null;
+    if ($('crm').classList.contains('menu-flota') && !MENU.cerrar) {
+      MENU.cerrar = setTimeout(function () { MENU.cerrar = null; menuFlotar(false); }, 150);
+    }
+  }
+  document.addEventListener('mousemove', function (e) {
+    var nav = $('vistas');
+    if (!nav || !menuEnCompu()) { return; }
+    if (!nav.contains(e.target)) { MENU.esperar = false; menuCerrarEnUnRato(); return; }
+    clearTimeout(MENU.cerrar); MENU.cerrar = null;
+    if ($('crm').classList.contains('chico') && !MENU.esperar && !MENU.abrir) {
+      MENU.abrir = setTimeout(function () { MENU.abrir = null; menuFlotar(true); }, 250);
+    }
+  });
+  /* Se fue de la ventana. */
+  document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) { MENU.esperar = false; menuCerrarEnUnRato(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !$('crm').classList.contains('menu-flota')) { return; }
+    MENU.esperar = true; menuTiempos(); menuFlotar(false);
+  });
+  /* El botón de arriba: achicado o abierto por encima, lo deja fijo; fijo, lo achica. */
+  function menuTitulo() {
+    var b = $('vistas').querySelector('.plegar-panel'), c = $('crm');
+    if (!b) { return; }
+    var chico = c.classList.contains('chico'), t = chico || c.classList.contains('menu-flota') ? 'Dejar el panel abierto' : 'Achicar el panel';
+    b.title = t;
+    b.setAttribute('aria-label', t);
+    b.setAttribute('aria-expanded', String(!chico));
+  }
+  /* El mismo botón, el mismo ícono y el mismo lugar (arriba a la derecha) que
+     el resto de las secciones; lo arma interfaz.js. Cada vez se busca el que
+     está en el menú (al tocarlo se cambia por uno nuevo). */
   function conectarPlegar() {
-    var b = $('vistas').querySelector('.plegar-panel');
-    if (b) { b.onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); }; }
+    menuTitulo();
+    var nav = $('vistas'), b = nav.querySelector('.plegar-panel');
+    if (b) {
+      b.onclick = function () {
+        var c = $('crm'), chico = c.classList.contains('menu-flota') ? false : !c.classList.contains('chico');
+        menuTiempos();
+        if (chico) { MENU.esperar = true; }   // se achicó con el mouse encima: que no se vuelva a abrir solo
+        achicarMenu(chico);
+      };
+    }
+    if (!nav._foco) {   // el menú (#vistas) no se rehace, sólo lo de adentro: una sola vez
+      nav._foco = true;
+      /* Con el teclado (Tab) también se abre, y se achica al salir. Con el
+         mouse no: al achicarlo con el botón, el foco queda en el botón y se
+         volvería a abrir. */
+      nav.addEventListener('focusin', function (e) {
+        var visible = true;
+        try { visible = e.target.matches(':focus-visible'); } catch (x) {}
+        if (visible && menuEnCompu() && $('crm').classList.contains('chico')) { menuTiempos(); menuFlotar(true); }
+      });
+      nav.addEventListener('focusout', function (e) {
+        if (!nav.contains(e.relatedTarget) && !nav.matches(':hover')) { menuTiempos(); menuFlotar(false); }
+      });
+    }
   }
   function achicarMenu(si) {
-    $('crm').classList.toggle('chico', !!si);
-    Interfaz.panelChico(K_MENU_CHICO, !!si);
-    /* El botón dice lo contrario ("Abrir el panel" / "Achicar el panel"): se
-       cambia por uno nuevo, y si tenía el foco (el teclado), lo conserva. */
+    var c = $('crm');
+    c.classList.remove('menu-flota');
+    c.classList.toggle('chico', !!si);
+    guardarMenu(!!si);
+    /* El botón dice lo contrario: se cambia por uno nuevo, y si tenía el foco
+       (el teclado), lo conserva. */
     var b = $('vistas').querySelector('.plegar-panel');
     if (b) {
       var foco = document.activeElement === b;
-      b.outerHTML = Interfaz.botonPanel(!!si);
+      b.outerHTML = Interfaz.botonPanel(!!si, '', 'vistas');
       conectarPlegar();
       if (foco) { $('vistas').querySelector('.plegar-panel').focus(); }
     }
@@ -7164,7 +7309,7 @@
   function pintarMenuAgentes() {
     var pg = pagAgente();
     $('vistas').innerHTML =
-      '<div class="crm-menu-cab"><b>Agentes de IA</b>' + Interfaz.botonPanel($('crm').classList.contains('chico')) + '</div>' +
+      '<div class="crm-menu-cab"><b>Agentes de IA</b>' + Interfaz.botonPanel($('crm').classList.contains('chico'), '', 'vistas') + '</div>' +
       '<button type="button" class="crm-item agx-volver" id="agxVolver" title="Volver al CRM">' +
         '<span class="crm-ico" aria-hidden="true">' + ICO_AG.volver + '</span><span class="crm-txt">Volver al CRM</span></button>' +
       '<div class="agx-cual" role="radiogroup" aria-label="Qué agente">' +
