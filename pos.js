@@ -3105,6 +3105,10 @@
           '<button type="button" class="tkl-fallida" id="tkFallida" title="El cliente se fue sin comprar y no dejó su WhatsApp">Venta fallida</button>' +
           '<div class="tkl-nums" id="tkNums"></div>' +
           '<button type="button" class="pos-link tkl-ver" data-ir="fallida">Ver las ventas fallidas</button>' +
+          /* Mauricio (6/11): "en la columna derecha queda mucho espacio abajo". Lo que vendió cada uno, en el alto que queda. */
+          '<div class="tkl-vend-caja" id="tkVendP" hidden><section class="tkl-vend" aria-label="Lo que vendió cada vendedor"' +
+            ' title="Lo cobrado por cada vendedor en el período y la sucursal elegidos (sin las anuladas). Tocá un nombre para ver sólo sus tickets; tocalo otra vez para ver todos.">' +
+            '<h4><span>Por vendedor</span><span>Tickets</span></h4><div class="tkl-vend-l" id="tkVendL"></div></section></div>' +
         '</aside>' +
       '</div>' +
       '<div class="tkl-pie" id="tkPie"></div>';
@@ -3133,6 +3137,48 @@
         $('tkLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
         pintarTrafico(null);
         $('tkPie').innerHTML = '';
+      });
+      cargarPorVend(r, n);
+    }
+    /* «Por vendedor», abajo del panel (6/11): lo de Ventas por vendedor (SQL 192, sin SQL nuevo) del período y la sucursal,
+       de mayor a menor. No sigue al filtro Vendedor (siempre están todos, con el elegido marcado) ni a los demás filtros,
+       como el tráfico. Si la base no lo contesta, el bloque no se ve y la lista sigue igual. */
+    function cargarPorVend(r, n) {
+      llamar('pos_ventas_vendedor', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tkLocal').value || null, p_vendedor: null, p_prueba: deLaPrueba() }).then(function (d) {
+        if (n !== pedido || !$('tkVendL')) return;
+        pintarPorVend((d && d.vendedores) || []);
+      }).catch(function () { if (n === pedido && $('tkVendP')) $('tkVendP').hidden = true; });
+    }
+    function marcarPorVend() {
+      var el = String($('tkVend').value || '').toLowerCase();
+      $('tkVendL').querySelectorAll('[data-vend]').forEach(function (b) {
+        var si = !!el && b.getAttribute('data-vend').toLowerCase() === el;
+        b.classList.toggle('si', si);
+        b.setAttribute('aria-pressed', si ? 'true' : 'false');
+      });
+    }
+    function pintarPorVend(vs) {
+      $('tkVendP').hidden = !vs.length;
+      $('tkVendL').innerHTML = vs.map(function (v) {
+        var t = miles(v.ventas) + (Number(v.ventas) === 1 ? ' ticket' : ' tickets') + ' · ' + miles(v.productos) + (Number(v.productos) === 1 ? ' prenda' : ' prendas');
+        return '<button type="button" class="tkl-vend-f" data-vend="' + esc(v.vendedor) + '" aria-pressed="false" title="' + esc(v.vendedor + ': ' + t) + '">' +
+          '<span class="tkl-vend-n">' + esc(v.vendedor) + '</span><b>' + plata(cent(v.total)) + '</b><small>' + miles(v.ventas) + '</small></button>';
+      }).join('');
+      marcarPorVend();
+      /* Tocar uno lo elige en el filtro Vendedor (si no estaba en la lista, se suma); tocar el elegido vuelve a «Todos». */
+      $('tkVendL').querySelectorAll('[data-vend]').forEach(function (b) {
+        b.onclick = function () {
+          var nom = b.getAttribute('data-vend'), sel = $('tkVend');
+          if (b.classList.contains('si')) sel.value = '';
+          else {
+            vistos[nom] = 1;
+            llenarFiltroVend(sel, $('tkLocal').value, vistos);
+            var o = [].filter.call(sel.options, function (x) { return x.value.toLowerCase() === nom.toLowerCase(); })[0];
+            sel.value = o ? o.value : '';
+          }
+          marcarPorVend();
+          cargar();
+        };
       });
     }
     /* El panel de la derecha (SQL 171): las ventas fallidas, el monto perdido, el tráfico (ventas + ventas fallidas +
@@ -3170,21 +3216,24 @@
         verCola();
         return;
       }
-      $('tkLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
-        '<th>Cliente</th><th>Comprobante</th><th>Forma de pago</th><th>Estado</th><th class="n">Cant.</th><th class="n">Total</th><th>ARCA</th></tr></thead><tbody>' +
+      /* Mauricio (6/11): "que quedaran más centrados los títulos con respecto al texto de abajo". Las columnas de un dato
+         corto (Referencia, Comprobante, Forma de pago, Estado, Cant., ARCA) van centradas, el título y el dato; el texto
+         largo (Fecha, Sucursal, Vendedor, Cliente) a la izquierda, y el Total a la derecha (la plata, por la última cifra). */
+      $('tkLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla tk-lista"><thead><tr><th>Fecha</th><th class="c">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
+        '<th>Cliente</th><th class="c">Comprobante</th><th class="c">Forma de pago</th><th class="c">Estado</th><th class="c">Cant.</th><th class="n">Total</th><th class="c">ARCA</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           var an = f.estado === 'anulada', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
-          return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="n">' + esc(refCorta(f)) + '</td>' +
+          return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="c">' + esc(refCorta(f)) + '</td>' +
             '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
               '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
-            '<td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
-            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
+            '<td class="c">' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
+            '<td class="c">' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
             /* SQL 205: la anulada con una nota de crédito dice cuál. */
-            '<td>' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
+            '<td class="c">' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
                 esc(refNota({ numero: f.nc, prueba: f.prueba })) + '</span>' : an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
-            '<td class="n">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
-            (f.letra === 'X' || f.prueba ? '<td class="apagado" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
-              : '<td class="apagado" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
+            '<td class="c">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
+            (f.letra === 'X' || f.prueba ? '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
+              : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
       verCola();
