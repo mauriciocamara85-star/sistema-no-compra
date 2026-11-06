@@ -128,6 +128,9 @@
   /** Adónde va "‹ Sistema": la última pantalla con la barra; si no hay (se abrió de un enlace), la de la que vino, o
       la Carga. */
   function volverAlSistema() {
+    /* SQL 257 (6/11): la gente de la Fábrica no tiene la Carga (los mandaría de vuelta a la Fábrica): su otra sección
+       es el Asistente. */
+    if (window.persona && persona.deFabrica && persona.deFabrica()) return 'asistente.html';
     var v = null;
     try { v = sessionStorage.getItem(K_VOLVER); } catch (e) {}
     if (v) return v;

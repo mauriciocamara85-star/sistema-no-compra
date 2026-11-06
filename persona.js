@@ -159,6 +159,9 @@ var persona = (function () {
     /* 6/11: la Fábrica (SQL 256: con «Entra a Fábrica»; al administrador, con el POS). */
     if (usaFabrica()) document.documentElement.setAttribute('data-nc-fabrica', '');
     else document.documentElement.removeAttribute('data-nc-fabrica');
+    /* SQL 257: la gente de la Fábrica, sólo Fábrica y el Asistente (estilos.css). */
+    if (deFabrica()) document.documentElement.setAttribute('data-nc-de-fabrica', '');
+    else document.documentElement.removeAttribute('data-nc-de-fabrica');
     /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
        vendedor: sin CRM, Socios, Config ni Supervisión). Al entrar alguien, manda su rol. Es sólo la
        barra: cada pantalla de la oficina sigue con su portón. */
@@ -186,11 +189,17 @@ var persona = (function () {
     if (!vigente(_yo)) return false;
     return _yo.fabrica === true || (_yo.fabrica === undefined && usaGestion() && _yo.rol === 'admin');
   }
+  /* SQL 257 (6/11/2026): la gente de la Fábrica (Mauricio: "en vez de local, pueda elegir fábrica"; "que esté el
+     asistente y después vemos si le agregamos algo más"). En la base es un vendedor sin local (en Config → Usuarios, el
+     local «Fábrica»). Ve sólo Fábrica y el Asistente: cualquier otra pantalla lo lleva a la Fábrica. Mientras la base no
+     contestó (provisorio) no se sabe su local: no cuenta. */
+  function deFabrica() { return vigente(_yo) && !_yo.provisorio && _yo.rol === 'vendedor' && _yo.local_id === null; }
   /* SQL 230 (2/11, de prueba): su local tiene el fichero de prueba (Rivadavia): «Fichero» con su usuario, en
      cualquier compu (nc_yo trae 'fichero'). */
   function fichaPrueba() { return vigente(_yo) && _yo.fichero === true; }
   function puede(pag) {
     var r = rol(), p = pag || pagina();
+    if (deFabrica()) return (p === 'fabrica.html' && usaFabrica()) || p === 'asistente.html';   // SQL 257
     if (p === 'pos.html' && usaPos()) return true;
     if (p === 'gestion.html' && usaGestion()) return true;
     if (p === 'fabrica.html' && usaFabrica()) return true;
@@ -202,7 +211,8 @@ var persona = (function () {
   /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
       Con la casilla de Atención (SQL 135): "Vendedor y Atención al cliente". */
   function nombreRol(y) {
-    var n = y.rol === 'supervisor' && !y.local_id ? 'Supervisor' : ROL[y.rol];
+    var n = y.rol === 'supervisor' && !y.local_id ? 'Supervisor' :
+            y.rol === 'vendedor' && y.local_id === null && !y.provisorio ? 'Fábrica' : ROL[y.rol];   // SQL 257
     return y.tambien_atencion === true && !OFICINA[y.rol] ? n + ' y Atención al cliente' : n;
   }
 
@@ -303,7 +313,9 @@ var persona = (function () {
         /* SQL 230: y con el fichero de prueba. */
         '|' + !!(_yo && _yo.fichero) +
         /* SQL 256: y con la Fábrica. */
-        '|' + !!(_yo && _yo.fabrica);
+        '|' + !!(_yo && _yo.fabrica) +
+        /* SQL 257: y si es de la Fábrica (sin local): sólo Fábrica y el Asistente. */
+        '|' + deFabrica();
     };
     var antes = clave();
     _yo = y;
@@ -550,6 +562,8 @@ var persona = (function () {
   function revisarAcceso() {
     var viejo = document.getElementById('ncpSinAcceso');
     if (puede()) { if (viejo) viejo.remove(); return; }
+    /* SQL 257: la gente de la Fábrica no tiene otra pantalla: va derecho a la Fábrica (al Asistente, si se la apagaron). */
+    if (deFabrica()) { location.replace(usaFabrica() ? 'fabrica.html' : 'asistente.html'); return; }
     if (viejo || !document.body) return;
     var d = document.createElement('div');
     d.id = 'ncpSinAcceso';
@@ -728,9 +742,10 @@ var persona = (function () {
       /* SQL 148: al final, "E-commerce" (Atención al cliente) y "Administración", con una raya que los separa
          de los locales. Sin el 148 hay un solo botón, "Administración", con todos los sin local. */
       var conEcom = locales.some(function (l) { return l.grupo === 'atencion'; }), raya = false;
+      var conFab = locales.some(function (l) { return l.grupo === 'fabrica'; });   // SQL 257
       c.innerHTML = '<h2 id="ncpTit">Entrá con tu usuario</h2>' +
         '<p class="ncp-bajada">' + (conEcom
-          ? '¿En qué local trabajás? Al final están E-commerce (atención al cliente) y Administración.'
+          ? '¿En qué local trabajás? Al final están E-commerce (atención al cliente)' + (conFab ? ', la Fábrica' : '') + ' y Administración.'
           : '¿En qué local trabajás? Atención y administración están al final.') + '</p>' +
         '<div class="chips-local ncp-lista">' + locales.map(function (l, i) {
           var antes = '';
@@ -1444,7 +1459,8 @@ var persona = (function () {
 
   var INICIO_EN = ['MAR DEL PLATA'];   // en el celular (táctil), los locales con el inicio; en la PC sale en todas
   /* Sólo donde se arranca a trabajar: no en el fichero, ni en lo de la oficina, ni en el enlace que habilita la compu. */
-  var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html'];
+  /* SQL 257: también la Fábrica (la compu de la fábrica arranca con el inicio de «Fábrica»: ?inicio-compu=fabrica). */
+  var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html', 'fabrica.html'];
   var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: el «Seguir sin entrar» de antes del 3/11 (ya no vale: se borra)
   var K_INICIO_LOCAL = 'nc_inicio_local';
   /* El inicio prendido a mano en una compu que no es de un local (la de Mauricio): index.html?inicio-compu=oficina
@@ -1669,10 +1685,12 @@ var persona = (function () {
       locales = locales || [];
       var ofi = function (x) { return !x.codigo && x.grupo === 'oficina'; };
       var l = _inicio.cod === 'OFICINA' ? locales.filter(ofi)[0] : locales.filter(function (x) { return x.codigo === _inicio.cod; })[0];
+      var noEsta = !l;
       if (!l) l = locales.filter(ofi)[0];
       if (!l) throw Object.assign(new Error('Este local no está en la lista para entrar.'), { delServidor: true });
       _inicio.local = l.id ? { id: l.id, codigo: l.codigo, nombre: l.nombre } : { id: null, grupo: l.grupo, codigo: _inicio.cod, nombre: l.nombre };
-      guardarLS(K_INICIO_LOCAL, _inicio.local);
+      /* SQL 257: «Fábrica» que todavía no está (sin el SQL o sin nadie de la Fábrica): Administración, sin guardarla. */
+      if (!(noEsta && _inicio.cod === 'FABRICA')) guardarLS(K_INICIO_LOCAL, _inicio.local);
       _inicio.estado();
       return _inicio.local;
     });
@@ -1772,6 +1790,8 @@ var persona = (function () {
     /** La persona habilitada (activa y aprobada), o null. */
     yo: function () { return vigente(_yo) ? _yo : null; },
     rol: rol,
+    /** SQL 257: es de la Fábrica (vendedor sin local): sólo Fábrica y el Asistente. */
+    deFabrica: deFabrica,
     /** Quien entró es de la oficina (Administración, Atención o Gerencia, o un vendedor con la casilla de Atención). */
     oficina: oficina,
     /** Lo que va en lugar del PIN: la marca de la sesión, o '' si no es de la oficina. */

@@ -38,6 +38,12 @@ var usuarios = (function () {
   function esZona(p) { return p.rol === 'supervisor' && !p.local_id; }
   /** El rol como lo muestra la pantalla: el supervisor sin local es 'zona'. */
   function rolEd(p) { return esZona(p) ? 'zona' : p.rol; }
+  /* SQL 257 (6/11): la gente de la Fábrica. En vez de un local se elige «Fábrica» (en la base, un vendedor sin local, con
+     «Entra a Fábrica»; ve sólo Fábrica y el Asistente). La pantalla manda el rol 'fabrica'. Sin el SQL 257 (nc_usuarios
+     sin 'fabrica'), no se ofrece. */
+  var FABRICA = 'fabrica';
+  function esFabrica(p) { return p.rol === 'vendedor' && !p.local_id; }
+  function hayFabrica() { return !!datos && datos.fabrica === true; }
   /* SQL 135: la casilla es para quien es de un local; Atención y Administración ya ven todo eso. */
   function puedeAtencion(rol) { return rol === 'vendedor' || rol === 'supervisor' || rol === 'zona'; }
   /** Los locales de un supervisor, por nombre ("Flores, Ituzaingó, Morón"); los que pidió y nadie aprobó, marcados. */
@@ -47,6 +53,7 @@ var usuarios = (function () {
       .map(function (s) { return s.n + (s.ok ? '' : ' (lo pidió)'); }).join(', ');
   }
   function rolDe(p) {
+    if (esFabrica(p)) return 'De la Fábrica';   // SQL 257
     var r = esZona(p) ? 'Supervisor' : (ROL[p.rol] || p.rol);
     if (p.tambien_atencion && puedeAtencion(p.rol)) r += ' + Atención al cliente';
     if (esZona(p)) r += ' · ' + (susLocales(p) || 'sin locales todavía');
@@ -256,7 +263,7 @@ var usuarios = (function () {
         '<div class="us-lista">' + pend.map(function (p) {
           return '<div class="us-fila us-pend" data-id="' + esc(p.id) + '">' +
             '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b>' +
-            '<span>' + esc(rolDe(p)) + (esZona(p) ? '' : ' · ' + esc(nombreLocal(p.local_id))) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
+            '<span>' + esc(rolDe(p)) + (esZona(p) || esFabrica(p) ? '' : ' · ' + esc(nombreLocal(p.local_id))) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
             '<div class="us-acciones">' +
               '<button type="button" class="btn btn-pri btn-chico" data-acc="aprobar">Sí, es ' + (p.alta_propia ? 'de acá' : 'él o ella') + '</button>' +
               '<button type="button" class="btn btn-sec btn-chico" data-acc="rechazar">' + (p.alta_propia ? 'No lo conozco' : 'No fue') + '</button>' +
@@ -274,6 +281,7 @@ var usuarios = (function () {
         '<option value="">Todos los locales</option>' +
         datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (filtro.local === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('') +
         '<option value="z"' + (filtro.local === 'z' ? ' selected' : '') + '>Supervisores</option>' +
+        (hayFabrica() ? '<option value="f"' + (filtro.local === 'f' ? ' selected' : '') + '>Fábrica</option>' : '') +   // SQL 257
         '<option value="-"' + (filtro.local === '-' ? ' selected' : '') + '>Sin local (Administración y Atención)</option></select>' +
         '<label class="us-check"><input type="checkbox" id="usVerDesact"' + (filtro.desactivados ? ' checked' : '') + '> Ver desactivados</label></div>';
     } else {
@@ -293,13 +301,14 @@ var usuarios = (function () {
     var gente = datos.personas.filter(function (p) {
       if (!filtro.desactivados && !p.activo) return false;
       if (filtro.local === 'z') return esZona(p);
-      if (filtro.local === '-') return !p.local_id && !esZona(p);
+      if (filtro.local === 'f') return esFabrica(p);   // SQL 257
+      if (filtro.local === '-') return !p.local_id && !esZona(p) && !esFabrica(p);
       if (filtro.local) return p.local_id === filtro.local || (esZona(p) && supervisa(p, filtro.local));
       return true;
     });
     if (!gente.length) return '<p class="us-vacio">No hay nadie' + (filtro.local && filtro.local !== 'z' && filtro.local !== '-' ? ' en este local' : '') + '. Crealo con el formulario.</p>';
     /* Con "todos", agrupados por local; después los supervisores y, al final, los sin local. */
-    var orden = function (p) { return p.local_id ? 0 : esZona(p) ? 1 : 2; };
+    var orden = function (p) { return p.local_id ? 0 : esZona(p) ? 1 : esFabrica(p) ? 2 : 3; };   // SQL 257: la Fábrica antes de Administración
     gente.sort(function (a, b) {
       return (orden(a) - orden(b)) ||
         nombreLocal(a.local_id).localeCompare(nombreLocal(b.local_id), 'es') ||
@@ -308,7 +317,7 @@ var usuarios = (function () {
     var html = '', grupo = null;
     gente.forEach(function (p) {
       if (admin && !filtro.local) {
-        var g = p.local_id ? nombreLocal(p.local_id) : esZona(p) ? 'Supervisores' : 'Administración y Atención';
+        var g = p.local_id ? nombreLocal(p.local_id) : esZona(p) ? 'Supervisores' : esFabrica(p) ? 'Fábrica' : 'Administración y Atención';
         if (g !== grupo) { html += '<h3 class="us-grupo">' + esc(g) + '</h3>'; grupo = g; }
       }
       html += fila(p);
@@ -346,15 +355,19 @@ var usuarios = (function () {
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
       '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') +
-        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + (entraFabrica(p) ? ' · Entra a Fábrica' : '') + '</span></div>' +
+        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + (entraFabrica(p) && !esFabrica(p) ? ' · Entra a Fábrica' : '') +
+        /* SQL 257: a la de la Fábrica la sección le viene con el local; si se la apagaron, que se vea. */
+        (esFabrica(p) && conFabrica() && !entraFabrica(p) ? ' · sin la sección Fábrica (sólo el Asistente)' : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
   }
 
-  function opcionesLocal(sel, conSinLocal) {
+  /* conFab (SQL 257): con «Fábrica» al final, para el vendedor. */
+  function opcionesLocal(sel, conSinLocal, conFab) {
     return (conSinLocal ? '<option value="">Sin local</option>' : '<option value="">Elegí el local…</option>') +
-      datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (sel === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('');
+      datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (sel === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('') +
+      (conFab && hayFabrica() ? '<option value="' + FABRICA + '"' + (sel === FABRICA ? ' selected' : '') + '>Fábrica</option>' : '');
   }
   function opcionesRol(sel) {
     var roles = ROLES_ADMIN.concat(sel === 'gerencia' ? ['gerencia'] : []);
@@ -392,7 +405,7 @@ var usuarios = (function () {
 
   function filaEditor(p) {
     var r = rolEd(p), fr = hayFrancos();
-    var dias = fr ? '<div class="us-dias" data-ed-dias role="group" aria-label="Francos"' + (tieneFranco(r) ? '' : ' hidden') + '>' +
+    var dias = fr ? '<div class="us-dias" data-ed-dias role="group" aria-label="Francos"' + (tieneFranco(r) && !esFabrica(p) ? '' : ' hidden') + '>' +
       '<span class="us-dias-tit">Francos</span>' + casillasDias(p.francos || []) + '</div>' : '';
     var botones = '<button type="button" class="btn btn-pri btn-chico" data-acc="guardar">Guardar</button>' +
       '<button type="button" class="btn btn-sec btn-chico" data-acc="cancelar">Cancelar</button>';
@@ -407,11 +420,11 @@ var usuarios = (function () {
         (posLista ? ', si también atiende clientes o el POS' : ' o si también atiende clientes') + '</span></div>' +
       '<div class="us-editor">' +
         '<select data-ed="rol" aria-label="Rol">' + opcionesRol(r) + '</select>' +
-        '<select data-ed="local" class="desplegable" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
+        '<select data-ed="local" class="desplegable" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(esFabrica(p) ? FABRICA : p.local_id || '', r === 'gerencia', r === 'vendedor') + '</select>' +
         '<div class="us-locales" data-ed-locales role="group" aria-label="Sus locales"' + (r === 'zona' ? '' : ' hidden') + '>' +
           '<span class="us-locales-tit">Sus locales</span>' + casillasLocales(marcadosDe(p)) + '</div>' +
         dias +
-        '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
+        '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) && !esFabrica(p) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
         posBloque(p, r) +
         botones +
@@ -454,8 +467,8 @@ var usuarios = (function () {
         (admin
           ? '<div class="campo"><label for="usRol">Rol</label><select id="usRol">' + opcionesRol('vendedor') + '</select></div>' +
             /* E-commerce no es un local: se elige con el rol (27/10, lo buscó acá). */
-            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal" class="desplegable">' + opcionesLocal('', false) + '</select>' +
-              '<small class="us-pista">¿Es de E-commerce? Elegí el rol "Atención al cliente".</small></div>' +
+            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal" class="desplegable">' + opcionesLocal('', false, true) + '</select>' +
+              '<small class="us-pista">¿Es de E-commerce? Elegí el rol "Atención al cliente".' + (hayFabrica() ? ' ¿De la fábrica? El local «Fábrica».' : '') + '</small></div>' +
             '<div class="campo ancho" id="usCampoLocales" hidden><span class="campo-lbl">Sus locales</span>' +
               '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +
@@ -466,7 +479,7 @@ var usuarios = (function () {
           '<div class="us-dias" role="group" aria-label="Francos">' + casillasDias([]) + '</div></div>' : '') +
         '<div class="campo ancho"><button type="button" class="btn btn-pri" id="usCrear">Crear usuario</button></div>' +
       '</div>' +
-      (admin ? '<p class="us-nota">' + esc(QUE_VE) + (posLista ? ' El POS: a quien le prendas «Usa el POS» en Cambiar.' : '') + '</p>' : ''));
+      (admin ? '<p class="us-nota">' + esc(QUE_VE) + (hayFabrica() ? ' De la Fábrica (Vendedor con el local «Fábrica»): sólo Fábrica y el Asistente.' : '') + (posLista ? ' El POS: a quien le prendas «Usa el POS» en Cambiar.' : '') + '</p>' : ''));
   }
 
   /* ═══ Lo que se toca ════════════════════════════════════════════════════ */
@@ -565,10 +578,13 @@ var usuarios = (function () {
             break;
           }
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
-          var dias = hayFrancos() && tieneFranco(rol) ? diasTildados(f) : null;
+          var fab = rol === 'vendedor' && loc === FABRICA;   // SQL 257
+          var dias = hayFrancos() && tieneFranco(rol) && !fab ? diasTildados(f) : null;
           var zona = rol === 'zona', locs = zona ? tildados(f) : [];
           if (zona && !locs.length) { avisar('err', 'Tildá al menos un local para ' + p.nombre + '.'); return; }
-          if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' && !sinLocal(rol) &&
+          if (fab && !esFabrica(p) && !confirm('¿Pasar a ' + nom + ' a la Fábrica? ' + (p.local_id ? 'Sale de la lista de No Compra de ' + nombreLocal(p.local_id) + '. ' : '') +
+                                              'Va a ver sólo Fábrica y el Asistente.')) return;
+          if (p.local_id && loc && !fab && loc !== p.local_id && p.rol === 'vendedor' && !sinLocal(rol) &&
               !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de No Compra de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
           if (zona && p.local_id &&
               !confirm('¿Pasar a ' + nom + ' a supervisor de varios locales? Deja de estar fijo en ' + nombreLocal(p.local_id) +
@@ -576,11 +592,12 @@ var usuarios = (function () {
           if (!zona && esZona(p) && (p.supervisa || []).length &&
               !confirm('¿Sacarle a ' + nom + ' los locales que supervisa (' + susLocales(p) + ')?')) return;
           var cas = f.querySelector('[data-ed="atencion"]');
-          var conAt = puedeAtencion(rol) && !!(cas && cas.checked), cambiaAt = conAt !== !!p.tambien_atencion;
+          var conAt = puedeAtencion(rol) && !fab && !!(cas && cas.checked), cambiaAt = conAt !== !!p.tambien_atencion;
           /* SQL 190: se lee antes, porque cada paso vuelve a dibujar la lista. */
           var posVa = posDelEditor(f, rol), cambiaPos = !!posVa && posCambia(p, rol, posVa);
-          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc }, function () {
+          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: zona ? 'supervisor' : fab ? FABRICA : rol, p_local: sinLocal(rol) || fab ? null : loc }, function () {
             if (zona) return null;   // avisa el paso de los locales
+            if (fab && !esFabrica(p)) return 'Guardado: ' + p.nombre + ' es de la Fábrica: ve sólo Fábrica y el Asistente.';
             /* SQL 110: lo de la oficina pide un PIN de 6 números; el suyo
                queda, y lo cambia la próxima vez que entre. */
             var seis = { admin: 1, atencion: 1, gerencia: 1 };
@@ -643,9 +660,19 @@ var usuarios = (function () {
         if (locs) locs.hidden = s.value !== 'zona';
         var di = ed.querySelector('[data-ed-dias]');
         if (di) di.hidden = !tieneFranco(s.value);
-        loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia');
+        loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia', s.value === 'vendedor');
+        if (loc.value === FABRICA) { if (at) at.hidden = true; if (di) di.hidden = true; }   // SQL 257
         var pb = ed.querySelector('[data-ed-pos]');
         if (pb && posLista) posRol(pb, s.value);
+      }
+      /* SQL 257: el local «Fábrica»: sin francos ni Atención. «Entra a Fábrica» se la prende la base al pasarlo (la
+         casilla no se toca acá: si no, se guardarían todas las del POS). */
+      if (s.dataset && s.dataset.ed === 'local') {
+        var ed2 = s.closest('.us-editor'), r2 = ed2.querySelector('[data-ed="rol"]').value, esF = s.value === FABRICA;
+        var at2 = ed2.querySelector('[data-ed-atencion]');
+        if (at2) at2.hidden = !puedeAtencion(r2) || esF;
+        var di2 = ed2.querySelector('[data-ed-dias]');
+        if (di2) di2.hidden = !tieneFranco(r2) || esF;
       }
       if (s.dataset && s.dataset.pos === 'usa') {
         /* SQL 236: al administrador no se le abren las casillas (con el POS tiene todo). */
@@ -663,7 +690,13 @@ var usuarios = (function () {
       if (cf) cf.hidden = !tieneFranco(rolSel.value);
       /* Sin el campo Local, el rol ocupa la fila: "Supervisor (varios locales)" no entra en media. */
       rolSel.parentNode.classList.toggle('ancho', sinLocal(rolSel.value));
-      l.innerHTML = opcionesLocal(l.value, rolSel.value === 'gerencia');
+      l.innerHTML = opcionesLocal(l.value, rolSel.value === 'gerencia', rolSel.value === 'vendedor');
+      if (cf && l.value === FABRICA) cf.hidden = true;   // SQL 257: la Fábrica no tiene francos
+    };
+    var locSel = document.getElementById('usLocal');
+    if (locSel && rolSel) locSel.onchange = function () {
+      var cf = document.getElementById('usCampoFrancos');
+      if (cf) cf.hidden = !tieneFranco(rolSel.value) || locSel.value === FABRICA;
     };
     var crear = function () {
       var n = document.getElementById('usNombre').value.trim(), a = document.getElementById('usApellido').value.trim();
@@ -672,20 +705,23 @@ var usuarios = (function () {
       var rol = rolSel ? rolSel.value : 'vendedor';
       var loc = rolSel ? (document.getElementById('usLocal').value || null) : datos.yo.local_id;
       var zona = rol === 'zona', locs = zona ? tildados(document.getElementById('usCampoLocales')) : [], nuevo = null;
+      var fab = rol === 'vendedor' && loc === FABRICA;   // SQL 257
       if ((rol === 'vendedor' || rol === 'supervisor') && !loc) { avisar('err', 'Elegí el local.'); document.getElementById('usLocal').focus(); return; }
       if (zona && !locs.length) { avisar('err', 'Tildá al menos un local.'); return; }
       var cf = document.getElementById('usCampoFrancos');
-      var dias = cf && tieneFranco(rol) ? diasTildados(cf) : [];
+      var dias = cf && tieneFranco(rol) && !fab ? diasTildados(cf) : [];
       if (dias.length === 7) { avisar('err', 'Con los 7 días de franco no trabajaría nunca: dejale al menos uno.'); return; }
       /* SQL 148: Atención entra por "E-commerce"; Administración, por "Oficina" (el botón de la bienvenida, 27/10). */
-      var por = rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
+      var por = fab ? 'que entre por «Fábrica», toque su nombre' :
+                rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
                 rol === 'admin' ? 'que entre por "Oficina", toque su nombre' : 'que entre con su local y su nombre';
       var b = document.getElementById('usCrear');
       b.disabled = true;
-      hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc },
+      hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : fab ? FABRICA : rol, p_local: sinLocal(rol) || fab ? null : loc },
             function (r) {
               nuevo = r && r.id;
-              return zona || dias.length ? null : n + ' quedó creado. Decile ' + por + ' y que cree su PIN.';
+              return zona || dias.length ? null : n + ' quedó creado. Decile ' + por + ' y que cree su PIN.' +
+                (fab ? ' Va a ver sólo Fábrica y el Asistente.' : '');
             })
         /* SQL 154: sus francos, si se marcaron (avisa este paso). */
         .then(function (ok) {
