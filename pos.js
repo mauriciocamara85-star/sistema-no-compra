@@ -5982,29 +5982,35 @@
       '<div class="chips" id="rtCaja" role="group" aria-label="De qué caja sale">' +
         '<button type="button" class="chip" data-caja="chica">Caja chica</button><button type="button" class="chip" data-caja="fuerte">Caja fuerte</button></div>' +
       '<div class="pos-campos" style="margin-top:10px">' +
-        campo('ancho', 'Lo retira', '<select id="rtQuien" class="desplegable"><option value="">Cargando…</option></select>') +
+        campo('ancho', 'Lo retira', '<select id="rtQuien" class="desplegable"></select>') +
         campo('ancho', 'Nombre de quien lo retira', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off">', ' id="rtOtroL" hidden') +
         campo('', 'Importe en efectivo', '<input type="text" inputmode="decimal" id="rtMonto" autocomplete="off" placeholder="$0">') +
         campo('ancho', 'Observaciones', '<input type="text" id="rtObs" maxlength="200" autocomplete="off" placeholder="Para qué es: un depósito, un pago…">') +
       '</div><p class="pos-ayuda" id="rtHay">El de la caja chica lo resta el próximo cierre; el de la caja fuerte no toca el cierre.</p><div class="pos-error" id="rtError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rtGuardar">Guardar</button></div>');
-    /* Quién se lleva la plata: la gente de la oficina (arranca con quien entró, si es de la oficina) u "Otro…", escrito a mano. */
-    function pintarQuien(lista) {
-      var yo = S.ini.yo && S.ini.yo.id;
-      caja.querySelector('#rtQuien').innerHTML = '<option value="">Elegí…</option>' + lista.map(function (x) {
-        return '<option value="' + esc(x.nombre) + '"' + (x.id === yo ? ' selected' : '') + '>' + esc(x.nombre) + '</option>'; }).join('') +
-        '<option value="*">Otro…</option>';
+    /* Quién se lleva la plata: la gente del local elegido, la misma lista del «Vendedor» de la venta (el equipo de «Lo atendió»),
+       u «Otro…», escrito a mano (quien vino de otro local). Antes era la oficina (pos_retiran, que ya no se usa). Mauricio (6/11):
+       "tienen que estar las personas que trabajan en el local. No pueden estar Cintia, Antonella, los administradores … para
+       Rivadavia sería yo, Seba, Lautaro". Arranca con quien entró si está en la lista (su nombre, o su nombre con la inicial:
+       «Lautaro R.»; si hay dos así, con ninguno), y al cambiar la sucursal queda el elegido si también es de esa. */
+    function quienEntro(vs) {
+      var n = String((S.ini.yo && S.ini.yo.nombre) || '').trim().toLowerCase();
+      var es = !n ? [] : vs.filter(function (v) { var x = v.toLowerCase(); return x === n || x.indexOf(n + ' ') === 0; });
+      return es.length === 1 ? es[0] : '';
+    }
+    function pintarQuien() {
+      var sel = caja.querySelector('#rtQuien'), antes = sel.value, vs = vendedoresDe(caja.querySelector('#rtLocal').value);
+      var elegido = antes === '*' ? '*' : vs.indexOf(antes) >= 0 ? antes : quienEntro(vs);
+      sel.innerHTML = '<option value="">Elegí…</option>' + opciones(vs.map(function (n) { return [n, n]; }), elegido) +
+        '<option value="*"' + (elegido === '*' ? ' selected' : '') + '>Otro…</option>';
     }
     function marcarOtro() {
       var otro = caja.querySelector('#rtQuien').value === '*';
       caja.querySelector('#rtOtroL').hidden = !otro;
       if (otro) caja.querySelector('#rtOtro').focus();
     }
-    (S.retiran ? Promise.resolve(S.retiran) : llamar('pos_retiran', {})).then(function (ls) {
-      S.retiran = Array.isArray(ls) ? ls : [];
-      if (caja.isConnected) pintarQuien(S.retiran);
-    }).catch(function () { if (caja.isConnected) pintarQuien([]); });
+    pintarQuien();
     caja.querySelector('#rtQuien').onchange = function () { errorEn(caja, 'rtError', ''); marcarOtro(); };
     /* Lo que tendría que haber en la caja chica de esa sucursal (sin el saldo inicial del primer cierre, no se sabe). */
     function verHay() {
@@ -6029,7 +6035,7 @@
       errorEn(caja, 'rtError', '');
       verHay();
     };
-    caja.querySelector('#rtLocal').onchange = verHay;
+    caja.querySelector('#rtLocal').onchange = function () { pintarQuien(); errorEn(caja, 'rtError', ''); verHay(); };
     caja.querySelector('#rtMonto').oninput = function () { errorEn(caja, 'rtError', ''); };
     setTimeout(function () { var b = caja.querySelector('[data-caja]'); if (b) b.focus(); }, 0);
     function guardarRetiro() {
