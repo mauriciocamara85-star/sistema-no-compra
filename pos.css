@@ -244,6 +244,8 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .tk-datos .c7 { grid-column: span 7; }
 .tk-datos .c8 { grid-column: span 8; }
 .tk-pagox { display: contents; }
+/* SQL 252: el depósito elegido que no es el predeterminado se ve distinto (la venta que sigue vuelve al predeterminado). */
+.tk-datos select.tk-otro-dep { border-color: var(--warn-txt); background-color: var(--warn-soft); color: var(--warn-txt); font-weight: 700; }
 @media (max-width: 520px) {
   .tk-datos .c3, .tk-datos .c4, .tk-datos .c5, .tk-datos .c6, .tk-datos .c7, .tk-datos .c8 { grid-column: span 6; }
 }

@@ -184,9 +184,10 @@
   /* SQL 215: el interés de las cuotas (Mauricio, 31/10): 3 cuotas sin interés desde $80.000 y 6 cuotas desde $150.000;
      con menos, 8 % y 17 %. Viene puesto, para que se acuerden la regla, y se saca con el tilde cuando se hace una
      excepción. Los montos, en centavos. desde: desde ese total va sin interés; sin desde, lleva el interés siempre
-     (6/11: «que 12 cuotas tenga también el interés»; p. ej. 12: { pct: 30 }). Las cuotas que no están, sin interés.
-     La lista de «Cuotas» muestra el % de cada una (textoCuota). */
-  var INTERES = { 3: { desde: 8000000, pct: 8 }, 6: { desde: 15000000, pct: 17 } };
+     (6/11: «que 12 cuotas tenga también el interés»). Las cuotas que no están, sin interés.
+     La lista de «Cuotas» muestra el % de cada una (textoCuota).
+     12 cuotas, 25 % siempre (Mauricio, 6/11: "por ahora poné 25 %... para tener la opción nada más"). */
+  var INTERES = { 3: { desde: 8000000, pct: 8 }, 6: { desde: 15000000, pct: 17 }, 12: { pct: 25 } };
   var CONDICION = { consumidor_final: 'Consumidor final', responsable_inscripto: 'Responsable inscripto', monotributo: 'Monotributo', exento: 'Exento' };
   /* La lista del "Agregar descuento" de BlueSoft. */
   var DESCUENTOS = [['Descuento 5 %', 5], ['Descuento 15 %', 15], ['Descuento 25 %', 25], ['Descuento 40 %', 40],
@@ -359,7 +360,8 @@
 
   /* ── La base ── */
   var S = { ini: null, precios: {}, preciosVer: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, ciMarcar: null,
-            cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {}, dep: {} };
+            cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {}, dep: {},
+            prox: {}, pidiendoNum: {}, con252: false, sin252: false };   // SQL 252: el próximo número de cada sucursal y serie
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
 
@@ -545,6 +547,59 @@
       x.value = d.nombre;
       x.title = 'El depósito predeterminado de la sucursal: se cambia en Mercadería → Depósitos';
     });
+  }
+  /** SQL 252: el «Depósito» de la VENTA se elige entre los activos de la sucursal, con el predeterminado de entrada
+      (Mauricio, 6/11: "el predeterminado siempre; cuando vaya otro, que esté la opción de cambiarlo"). Mientras sea el
+      predeterminado, V.deposito_id queda null y la venta viaja igual que antes. */
+  function ponerDepVenta() {
+    var s = $('vDep'), local = V && V.local_id;
+    if (!s) return;
+    s.setAttribute('data-l', local || '');
+    traerDepositos(local).then(function (ds) {
+      var x = $('vDep');
+      if (!x || x.getAttribute('data-l') !== (local || '') || !V || V.local_id !== local) return;
+      var act = ds.filter(function (d) { return d.activo; }), pre = depPredeterminado(ds);
+      if (V.deposito_id && (!depDe(act, V.deposito_id) || (pre && pre.id === V.deposito_id))) { V.deposito_id = null; guardarBorrador(); }
+      x.innerHTML = act.length ? opciones(act.map(function (d) { return [d.id, d.nombre]; }), V.deposito_id || (pre ? pre.id : act[0].id)) :
+        '<option value="">' + esc(pre ? pre.nombre : 'Ventas') + '</option>';   // sin el SQL 193: «Ventas»
+      pintarDep();
+    });
+  }
+  function pintarDep() {
+    var x = $('vDep');
+    if (!x || !V) return;
+    var ds = S.dep[V.local_id] || [], pre = depPredeterminado(ds), act = ds.filter(function (d) { return d.activo; });
+    var elegido = V.deposito_id && depDe(act, V.deposito_id);
+    x.disabled = act.length < 2 || (S.sin252 && !elegido);
+    x.classList.toggle('tk-otro-dep', !!elegido);
+    x.title = elegido ? 'No es el predeterminado' + (pre ? ' (' + pre.nombre + ')' : '') + ': lo vendido sale de «' + elegido.nombre + '». La venta que sigue vuelve al predeterminado.' :
+      S.sin252 && act.length > 1 ? 'Lo vendido sale del predeterminado. Para vender de otro depósito falta correr el SQL 252 en la base.' :
+      act.length > 1 ? 'Lo vendido sale del predeterminado. Si la prenda está en otro depósito, elegilo acá (sólo para esta venta).' :
+      'Lo vendido sale del depósito predeterminado de la sucursal (se cambia en Mercadería → Depósitos)';
+  }
+  /* SQL 252: «Referencia» con el número que le toca a esta venta (uno seguido por sucursal; las X y las pruebas aparte).
+     Lo da la base al guardar: si otra caja guarda antes, ésta toma el que sigue. Sin internet, con ventas de la sucursal
+     esperando en la fila o sin el SQL, «Al guardar». */
+  function serieDe(letra, prueba) { return prueba ? 'prueba' : letra === 'X' ? 'x' : 'factura'; }
+  function claveNum() { return V.local_id + '|' + serieDe(V.letra, enPrueba()); }
+  function pintarRef() {
+    var x = $('vRef');
+    if (!x || !V) return;
+    var prueba = enPrueba(), serie = serieDe(V.letra, prueba), k = claveNum(), n = S.prox[k];
+    if (S.sin252 || !V.local_id || redCaida() || colaDe(V.local_id, prueba).some(function (y) { return !y.error; })) { x.value = 'Al guardar'; return; }
+    if (!n || Date.now() - n.t > 60000) traerNumero(V.local_id, V.letra, prueba, k);
+    x.value = n && n.n ? ref({ serie: serie, numero: n.n }) : n ? 'Al guardar' : '…';
+  }
+  function traerNumero(local, letra, prueba, k) {
+    if (S.pidiendoNum[k]) return;
+    S.pidiendoNum[k] = true;
+    llamarCorto('pos_proximo_numero', { p_local: local, p_letra: letra, p_prueba: prueba }, 8000).then(function (n) {
+      S.con252 = true;
+      S.prox[k] = { n: Number(n) || null, t: Date.now() };
+    }, function (e) {
+      if (sinFuncion(e)) S.sin252 = true;
+      S.prox[k] = { n: null, t: Date.now() };   // no se vuelve a pedir enseguida: dice «Al guardar» un minuto
+    }).then(function () { delete S.pidiendoNum[k]; pintarRef(); pintarDep(); });
   }
   /** Cuántas hay de una prenda en el local según el sistema; null si no se sabe (todavía no tiene stock cargado). */
   function hayEnLocal(local, cod, talle, color) {
@@ -1124,7 +1179,8 @@
     var l = (antes && localMio(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
              lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], puestas: {}, manuales: [],
-             forma: 'efectivo', pago: {}, multiples: null, observaciones: '' };
+             forma: 'efectivo', pago: {}, multiples: null, observaciones: '',
+             deposito_id: null };   // SQL 252: null = el predeterminado (cada venta nueva arranca en él)
   }
   function cargarBorrador() {
     var b = leerJSON(K_BORRADOR, null);
@@ -1472,6 +1528,7 @@
 
   function verVenta() {
     V = cargarBorrador();
+    S.prox = {};   // SQL 252: el número se vuelve a pedir (otra caja pudo haber vendido)
     var c = $('cuerpo'), prueba = enPrueba();
     c.classList.add('lleno');
     c.innerHTML =
@@ -1485,7 +1542,7 @@
         '<section class="tk-izq" aria-label="Los datos del ticket"><div class="tk-datos">' +
           campo('c4', 'Fecha', '<input type="text" id="vFecha" readonly>') +
           campo('c4', 'Comprobante', '<select id="vLetra">' + opciones([['B', LETRAS.B], ['A', LETRAS.A], ['X', LETRAS.X]], V.letra) + '</select>') +
-          campo('c4', 'Referencia', '<input type="text" id="vRef" readonly title="El número lo da la base al guardar (uno seguido por sucursal)">') +
+          campo('c4', 'Referencia', '<input type="text" id="vRef" readonly title="El número que le toca a esta venta en la sucursal. Lo da la base al guardar: si otra caja guarda antes, toma el que sigue.">') +
           campo('c8', 'Vendedor', '<select id="vVend"></select>') +
           campo('c4', 'Estado', '<input type="text" value="Cobrada" readonly>') +
           '<div class="pos-f"><span>Cliente</span><div class="tk-cliente"><div class="tk-cliente-txt" id="vCliente"></div>' +
@@ -1495,7 +1552,7 @@
           '<div class="tk-pagox" id="vPagoX"></div>' +
           /* 6/11 (Mauricio): sin «Caja» (la venta entra siempre a la caja chica) y el depósito con lugar para su nombre. */
           campo('c6', 'Sucursal', '<select id="vLocal" class="desplegable"></select>') +
-          campo('c6', 'Depósito', '<input type="text" id="vDep" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
+          campo('c6', 'Depósito', '<select id="vDep"><option value="">Ventas</option></select>') +   // SQL 252: se elige (ponerDepVenta)
         '</div>' +
         '<div class="tk-tot">' +
           '<div class="tk-caja"><span>Neto</span><b id="tNeto">$0</b></div>' +
@@ -1553,11 +1610,18 @@
       var l = localDe(this.value);
       V.local_id = l.id;
       V.vendedor = vendedorInicial(l);
+      V.deposito_id = null;   // SQL 252: otra sucursal, su predeterminado
       recordar();
       llenarVendedores();
       cambiarLista(listaDe(l));
       traerStock(l.id).then(function () { if (S.vista === 'venta' && V.local_id === l.id) pintar(); });
-      ponerDeposito('vDep', l.id);
+      ponerDepVenta();
+    };
+    $('vDep').onchange = function () {
+      var pre = depPredeterminado(S.dep[V.local_id]);
+      V.deposito_id = this.value && !(pre && pre.id === this.value) ? this.value : null;
+      guardarBorrador();
+      pintarDep();
     };
     $('tDescBtn').onclick = abrirDescuento;
     $('vLinea').onclick = function () { abrirLineaLibre(); };
@@ -1575,7 +1639,8 @@
     pintarPago();
     $('vFilas').innerHTML = '<tr class="tk-vacia"><td colspan="10">Cargando los precios…</td></tr>';
     /* Los precios y el stock del local (para avisar si una prenda no está) a la vez; el stock nunca falla. */
-    ponerDeposito('vDep', V.local_id);
+    ponerDepVenta();
+    pintarRef();   // SQL 252: el número, sin esperar los precios
     Promise.all([preciosAlDia(V.lista_id), traerStock(V.local_id)]).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en Producto: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
@@ -1633,7 +1698,7 @@
     if (!$('vFilas')) return;
     var c = cuenta(V), l0 = localDe(V.local_id), li = listaPorId(V.lista_id);
     $('vSub').textContent = nombreLocal(l0) + ' · ' + (li ? li.nombre : '');
-    $('vRef').value = 'Al guardar';
+    pintarRef();   // SQL 252
     $('vLetra').value = V.letra;
     $('vCliente').innerHTML = (V.socio ? marcaClub(V.socio) : '') + '<span>' + esc(textoCliente(V.cliente)) + '</span>';
     $('vCliente').title = (V.socio ? 'Socio del Club ' + V.socio.nivel + ' · ' : '') + textoCliente(V.cliente);
@@ -2389,7 +2454,10 @@
       V.forma === 'giftcard' && cent(V.pago.gc.valor) < c.total ? 'La Gift Card no alcanza: el resto, con otro medio en «Múltiple».' :
       V.forma === 'tarjeta' && !V.pago.tarjeta ? 'Elegí qué tarjeta es.' :
       V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido en efectivo es menos que el total.' :
-      V.forma === 'multiple' && sumaPagos(V.multiples) !== c.subtotal ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' : '';   // SQL 215: sin el interés
+      V.forma === 'multiple' && sumaPagos(V.multiples) !== c.subtotal ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' :   // SQL 215: sin el interés
+      /* SQL 252: sin él la base no conoce el depósito elegido y lo sacaría del predeterminado sin decir nada. */
+      V.deposito_id && !S.con252 ? (S.sin252 ? 'Para vender de otro depósito falta correr el SQL 252 en la base: elegí el predeterminado.' :
+        'Todavía no se pudo confirmar el depósito con la base: esperá un momento o elegí el predeterminado.') : '';
     if (mal) { avisar('err', mal); return; }
     /* SQL 200: la gift card se usa entera (como en Cobrar): si vale más que lo que paga, la diferencia se pierde. */
     var sobra = sobraGc(pagos);
@@ -2400,6 +2468,7 @@
       cliente_nombre: cl.nombre || '', cliente_doc: cl.doc || '', cliente_condicion: cl.condicion || 'consumidor_final',
       cliente_email: cl.email || '', cliente_tel: cl.tel || '', envio: cl.envio || '', observaciones: V.observaciones || '',
       socio: V.socio ? V.socio.codigo : '',
+      deposito_id: V.deposito_id || '',   // SQL 252: vacío = el predeterminado
       items: V.lineas.map(function (l) {
         var it = { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
         if (l.giftcard) it.giftcard = l.giftcard;   // SQL 200: la tarjeta que se vende
@@ -2428,6 +2497,7 @@
         return;
       }
       S.ultimo = { cola: true, clave: x.clave, total: c.total, local: nombreLocal(l0), prueba: !!p.prueba };
+      S.prox = {};   // SQL 252: esta venta toma un número cuando llegue; el que se había traído ya no vale
       V = ventaNueva(V);
       guardarBorrador();
       avisar('ok', 'Sin internet: la venta quedó guardada en esta compu y se manda sola cuando vuelva.' +
@@ -2445,15 +2515,18 @@
       if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(true); }
       if (bv && bv.isConnected) { bv.disabled = false; bv.innerHTML = textoGuardar(false); }
     }
+    var dicho = S.prox[claveNum()], dichoN = dicho && dicho.n;   // SQL 252: el número que decía «Referencia»
     llamarCorto('pos_venta_guardar', { p: p }).then(function (r) {
       S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
       S.stock = {};   // lo vendido salió del stock: se vuelve a traer
+      S.prox = {};    // SQL 252: y el número que sigue, también
       V = ventaNueva(V);
       guardarBorrador();
       S.guardando = false;
       /* Los puntos del socio (SQL 171): sumados, o anotados para cargarlos en Cobrar mientras la regla esté apagada. */
       var n = Number(r.socio_puntos) || 0, quien = socio ? String(socio.nombre || '').split(' ')[0] : '';
-      avisar('ok', nombreVenta(S.ultimo) + ' guardada.' + (!socio || !n || p.prueba ? '' :
+      var otroNum = dichoN && !r.ya && Number(r.numero) !== dichoN ? ' (el ' + ref({ serie: S.ultimo.serie, numero: dichoN }) + ' lo tomó otra venta)' : '';
+      avisar('ok', nombreVenta(S.ultimo) + ' guardada' + otroNum + '.' + (!socio || !n || p.prueba ? '' :
         r.puntos_sumados ? ' Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : ' Los ' + miles(n) + ' puntos de ' + quien + ' se cargan en Cobrar.'));
       if (S.vista !== 'venta') return;
       if (!aTickets) { verVenta(); return; }
