@@ -1764,7 +1764,7 @@ function dibujarVentanaCaja(k, fs, deIA) {
       '<button class="boton chico" id="cajaCancelar" hidden>Cancelar</button></div>') +
     '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody id="cajaDiaCuerpo">' +
     filasDiaCaja(k, deIA, false) + '</tbody></table></div>' +
-    (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">IA</span> los cargó la IA desde las fotos: corroboralos con las fotos de abajo.</p>' : '') +
+    (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">foto</span> los leyó el sistema de las fotos: corroboralos con las fotos de abajo.</p>' : '') +
     controlCajaHTML(k) +
     (figuras.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + figuras.join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
   engancharReleer(v, k, fs);
@@ -1827,7 +1827,7 @@ function filasDiaCaja(k, deIA, editando) {
   var monto = function (campo) {
     return pesos(k[campo]) + (k[campo] == null ? ''
       : aMano.indexOf(campo) > -1 ? ' <span class="de-mano" title="Lo escribieron a mano: ninguna foto lo respalda">a mano</span>'
-      : deIA.indexOf(campo) > -1 ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : '');
+      : deIA.indexOf(campo) > -1 ? ' <span class="de-ia" title="Lo leyó el sistema de la foto">foto</span>' : '');
   };
   return FILAS_DIA_CAJA.map(function (f) {
     var d = Number(k[f[3]] || 0);
@@ -1901,14 +1901,15 @@ function engancharEdicionCaja(v, k, deIA) {
   });
 }
 
-/** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. enPartes: el medio tiene varias fotos (SQL 241):
+/** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. En pantalla dice «el sistema», nunca «la IA»
+    (6/11, Mauricio: "No hablar de IA, sino de sistema"). enPartes: el medio tiene varias fotos (SQL 241):
     cada una no se compara sola, la suma va debajo de la última (sumaCierre). */
 function lecturaCierre(t, f, k, enPartes) {
   if (!f.ia_estado) return '';
   var r = f.ia_resultado || {};
-  if (f.ia_estado === 'invalida') return '<div class="lectura-ia"><span class="rojo">La IA no la pudo leer: ' + esc(r.motivo || 'no es la pantalla pedida o no se ven los números') + '.</span></div>';
+  if (f.ia_estado === 'invalida') return '<div class="lectura-ia"><span class="rojo">El sistema no la pudo leer: ' + esc(String(r.motivo || 'no es la pantalla pedida o no se ven los números').replace(/[\s.]+$/, '')) + '.</span></div>';
   if (f.ia_estado !== 'ok') {
-    return '<div class="lectura-ia">' + (f.ia_estado === 'pendiente' ? 'Todavía no se leyó.' : 'La IA no la pudo leer.') +
+    return '<div class="lectura-ia">' + (f.ia_estado === 'pendiente' ? 'Todavía no se leyó.' : 'El sistema no la pudo leer.') +
       (soloMira() ? '' : ' <button class="boton chico" data-releer="' + esc(f.id) + '">Leer de nuevo</button>') + '</div>';
   }
   var renglones = t[2].filter(function (c) { return r[c[0]] != null || (c[2] && k[c[2]] != null && (c[0] in r || c[0] !== 'total_efectivo')); }).map(function (c) {
@@ -1931,7 +1932,7 @@ function lecturaCierre(t, f, k, enPartes) {
   /* Dos o más posnet en la misma foto: cada uno y la suma (la hace el código, no la IA). */
   var posnets = Array.isArray(r.posnets) && r.posnets.length > 1 ? detalleSumaCaja([{ tipo: t[0], ia_estado: 'ok', ia_resultado: r }], t[0]) : '';
   var otroDia = r.fecha && r.fecha !== String(k.fecha).slice(0, 10);
-  return '<div class="lectura-ia">La IA leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
+  return '<div class="lectura-ia">El sistema leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
     (lista ? '<div>' + esc(lista) + '</div>' : '') +
     (posnets ? '<div>' + esc(posnets) + '</div>' : '') +
     (otroDia ? '<div class="rojo">La foto dice ' + esc(diaMes(r.fecha)) + ': parece de otro día.</div>' : '') +
@@ -1969,8 +1970,8 @@ function engancharReleer(v, k, fs) {
           suma.replaceWith(div.firstChild);
         }
         /* (SQL 242) Si con esa foto la caja quedó completa y da todo, la base la guardó sola. */
-        avisar(d.lectura.foto_valida === false ? 'La IA dice que esa foto no se lee.'
-          : d.caja_guardada ? 'Listo: la IA leyó la foto, dio todo bien y la caja quedó guardada.' : 'Listo: la IA leyó la foto.');
+        avisar(d.lectura.foto_valida === false ? 'El sistema no pudo leer esa foto.'
+          : d.caja_guardada ? 'Listo: el sistema leyó la foto, dio todo bien y la caja quedó guardada.' : 'Listo: el sistema leyó la foto.');
       });
     });
   });
