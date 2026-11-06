@@ -1,24 +1,24 @@
--- Migración 79 (SQL 251, 6/11/2026): la misma venta de Mercado Pago y el mismo posnet en dos fotos, mejor reconocidos.
+-- Migración 79 (SQL 251, 6/11/2026): la misma venta de Mercado Pago en dos fotos, aunque la IA lea distinto la hora, el
+-- número o el monto; y el posnet en dos fotos, a centavos.
 --
--- Lo encontró el árbitro del SQL 250 (6/11):
--- 1) Mercado Pago en dos fotos: la misma venta se reconocía por la hora y el monto (SQL 242), y la IA a veces lee la hora
+-- Lo encontró el árbitro (rondas 1 y 2, 6/11):
+-- 1) Mercado Pago en dos fotos: la misma venta se reconoce por la hora y el monto (SQL 242), y la IA a veces lee la hora
 --    distinta en dos fotos de la misma pantalla. En Parque Brown, el 5/11, la misma venta (operación 188001606784,
 --    $ 97.500) salió «19:15» en una foto y «19:16» en otra: con las dos fotos como partes 1 y 2 daba $ 950.500 en vez de
 --    $ 853.000. Y con el SQL 250 la app pide justo esa segunda foto cuando la lista no alcanza: una venta contada dos
---    veces puede tapar un faltante real y la caja se guardaba sola con «Dio bien».
---    Ahora la misma venta es el mismo NÚMERO de operación y el mismo monto; sin número, la misma hora y el mismo monto (y
---    si en otra foto esa hora y ese monto tienen número, cuenta como ésa).
--- 2) El posnet en dos fotos: el SQL 250 juntaba los posnet sólo por el total, así que dos posnet distintos con el mismo
---    total (Payway $ 100.000 en una foto y Getnet $ 100.000 en la otra) contaban una vez. Ahora, con nombre, el mismo
---    posnet es el mismo nombre y el mismo total; sin nombre, el mismo total (y si en otra foto ese total tiene nombre,
---    cuenta como ése).
--- 3) Las sumas se redondean a centavos, como en la app.
+--    veces puede tapar un faltante y la caja se guardaba sola con «Dio bien».
+--    Ahora, si la venta tiene número de operación, vale la hora de la primera foto donde sale ese número y el monto menor
+--    con que sale; después se junta como antes, por la hora y el monto. Así no la cuenta dos veces ni la hora mal leída,
+--    ni un dígito del número mal leído (Unicenter 1/11: 186243283807 y 188243283807), ni el monto mal leído (Unicenter
+--    1/11: $ 65.000 y $ 85.000). Si se equivoca, cuenta de menos (se ve el faltante y se pide otra foto), nunca de más.
+-- 2) El posnet en dos fotos sigue juntándose por el total (no por el nombre: la IA a veces lo lee mal, Grand Bourg 2/11
+--    «Sistema POS», y contaría dos veces el mismo ticket), ahora a centavos, como en la app.
 -- La misma regla está en impecable-comun.js (ventasSinRepetir, posnetsSinRepetir): la app muestra lo que guarda la base.
 --
 -- Al final (datos): las cajas de noviembre sin controlar se completan con la regla nueva y las ya guardadas recalculan
 -- sus alertas, como en el SQL 250.
 -- Se puede correr dos veces. Se deshace con deshacer-251 (vuelve la función del SQL 250).
--- Pedido de Mauricio (6/11): "lo del árbitro me parece bien, lanzalo y ya queda todo bien".
+-- Pedido de Mauricio (6/11): "lo del árbitro me parece bien, lanzalo y ya queda todo bien"; y a la ronda 2, "dale".
 
 create or replace function public.orden_caja_lecturas(p_caja uuid)
  returns table(tipo text, resultado jsonb, partes integer)
@@ -58,27 +58,29 @@ as $function$
       from buenas b where b.tipo = 'mp'),
   ventas0 as (
     select b.parte, x.i, orden_num(o ->> 'monto') as monto,
-           coalesce(round(orden_num(o ->> 'monto'), 2), 0.00)::text as m,
            nullif(o ->> 'hora', '') as hora,
-           nullif(btrim(o ->> 'numero'), '') as numero
+           nullif(regexp_replace(coalesce(o ->> 'numero', ''), '[^0-9]', '', 'g'), '') as numero
       from buenas b cross join lateral jsonb_array_elements(b.r -> 'operaciones') with ordinality as x(o, i)
      where b.tipo = 'mp' and jsonb_typeof(b.r -> 'operaciones') = 'array'),
-  -- (SQL 251) La misma venta: el mismo número de operación y monto; sin número, la misma hora y monto (y si en otra foto
-  -- esa hora y ese monto tienen número, cuenta como ésa). Antes iba primero la hora, y la IA a veces la lee distinta.
+  -- (SQL 251) Con número de operación: la hora de la primera foto donde sale ese número (con hora) y el monto menor con
+  -- que sale. Así la hora, un dígito del número o el monto mal leídos en una foto no cuentan dos veces la misma venta.
+  por_numero as (
+    select v.numero,
+           (select w.hora from ventas0 w where w.numero = v.numero and w.hora is not null order by w.parte, w.i limit 1) as hora,
+           min(v.monto) as monto
+      from ventas0 v where v.numero is not null group by v.numero),
   ventas as (
-    select v.parte, v.monto,
-           case when v.numero is not null then 'n:' || v.numero || '|' || v.m
-                when v.hora is not null then coalesce(
-                  (select 'n:' || w.numero || '|' || w.m from ventas0 w
-                    where w.parte <> v.parte and w.numero is not null and w.hora = v.hora and w.m = v.m
-                    order by w.parte, w.i limit 1),
-                  'h:' || v.hora || '|' || v.m)
+    select v.parte, coalesce(n.monto, v.monto) as monto,
+           case when coalesce(n.hora, v.hora) is not null
+                  then 'h:' || coalesce(n.hora, v.hora) || '|' || coalesce(round(coalesce(n.monto, v.monto), 2), 0.00)::text
+                when v.numero is not null then 'n:' || v.numero || '|' || coalesce(round(coalesce(n.monto, v.monto), 2), 0.00)::text
                 else 'u:' || v.parte || ':' || v.i end as clave
-      from ventas0 v),
+      from ventas0 v left join por_numero n on n.numero = v.numero),
   sin_repetir as (
-    select round(sum(v.veces * v.monto), 2) as t
-      from (select z.clave, max(z.monto) as monto, max(z.veces) as veces
-              from (select w.parte, w.clave, max(w.monto) as monto, count(*) as veces from ventas w group by w.parte, w.clave) z
+    -- Sin ningún monto leído, queda sin leer.
+    select case when count(v.monto) = 0 then null else round(sum(v.veces * v.monto), 2) end as t
+      from (select z.clave, min(z.monto) as monto, max(z.veces) as veces
+              from (select w.parte, w.clave, min(w.monto) as monto, count(*) as veces from ventas w group by w.parte, w.clave) z
              group by z.clave) v),
   -- (SQL 250) El posnet en varias fotos: cada posnet una vez aunque esté en dos fotos, y dos iguales en una misma foto,
   -- dos (de cada uno, las veces de la foto que más tiene). Sólo si todas las fotos traen la lista de sus posnet (las de
@@ -87,32 +89,22 @@ as $function$
     select bool_and(coalesce(jsonb_typeof(b.r -> 'posnets') = 'array' and jsonb_array_length(b.r -> 'posnets') > 0, false)) as todas
       from buenas b where b.tipo = 'lote'),
   posnets as (
-    select b.parte, x.i, nullif(regexp_replace(lower(coalesce(p ->> 'nombre', '')), '[^a-z0-9]', '', 'g'), '') as nombre,
+    select b.parte, nullif(regexp_replace(lower(coalesce(p ->> 'nombre', '')), '[^a-z0-9]', '', 'g'), '') as nombre,
            orden_num(p ->> 'total') as total
-      from buenas b cross join lateral jsonb_array_elements(b.r -> 'posnets') with ordinality as x(p, i)
+      from buenas b cross join lateral jsonb_array_elements(b.r -> 'posnets') as x(p)
      where b.tipo = 'lote' and jsonb_typeof(b.r -> 'posnets') = 'array'),
   -- Un posnet sin leer en una foto que en otra foto sí se leyó (el mismo nombre): vale el de la otra.
   posnets_ok as (
     select p.* from posnets p
      where p.total is not null
         or not exists (select 1 from posnets q where q.nombre = p.nombre and q.parte <> p.parte and q.total is not null)),
-  -- (SQL 251) El mismo posnet: con nombre, el mismo nombre y total; sin nombre, el mismo total (y si en otra foto ese
-  -- total tiene nombre, cuenta como ése). Antes, sólo el total: dos posnet distintos con el mismo total contaban una vez.
-  posnets_k as (
-    select p.parte, p.total,
-           case when p.nombre is not null then 'n:' || p.nombre || '|' || round(p.total, 2)
-                else coalesce(
-                  (select 'n:' || q.nombre || '|' || round(q.total, 2) from posnets_ok q
-                    where q.parte <> p.parte and q.nombre is not null and round(q.total, 2) = round(p.total, 2)
-                    order by q.parte, q.i limit 1),
-                  't:' || round(p.total, 2)) end as clave
-      from posnets_ok p),
+  -- (SQL 251) Por el total a centavos, como la app (sólo por el total, no por el nombre: la IA a veces lo lee mal).
   lote_sin_repetir as (
-    -- Un posnet que sigue sin leer deja el posnet sin leer (su clave y su total quedan null: bool_or de un total null).
+    -- Un posnet que sigue sin leer deja el posnet sin leer (bool_or de un total null).
     select case when bool_or(z.total is null) then null else round(sum(z.total * z.veces), 2) end as t
-      from (select y.clave, max(y.total) as total, max(y.veces) as veces
-              from (select w.parte, w.clave, max(w.total) as total, count(*) as veces from posnets_k w group by w.parte, w.clave) y
-             group by y.clave) z),
+      from (select y.total, max(y.veces) as veces
+              from (select w.parte, round(w.total, 2) as total, count(*) as veces from posnets_ok w group by w.parte, round(w.total, 2)) y
+             group by y.total) z),
   valor as (
     select b.tipo,
            case when b.tipo = 'mp' and q.n > 1 then coalesce(orden_num(b.r ->> 'total'), orden_num(b.r ->> 'suma_operaciones'))

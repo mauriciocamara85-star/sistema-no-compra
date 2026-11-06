@@ -322,88 +322,91 @@ function lecturaCaja(fotos, tipo, sis, tol) {
 /* (SQL 242, 4/11) Mercado Pago en varias fotos: cada venta de las listas una sola vez aunque esté en las dos fotos, y dos
    ventas iguales en una misma foto, dos (de cada una, las veces de la foto que más tiene). Como orden_caja_lecturas en la
    base. null si alguna foto no trae su lista leída entera (las de antes del 242): entonces se suman como antes.
-   (SQL 251, 6/11, el árbitro) La misma venta es el mismo NÚMERO de operación y el mismo monto; sin número, la misma hora y
-   el mismo monto (y si en otra foto esa hora y ese monto tienen número, cuenta como ésa). Antes iba primero la hora, y la
-   IA a veces la lee distinta: en Parque Brown, el 5/11, la operación 188001606784 salió «19:15» y «19:16» y se contaba dos
-   veces. */
+   (SQL 251, 6/11, el árbitro) La misma venta es la misma hora y el mismo monto, como antes; pero si tiene número de
+   operación, vale la hora de la primera foto donde sale ese número, y el monto menor con que sale. La IA a veces lee
+   distinto la hora (Parque Brown 5/11: la operación 188001606784 salió «19:15» y «19:16»), un dígito del número (Unicenter
+   1/11: 186243283807 y 188243283807) o el monto (Unicenter 1/11: 65.000 y 85.000): así ninguno de esos errores la cuenta
+   dos veces. Si se equivoca, cuenta de menos (se ve el faltante y se pide otra foto), nunca de más. */
 function ventasSinRepetir(partes, num) {
   var listas = partes.every(function (r) { return Array.isArray(r.operaciones) && r.operaciones.length && num(r.suma_operaciones) != null; });
   if (!listas) return null;
   var todas = [];
   partes.forEach(function (r, i) {
     r.operaciones.forEach(function (o, j) {
-      var mo = num(o && o.monto), h = o && o.hora != null && String(o.hora) !== '' ? String(o.hora) : null;
-      var n = o && o.numero != null ? String(o.numero).trim() : '';
-      todas.push({ parte: i, i: j, monto: mo, m: (mo == null ? 0 : mo).toFixed(2), hora: h, numero: n || null });
+      var h = o && o.hora != null && String(o.hora) !== '' ? String(o.hora) : null;
+      var n = o && o.numero != null ? String(o.numero).replace(/[^0-9]/g, '') : '';
+      todas.push({ parte: i, i: j, monto: num(o && o.monto), hora: h, numero: n || null });
     });
   });
+  /* Por número: la hora de la primera foto donde sale con hora, y el monto menor. */
+  var porNumero = {};
   todas.forEach(function (v) {
-    if (v.numero) { v.clave = 'n:' + v.numero + '|' + v.m; return; }
-    if (!v.hora) { v.clave = 'u:' + v.parte + ':' + v.i; return; }
-    var w = null;
-    todas.forEach(function (x) { if (!w && x.parte !== v.parte && x.numero && x.hora === v.hora && x.m === v.m) w = x; });
-    v.clave = w ? 'n:' + w.numero + '|' + w.m : 'h:' + v.hora + '|' + v.m;
+    if (!v.numero) return;
+    var x = porNumero[v.numero] || (porNumero[v.numero] = { hora: null, monto: null });
+    if (x.hora == null && v.hora != null) x.hora = v.hora;
+    if (v.monto != null && (x.monto == null || v.monto < x.monto)) x.monto = v.monto;
   });
   var veces = {}, monto = {};
   partes.forEach(function (r, i) {
     var aca = {};
     todas.forEach(function (v) {
       if (v.parte !== i) return;
-      aca[v.clave] = (aca[v.clave] || 0) + 1;
-      if (v.monto != null) monto[v.clave] = Math.max(monto[v.clave] == null ? -Infinity : monto[v.clave], v.monto);
+      var x = v.numero ? porNumero[v.numero] : null;
+      var h = x && x.hora != null ? x.hora : v.hora, mo = x && x.monto != null ? x.monto : v.monto;
+      var m = centavosCaja(mo == null ? 0 : mo).toFixed(2);
+      var k = h != null ? 'h:' + h + '|' + m : v.numero ? 'n:' + v.numero + '|' + m : 'u:' + i + ':' + v.i;
+      aca[k] = (aca[k] || 0) + 1;
+      if (mo != null) monto[k] = monto[k] == null ? mo : Math.min(monto[k], mo);
     });
     Object.keys(aca).forEach(function (k) { veces[k] = Math.max(veces[k] || 0, aca[k]); });
   });
-  var total = 0, ventas = 0;
-  Object.keys(veces).forEach(function (k) { total += veces[k] * (monto[k] == null ? 0 : monto[k]); ventas += veces[k]; });
-  return { total: Math.round(total * 100) / 100, ventas: ventas, repetidas: todas.length - ventas };
+  /* Sin ningún monto leído, queda sin leer (como en la base). */
+  var total = 0, ventas = 0, alguno = false;
+  Object.keys(veces).forEach(function (k) { if (monto[k] != null) { total += veces[k] * monto[k]; alguno = true; } ventas += veces[k]; });
+  return { total: alguno ? centavosCaja(total) : null, ventas: ventas, repetidas: todas.length - ventas };
 }
+
+/** Redondea a centavos como la base (round(x, 2), la mitad para arriba): 1,005 → 1,01 (toFixed daría 1,00). */
+function centavosCaja(x) { var s = x < 0 ? -1 : 1; return s * Math.round(Number((Math.abs(x) * 100).toFixed(6))) / 100; }
 
 /** El nombre de un posnet para compararlo entre fotos: "Pay Way" y "payway" son el mismo. null si no tiene. */
 function nombrePosnet(n) { var t = String(n == null ? '' : n).toLowerCase().replace(/[^a-z0-9]/g, ''); return t || null; }
 
-/* (SQL 250, 5/11) El posnet en varias fotos: cada posnet una vez aunque esté en dos fotos, y dos iguales en una misma
-   foto, dos (de cada uno, las veces de la foto que más tiene). Un posnet sin leer en una foto que en otra sí se leyó (el
-   mismo nombre) vale el de la otra; si sigue sin leer, el posnet queda sin leer. Como orden_caja_lecturas en la base.
-   null si alguna foto no trae la lista de sus posnet (las de antes del 241).
-   (SQL 251, 6/11, el árbitro) El mismo posnet es el mismo nombre y el mismo total; sin nombre, el mismo total (y si en
-   otra foto ese total tiene nombre, cuenta como ése). Antes, sólo el total: Payway $ 100.000 en una foto y Getnet
-   $ 100.000 en la otra contaban una vez. */
+/* (SQL 250, 5/11) El posnet en varias fotos: cada posnet (por su total, a centavos) una vez aunque esté en dos fotos, y dos
+   con el mismo total en una misma foto, dos (de cada total, las veces de la foto que más tiene). Un posnet sin leer en una
+   foto que en otra sí se leyó (el mismo nombre) vale el de la otra; si sigue sin leer, el posnet queda sin leer. Como
+   orden_caja_lecturas en la base. null si alguna foto no trae la lista de sus posnet (las de antes del 241).
+   (SQL 251, 6/11, el árbitro) Sólo por el total, no por el nombre: la IA a veces lee mal el nombre (Grand Bourg 2/11,
+   «Sistema POS») y el mismo ticket se contaba dos veces. Así, si se equivoca, cuenta de menos (dos posnet distintos con
+   el mismo total en fotos distintas: se ve el faltante), nunca de más. */
 function posnetsSinRepetir(partes, num) {
   if (!partes.every(function (r) { return Array.isArray(r.posnets) && r.posnets.length; })) return null;
   var todos = [];
   partes.forEach(function (r, i) {
-    r.posnets.forEach(function (p, j) { todos.push({ parte: i, i: j, clave: nombrePosnet(p && p.nombre), nombre: p && p.nombre, total: num(p && p.total) }); });
+    r.posnets.forEach(function (p) { todos.push({ parte: i, clave: nombrePosnet(p && p.nombre), nombre: p && p.nombre, total: num(p && p.total) }); });
   });
   var ok = todos.filter(function (p) {
     return p.total != null || !todos.some(function (q) { return q.clave != null && q.clave === p.clave && q.parte !== p.parte && q.total != null; });
   });
   if (ok.some(function (p) { return p.total == null; })) return { total: null, posnets: [], repetidos: 0 };
-  ok.forEach(function (p) {
-    var t = p.total.toFixed(2);
-    if (p.clave) { p.k = 'n:' + p.clave + '|' + t; return; }
-    var q = null;
-    ok.forEach(function (x) { if (!q && x.parte !== p.parte && x.clave && x.total.toFixed(2) === t) q = x; });
-    p.k = q ? 'n:' + q.clave + '|' + t : 't:' + t;
-  });
-  var orden = [], veces = {}, total = {}, nombre = {};
+  var orden = [], veces = {}, nombre = {};
   partes.forEach(function (r, i) {
     var aca = {};
     ok.forEach(function (p) {
       if (p.parte !== i) return;
-      aca[p.k] = (aca[p.k] || 0) + 1;
-      total[p.k] = total[p.k] == null ? p.total : Math.max(total[p.k], p.total);
-      if (orden.indexOf(p.k) < 0) orden.push(p.k);
-      if (!nombre[p.k] && p.nombre) nombre[p.k] = String(p.nombre);
+      var k = centavosCaja(p.total).toFixed(2);
+      aca[k] = (aca[k] || 0) + 1;
+      if (orden.indexOf(k) < 0) orden.push(k);
+      if (!nombre[k] && p.nombre) nombre[k] = String(p.nombre);
     });
     Object.keys(aca).forEach(function (k) { veces[k] = Math.max(veces[k] || 0, aca[k]); });
   });
-  var suma = 0, lista = [];
+  var total = 0, lista = [];
   orden.forEach(function (k) {
-    for (var j = 0; j < veces[k]; j++) lista.push({ nombre: nombre[k] || null, total: total[k] });
-    suma += veces[k] * total[k];
+    for (var j = 0; j < veces[k]; j++) lista.push({ nombre: nombre[k] || null, total: Number(k) });
+    total += veces[k] * Number(k);
   });
-  return { total: Math.round(suma * 100) / 100, posnets: lista, repetidos: todos.length - lista.length };
+  return { total: centavosCaja(total), posnets: lista, repetidos: todos.length - lista.length };
 }
 
 /** "Posnet: Payway $ 253.000 + Getnet $ 564.500 = $ 817.500", si el comprobante sale de sumar. */
