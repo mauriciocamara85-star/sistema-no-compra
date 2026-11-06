@@ -210,6 +210,8 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
    título del de al lado en dos renglones, la etiqueta queda abajo sin estirarse. */
 .foto-caja { align-content: space-between; }
 .foto-caja.no-falta { opacity: .45; cursor: default; }
+/* (6/11) Mientras se lee otra foto: en gris, y al tocarla dice «Esperá…». */
+.foto-caja.esperando, .foto-caja-mas.esperando { opacity: .45; }
 .caja-mas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .foto-caja-mas { padding: 10px 16px; border-radius: 99px; border: 1px dashed var(--suave); background: none; color: var(--texto);
                  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }

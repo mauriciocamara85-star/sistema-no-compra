@@ -2792,7 +2792,8 @@ function fotosVigentes(fotos, fecha) {
 
 /* fecha (SQL 244): la de la caja, para marcar «De otro día».
    op (SQL 250, 5/11): libre = los números se escriben (IA apagada, a mano o el supervisor que corrige): nada se traba;
-   incompletas = [{ tipo, parte }] las fotos leídas sin el total («Incompleta», las pide la barra); sisMp y tol para la suma. */
+   incompletas = [{ tipo, parte }] las fotos leídas sin el total («Incompleta», las pide la barra); sisMp y tol para la suma.
+   (6/11) espera = se está leyendo una foto: las demás, en gris («esperando»); al tocarlas, «Esperá…». */
 function htmlFotosCaja(fotos, estado, fecha, op) {
   op = op || {};
   var ultima = {}, mas = '', sumas = '';
@@ -2816,12 +2817,12 @@ function htmlFotosCaja(fotos, estado, fecha, op) {
         (op.incompletas || []).some(function (x) { return x.tipo === tipo && x.parte === p; });
       var chip = e ? e.texto : noHaceFalta ? 'No hace falta' : esperaSistema ? 'Primero el sistema' : !f ? 'Falta' : otroDia ? 'De otro día'
         : incompleta ? 'Incompleta' : f.ia_estado === 'ok' ? 'Leída' : f.ia_estado === 'pendiente' ? 'Subida' : 'Sacala de nuevo';
-      html += '<button class="foto-caja' + (gris ? ' no-falta' : '') + '" data-tipo="' + tipo + '" data-parte="' + p + '"' +
+      html += '<button class="foto-caja' + (gris ? ' no-falta' : op.espera && !e ? ' esperando' : '') + '" data-tipo="' + tipo + '" data-parte="' + p + '"' +
         ((e && e.ocupado) || gris ? ' disabled' : '') + '><b>' + esc(nombreFotoCaja(tipo, p, partes)) + '</b>' +
         '<span class="chip ' + (e || gris || !f ? 'pendiente' : otroDia ? 'vencido' : incompleta ? 'corregir' : f.ia_estado === 'ok' || f.ia_estado === 'pendiente' ? 'listo' : 'vencido') + '">' + esc(chip) + '</span></button>';
     }
     if (OTRA_FOTO_CAJA[tipo] && ultima[tipo + ':' + partes] && partes < MAX_PARTES_CAJA) {
-      mas += '<button class="foto-caja-mas" data-tipo="' + tipo + '" data-parte="' + (partes + 1) + '">' + esc(OTRA_FOTO_CAJA[tipo][1]) + '</button>';
+      mas += '<button class="foto-caja-mas' + (op.espera ? ' esperando' : '') + '" data-tipo="' + tipo + '" data-parte="' + (partes + 1) + '">' + esc(OTRA_FOTO_CAJA[tipo][1]) + '</button>';
     }
     var s = OTRA_FOTO_CAJA[tipo] ? detalleSumaCaja(fotos, tipo, tipo === 'mp' ? op.sisMp : null, op.tol) : '';
     if (s) sumas += '<p class="caja-suma">' + esc(s) + '</p>';
@@ -2919,7 +2920,11 @@ function engancharAtrasadas() {
    guiando". */
 var FOTO_PIE = { sistema: 'del cierre del sistema', lote: 'del posnet', mp: 'de Mercado Pago', gocuotas: 'de Go Cuotas' };
 var FOTO_PIE_OTRA = { lote: 'del otro posnet', mp: 'de la otra de Mercado Pago' };   // la parte 2 en adelante
-var MOTIVOS_MANO = ['La foto no se lee', 'La IA leyó mal un número', 'No puedo sacar la foto'];
+/* (6/11, Mauricio: "No digas IA") A los chicos, sin «IA»: «Se leyó mal un número» (antes «La IA leyó mal un número»). */
+var MOTIVOS_MANO = ['La foto no se lee', 'Se leyó mal un número', 'No puedo sacar la foto'];
+/* (6/11) Mientras se lee una foto, las demás esperan (así ven cómo salió antes de seguir). Si tarda más que esto (mala
+   señal), se destraban igual. */
+var ESPERA_LECTURA = 60000;
 
 function dibujarCaja(caja, fotos, corrige) {
   fotos = fotos.slice();
@@ -2952,7 +2957,7 @@ function dibujarCaja(caja, fotos, corrige) {
     : supervisor
     ? '<button class="volver" id="volverCaja">‹ Volver a la caja</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') + ' la caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
-        ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
+        ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: los números se cargan solos. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
     : cabeza('Registro') + pestanitasPapeles() + '<div id="avisosCaja"></div>' +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : _cajaIA ? '' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>') +
@@ -2996,24 +3001,31 @@ function dibujarCaja(caja, fotos, corrige) {
   /* Lo que se está subiendo o leyendo, por parte ("lote:2" → { texto, ocupado }): los botones se vuelven a dibujar
      al cambiar un número del sistema ($ 0 → «No hace falta») o al llegar una lectura. */
   var estado = {};
+  /* (6/11, Mauricio: "se apuran y sacan la segunda sin que lea la primera") Se está leyendo una foto, hace menos de
+     ESPERA_LECTURA: las demás esperan. */
+  function esperaLectura() {
+    return Object.keys(estado).some(function (k) { return estado[k].ocupado && Date.now() - (estado[k].desde || 0) < ESPERA_LECTURA; });
+  }
   function pintarFotos() {
     var lugar = document.getElementById('fotosCaja');
     if (!lugar) return;
     var inc = [];
     ['lote', 'mp', 'gocuotas'].forEach(function (tipo) { var x = incompleta(tipo); if (x) inc.push({ tipo: tipo, parte: x.parteLeida }); });
-    lugar.innerHTML = htmlFotosCaja(fotos, estado, caja.fecha, { libre: !trabar || enMano, incompletas: inc, sisMp: sisMpCaja(fotosVigentes(fotos, caja.fecha), valorDe('sis_mp')), tol: _tolCaja });
+    var espera = esperaLectura();
+    lugar.innerHTML = htmlFotosCaja(fotos, estado, caja.fecha, { libre: !trabar || enMano, incompletas: inc, sisMp: sisMpCaja(fotosVigentes(fotos, caja.fecha), valorDe('sis_mp')), tol: _tolCaja, espera: espera });
     /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
     lugar.querySelectorAll('[data-parte]').forEach(function (b) {
       /* (5/11) Primero el instructivo de esa foto, a pantalla completa (el supervisor que corrige y «Ver su app», directo). */
       b.onclick = function () {
         if (b.disabled) return;
+        if (esperaLectura()) { avisar(_cajaIA ? 'Esperá: el sistema está leyendo la foto anterior.' : 'Esperá: se está subiendo la foto anterior.'); return; }
         if (supervisor || _espejo) { sacar(b); return; }
         instructivoCaja(b.dataset.tipo, Number(b.dataset.parte) || 1, { fecha: caja.fecha }, function () { sacar(b); });
       };
     });
     /* La foto que sigue, con el borde verde (la misma que pide la barra de abajo). */
     var s = siguiente();
-    var t = s.foto && lugar.querySelector('[data-tipo="' + s.foto.tipo + '"][data-parte="' + (s.foto.parte || 1) + '"]');
+    var t = s.foto && !espera && lugar.querySelector('[data-tipo="' + s.foto.tipo + '"][data-parte="' + (s.foto.parte || 1) + '"]');
     if (t) {
       t.classList.add('siguiente');
       var chip = t.querySelector('.chip');
@@ -3025,7 +3037,12 @@ function dibujarCaja(caja, fotos, corrige) {
     if (b.disabled) return;
     var tipo = b.dataset.tipo, parte = Number(b.dataset.parte) || 1, clave = tipo + ':' + parte;
     b.disabled = true;
-    fotoCaja(caja, tipo, parte, input, function (texto) { estado[clave] = { texto: texto, ocupado: true }; pintar(); })
+    fotoCaja(caja, tipo, parte, input, function (texto) {
+      estado[clave] = { texto: texto, ocupado: true, desde: Date.now() };
+      pintar();
+      /* Si tarda más del tope, se vuelve a pintar: las demás fotos se destraban y la barra dice que está tardando. */
+      setTimeout(function () { if (estado[clave] && estado[clave].ocupado && conInstructivo()) pintar(); }, ESPERA_LECTURA + 100);
+    })
       .then(function (nueva) {
         delete estado[clave];
         if (nueva) { fotos.unshift(nueva); completarConLectura(nueva); }
@@ -3188,7 +3205,9 @@ function dibujarCaja(caja, fotos, corrige) {
       h = '<button class="boton lima" id="pieGuardar">Guardar</button>';
     } else if (leyendo) {
       paso = 1;
-      h = '<p class="caja-pie-estado">Esperá: la foto se está leyendo</p><button class="boton lima" disabled><span class="ruedita"></span>' + esc(_cajaIA ? 'Leyendo la foto…' : 'Subiendo la foto…') + '</button>';
+      h = '<p class="caja-pie-estado">' + esc(!esperaLectura() ? 'Está tardando: podés seguir con otra foto'
+          : _cajaIA ? 'Esperá: el sistema está leyendo la foto' : 'Esperá: se está subiendo la foto') + '</p>' +
+        '<button class="boton lima" disabled><span class="ruedita"></span>' + esc(_cajaIA ? 'Leyendo la foto…' : 'Subiendo la foto…') + '</button>';
     } else if (s.foto) {
       paso = 1;
       var deNuevo = s.foto.malas > 0 || s.foto.incompleta;
@@ -3398,7 +3417,7 @@ function elegirMotivoMano() {
     var capa = document.createElement('div');
     capa.className = 'dialogo-capa';
     capa.innerHTML = '<div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogoTexto">' +
-      '<p class="dialogo-texto" id="dialogoTexto">La IA completa los números sola</p>' +
+      '<p class="dialogo-texto" id="dialogoTexto">El sistema completa los números solo</p>' +
       '<p class="dialogo-sub">Cargalo a mano sólo si:</p>' +
       MOTIVOS_MANO.map(function (m, i) { return '<button type="button" class="opcion" data-m="' + i + '">' + esc(m) + '</button>'; }).join('') +
       '<p class="dialogo-pie">Lo revisa tu supervisor.</p>' +
