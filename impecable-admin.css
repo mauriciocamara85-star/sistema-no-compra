@@ -955,11 +955,16 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .imp .dot-tabla td.dot-editando { padding: 0; }
 .imp .dot-in { display: block; width: 100%; min-height: 30px; margin: 0; padding: 5px 7px; border: 0; border-radius: 0; outline: 2px solid var(--sel-borde); outline-offset: -2px;
   background: var(--surface); font: inherit; color: var(--txt); resize: none; overflow: hidden; }
-.imp select.dot-in { cursor: pointer; }
 .imp .dot-casilla { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--sel-borde); cursor: pointer; }
-.imp .dot-chip { display: inline-block; margin: 1px 0; padding: 1px 9px; border-radius: var(--r-pill); font: 600 12px/1.5 var(--sans); white-space: nowrap; }
-.imp .dot-tabla tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface-2); cursor: default; }
-.imp .dot-tabla tfoot .dot-gut { z-index: 2; }
+.imp .dot-chip, .dot-elegir .dot-chip { display: inline-block; margin: 1px 0; padding: 1px 9px; border-radius: var(--r-pill); font: 600 12px/1.5 var(--sans); white-space: nowrap; }
+/* Los desplegables: la flechita a la derecha de la celda, como en Google (al tocarla, la lista). */
+.imp .dot-tabla tbody td.dot-lista { position: relative; padding-right: 24px; cursor: pointer; }
+.imp .dot-flecha { position: absolute; top: 50%; right: 8px; width: 10px; height: 6px; margin-top: -3px; color: var(--txt-2); opacity: .7; pointer-events: none; transition: opacity .12s, transform .15s; }
+.imp .dot-tabla tbody td.dot-lista:hover .dot-flecha, .imp .dot-tabla tbody td.dot-lista:focus .dot-flecha, .imp .dot-tabla td.dot-abierta .dot-flecha { opacity: 1; }
+.imp .dot-tabla td.dot-abierta { outline: 2px solid var(--sel-borde); outline-offset: -2px; }
+.imp .dot-tabla td.dot-abierta .dot-flecha { transform: rotate(180deg); }
+.imp .dot-tabla tfoot td, .imp .dot-tabla tfoot th { position: sticky; bottom: 0; z-index: 2; background: var(--surface-2); cursor: default; }
+.imp .dot-tabla tfoot .dot-gut { left: 0; z-index: 4; }
 .imp .dot-tabla tr.dot-recien td { animation: dotRecien 1.6s ease-out; }
 @keyframes dotRecien { from { box-shadow: inset 0 0 0 9999px var(--sel-fondo); } }
 
@@ -999,6 +1004,30 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .dot-menu button { padding: 9px 12px; border: 0; border-radius: 8px; background: none; text-align: left; font: 500 14px var(--sans); color: var(--txt); cursor: pointer; }
 .dot-menu button:hover, .dot-menu button:focus-visible { background: var(--info-soft); outline: none; }
 .dot-menu .dot-peligro { color: var(--bad-txt); }
+/* La lista de un desplegable: también en el body, pegada a la celda. */
+.dot-elegir { position: fixed; z-index: 80; display: flex; flex-direction: column; min-width: 220px; max-width: 320px; overflow: hidden; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--sombra); outline: none; }
+/* .dot-elegir delante: si no, la regla general de los input (ancho 100 %, relleno grande) le gana. */
+.dot-elegir .dot-elegir-buscar { flex: none; box-sizing: border-box; width: calc(100% - 16px); min-width: 0; margin: 8px 8px 4px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  font: 400 13.5px var(--sans); color: var(--txt); outline: none; }
+.dot-elegir .dot-elegir-buscar:focus { border-color: var(--sel-borde); background: var(--surface); box-shadow: 0 0 0 1px var(--sel-borde); }
+.dot-elegir-ops { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 6px 6px; scrollbar-width: thin; overscroll-behavior: contain; }
+.dot-op { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 4px 8px; border-radius: 8px; font: 500 13.5px/1.3 var(--sans); color: var(--txt); cursor: pointer; }
+.dot-op.activa { background: var(--info-soft); }
+.dot-op-marca { flex: none; display: grid; place-items: center; width: 16px; height: 16px; box-sizing: border-box; }
+.dot-op[aria-selected="true"] .dot-op-marca::before { content: ''; width: 9px; height: 5px; border-left: 2px solid var(--sel-borde); border-bottom: 2px solid var(--sel-borde); transform: translateY(-1px) rotate(-45deg); }
+.dot-op-caja { border: 1.5px solid var(--txt-2); border-radius: 4px; }
+.dot-op[aria-selected="true"] .dot-op-caja { border-color: var(--sel-borde); background: var(--sel-borde); }
+.dot-op[aria-selected="true"] .dot-op-caja::before { border-color: #fff; }
+.dot-op-txt { min-width: 0; overflow-wrap: anywhere; }
+.dot-op-nota { margin-left: auto; padding-left: 6px; font-size: 11.5px; font-weight: 400; color: var(--txt-2); white-space: nowrap; }
+.dot-op-usar { color: var(--acc-txt); font-weight: 600; }
+.dot-elegir-nada { padding: 10px 8px; font-size: 13px; color: var(--txt-2); }
+.dot-elegir-pie { flex: none; display: flex; justify-content: flex-end; padding: 6px 8px; border-top: 1px solid var(--line); }
+.dot-elegir-pie button { padding: 7px 12px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--sans); color: var(--acc-txt); cursor: pointer; }
+.dot-elegir-pie button:hover { background: var(--acc-soft); }
+.dot-elegir-pie .dot-elegir-vaciar { color: var(--txt-2); }
+@media (prefers-reduced-motion: reduce) { .imp .dot-flecha { transition: none; } }
 @media (max-width: 599px) {
   .imp .dot-tabla { font-size: 12.5px; }
   .imp .dot-pest { padding: 7px 11px 8px; font-size: 12.5px; }

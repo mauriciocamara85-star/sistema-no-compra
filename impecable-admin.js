@@ -6068,7 +6068,7 @@ function dotAncho(c, filas) {
       else p.split(/\s+/).forEach(function (w) { larga = Math.max(larga, dotMedir(w)); });
     });
   });
-  return Math.max(44, Math.min(440, Math.max(Math.round((c.w || 100) * 0.9), Math.ceil(larga * 1.04) + 16)));
+  return Math.max(44, Math.min(440, Math.max(Math.round((c.w || 100) * 0.9), Math.ceil(larga * 1.04) + 16 + (c.t === 'lista' ? 18 : 0))));
 }
 var DOT_COLOR = /^#[0-9A-Fa-f]{6}$/;
 function dotOpcion(c, v) {
@@ -6082,12 +6082,12 @@ function dotClases(c) {
 function dotCeldaHtml(c, v) {
   v = v == null ? '' : String(v);
   if (v === 'TRUE' || v === 'FALSE') return '<input type="checkbox" class="dot-casilla"' + (v === 'TRUE' ? ' checked' : '') + ' aria-label="' + esc(c.n || 'Casilla') + '">';
-  if (c.t === 'lista' && v) {
-    return (c.multi ? v.split(/,\s*/) : [v]).map(function (p) {
+  if (c.t === 'lista') {
+    return (v ? (c.multi ? v.split(/,\s*/) : [v]).map(function (p) {
       var o = dotOpcion(c, p);
       return o && DOT_COLOR.test(o.f) && DOT_COLOR.test(o.l)
         ? '<span class="dot-chip" style="background:' + o.f + ';color:' + o.l + '">' + esc(p.trim()) + '</span>' : esc(p);
-    }).join(' ');
+    }).join(' ') : '') + DOT_FLECHA;
   }
   return esc(v);
 }
@@ -6145,6 +6145,7 @@ function dotBloquesHtml(h) {
 }
 
 function dotDibujar() {
+  dotElegirCerrar(false);
   var c = document.getElementById('cuerpo');
   if (!c || _solapa !== 'dotacion') return;
   var h = dotHoja();
@@ -6244,20 +6245,18 @@ function dotEditar(h, el, primera) {
   if (!c) return;
   var antes = f.celdas[k] == null ? '' : String(f.celdas[k]);
   if (antes === 'TRUE' || antes === 'FALSE') return;   // las casillas se tildan con un toque
-  var ed;
-  if (c.t === 'lista' && !c.multi && primera == null) {
-    var ops = (c.op || []).map(function (o) { return typeof o === 'object' ? o.v : o; });
-    if (antes && ops.indexOf(antes) < 0) ops.unshift(antes);
-    ed = document.createElement('select');
-    ed.className = 'dot-in';
-    ed.innerHTML = '<option value="">—</option>' + ops.map(function (o) { return '<option' + (o === antes ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
-  } else {
-    ed = document.createElement('textarea');
-    ed.className = 'dot-in';
-    ed.rows = 1;
-    ed.maxLength = 2000;
-    ed.value = primera != null ? primera : antes;
+  /* Un desplegable abre su lista (lo que se escribió, como búsqueda). Si se cerró recién tocando la misma celda, no
+     se vuelve a abrir: ese toque era para cerrarla. */
+  if (c.t === 'lista' && f.parte === 'tabla') {
+    if (el._dotCerro && Date.now() - el._dotCerro < 500) return;
+    dotElegir(h, el, f, c, primera);
+    return;
   }
+  var ed = document.createElement('textarea');
+  ed.className = 'dot-in';
+  ed.rows = 1;
+  ed.maxLength = 2000;
+  ed.value = primera != null ? primera : antes;
   ed.setAttribute('aria-label', c.n || 'Celda');
   el.classList.add('dot-editando');
   el.innerHTML = '';
@@ -6283,7 +6282,6 @@ function dotEditar(h, el, primera) {
     else if (e.key === 'Escape') { e.preventDefault(); terminar(false); el.focus(); }
     else if (e.key === 'Tab') { e.preventDefault(); terminar(true, e.shiftKey ? 'izq' : 'der'); }
   });
-  if (ed.tagName === 'SELECT') ed.addEventListener('change', function () { terminar(true); el.focus(); });
   ed.addEventListener('blur', function () { terminar(true); });
 }
 
@@ -6365,6 +6363,7 @@ function dotRecargar() {
 }
 
 function dotMenu(btn, h) {
+  dotElegirCerrar(true);
   dotCerrarMenu();
   var id = btn.dataset.menu, f = dotFila(h, id);
   if (!f) return;
@@ -6394,6 +6393,185 @@ function dotCerrarMenu() {
   document.removeEventListener('mousedown', dotFueraMenu, true);
   document.querySelectorAll('.dot-menu').forEach(function (m) { m.remove(); });
   app.querySelectorAll('.dot-num[aria-expanded]').forEach(function (b) { b.removeAttribute('aria-expanded'); });
+}
+
+/* Los desplegables, como en Google (6/11/2026, Mauricio: «tendría que mostrar qué desplegables muestra»): la celda lleva
+   su flechita y al tocarla (o con Enter, o escribiendo) se abre la lista con sus colores, debajo de la celda (arriba si
+   abajo no entra). Escribir busca; si lo escrito no está, «Usar …» lo deja igual, como dejaba la planilla, y lo que la
+   celda ya tenía fuera de la lista también se ve. En los de varias («Cambio» de Rotaciones) cada opción tiene su casilla
+   y se guarda al cerrar (Listo, Enter sin nada marcado, Tab o tocar afuera); Esc deja todo como estaba. */
+var _dotElegir = null, _dotElegirN = 0;
+var DOT_FLECHA = '<svg class="dot-flecha" viewBox="0 0 10 6" aria-hidden="true" focusable="false"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function dotSinTilde(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
+/** Lo elegido en una celda: "SJ SHOP, BAJA" → ['SJ SHOP', 'BAJA'] (sin los espacios de las puntas). */
+function dotPartes(c, v) {
+  v = v == null ? '' : String(v);
+  if (!v.trim()) return [];
+  return (c.multi ? v.split(/,\s*/) : [v]).map(function (p) { return p.trim(); }).filter(Boolean);
+}
+/** Cierra la lista abierta; guardar = lo tildado en un desplegable de varias se guarda. */
+function dotElegirCerrar(guardar) { if (_dotElegir) _dotElegir.cerrar(!!guardar); }
+window.addEventListener('hashchange', function () { dotElegirCerrar(true); });
+
+function dotElegir(h, el, f, c, primera) {
+  dotElegirCerrar(true);
+  dotCerrarMenu();
+  var multi = !!c.multi, antes = f.celdas[c.k] == null ? '' : String(f.celdas[c.k]);
+  var elegidas = dotPartes(c, antes), ops = [];
+  (c.op || []).forEach(function (o) {
+    var v = String(typeof o === 'object' ? o.v : o).trim();
+    if (v && !ops.some(function (x) { return x.v === v; })) ops.push(typeof o === 'object' ? { v: v, f: o.f, l: o.l } : { v: v });
+  });
+  elegidas.slice().reverse().forEach(function (p) { if (!ops.some(function (x) { return x.v === p; })) ops.unshift({ v: p, fuera: true }); });
+
+  var id = 'dotOps' + (++_dotElegirN);
+  var m = document.createElement('div');
+  m.className = 'dot-elegir';
+  m.tabIndex = -1;
+  m.innerHTML = '<input type="text" class="dot-elegir-buscar" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="' + id +
+      '" maxlength="200" autocomplete="off" spellcheck="false" placeholder="Buscar…" aria-label="' + esc('Buscar en ' + (c.n || 'la lista')) + '">' +
+    '<div class="dot-elegir-ops" role="listbox" id="' + id + '" aria-label="' + esc(c.n || 'Opciones') + '"' + (multi ? ' aria-multiselectable="true"' : '') + '></div>' +
+    (multi ? '<div class="dot-elegir-pie"><button type="button" data-acc="listo">Listo</button></div>'
+      : antes.trim() ? '<div class="dot-elegir-pie"><button type="button" data-acc="vaciar" class="dot-elegir-vaciar">Dejarla vacía</button></div>' : '');
+  document.body.appendChild(m);
+  var buscar = m.querySelector('.dot-elegir-buscar'), lista = m.querySelector('.dot-elegir-ops');
+  var items = [], activa = -1, arriba = null, st = { cerrar: function (g) { cerrar(g); } };
+  _dotElegir = st;
+  el.classList.add('dot-abierta');
+
+  /* La marcada al abrir: la que ya tiene la celda (o la primera); en los de varias, ninguna hasta usar las flechas. */
+  function inicial() {
+    if (buscar.value.trim()) return items.length ? 0 : -1;
+    if (multi) return -1;
+    for (var j = 0; j < items.length; j++) if (items[j].o && items[j].o.v === elegidas[0]) return j;
+    return items.length ? 0 : -1;
+  }
+  function pintar() {
+    var q = dotSinTilde(buscar.value), escrito = buscar.value.trim();
+    items = ops.filter(function (o) { return !q || dotSinTilde(o.v).indexOf(q) > -1; }).map(function (o) { return { o: o }; });
+    if (escrito && !ops.some(function (o) { return dotSinTilde(o.v) === q; })) items.push({ usar: escrito });
+    lista.innerHTML = items.map(function (it, i) {
+      if (it.usar) {
+        return '<div role="option" class="dot-op dot-op-usar" id="' + id + '-' + i + '" data-i="' + i + '" aria-selected="false">' +
+          '<span class="dot-op-marca" aria-hidden="true"></span><span class="dot-op-txt">' + (multi ? 'Agregar' : 'Usar') + ' «' + esc(it.usar) + '»</span></div>';
+      }
+      var o = it.o, sel = elegidas.indexOf(o.v) > -1;
+      return '<div role="option" class="dot-op" id="' + id + '-' + i + '" data-i="' + i + '" aria-selected="' + sel + '">' +
+        '<span class="dot-op-marca' + (multi ? ' dot-op-caja' : '') + '" aria-hidden="true"></span>' +
+        (DOT_COLOR.test(o.f) && DOT_COLOR.test(o.l) ? '<span class="dot-chip" style="background:' + o.f + ';color:' + o.l + '">' + esc(o.v) + '</span>'
+          : '<span class="dot-op-txt">' + esc(o.v) + '</span>') +
+        (o.fuera ? '<span class="dot-op-nota">no está en la lista</span>' : '') + '</div>';
+    }).join('') || '<div class="dot-elegir-nada">Esta columna no tiene opciones.</div>';
+    if (activa >= items.length) activa = items.length - 1;
+    marcar();
+    ubicar();
+  }
+  function marcar(conMouse) {
+    [].forEach.call(lista.children, function (d) { d.classList.toggle('activa', d.dataset.i != null && +d.dataset.i === activa); });
+    var a = activa > -1 ? document.getElementById(id + '-' + activa) : null;
+    if (!a) { buscar.removeAttribute('aria-activedescendant'); return; }
+    buscar.setAttribute('aria-activedescendant', a.id);
+    if (conMouse) return;
+    var ra = a.getBoundingClientRect(), rl = lista.getBoundingClientRect();
+    if (ra.top < rl.top) lista.scrollTop -= rl.top - ra.top;
+    else if (ra.bottom > rl.bottom) lista.scrollTop += ra.bottom - rl.bottom;
+  }
+  /* Debajo de la celda; si abajo no entra y arriba hay más lugar, arriba (y ya no cambia de lado al buscar). Hasta 420 px
+     de alto: lo que no entra se desliza adentro de la lista. */
+  function ubicar() {
+    var r = el.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+    m.style.minWidth = Math.max(220, Math.min(320, Math.round(r.width))) + 'px';
+    m.style.maxHeight = '';
+    var alto = m.offsetHeight, abajo = vh - r.bottom - 10, encima = r.top - 10;
+    if (arriba === null) arriba = abajo < Math.min(alto, 240) && encima > abajo;
+    var lugar = Math.min(420, Math.max(150, arriba ? encima : abajo));
+    m.style.maxHeight = lugar + 'px';
+    alto = Math.min(alto, lugar);
+    m.style.left = Math.max(8, Math.min(r.left, vw - m.offsetWidth - 8)) + 'px';
+    m.style.top = Math.max(8, arriba ? r.top - alto - 2 : Math.min(r.bottom + 2, vh - alto - 8)) + 'px';
+  }
+  function elegir(it) {
+    if (!it) return;
+    var v = it.usar || it.o.v;
+    if (!multi) { cerrar(true, v, null, true); return; }
+    var j = elegidas.indexOf(v);
+    if (j > -1) elegidas.splice(j, 1);
+    else { elegidas.push(v); if (it.usar) ops.push({ v: v, fuera: true }); }
+    if (it.usar) buscar.value = '';
+    pintar();
+    for (var i = 0; i < items.length; i++) if (items[i].o && items[i].o.v === v) { activa = i; break; }
+    marcar();
+  }
+  /* guardar: lo tildado (varias) o valor (una; sin valor no cambia nada). mover: 'der' / 'izq' (Tab). foco: a la celda. */
+  function cerrar(guardar, valor, mover, foco) {
+    if (_dotElegir !== st) return;
+    _dotElegir = null;
+    m.remove();
+    el.classList.remove('dot-abierta');
+    document.removeEventListener('pointerdown', fuera, true);
+    document.removeEventListener('scroll', alDeslizar, true);
+    window.removeEventListener('resize', alAchicar);
+    var nuevo = !guardar ? null : multi ? elegidas.join(', ') : valor;
+    if (nuevo != null && nuevo !== dotPartes(c, antes).join(', ')) dotGuardar(h, f, el, c, nuevo, antes);
+    if (mover) dotMover(el, mover);
+    else if (foco && document.body.contains(el)) el.focus({ preventScroll: true });
+  }
+  function fuera(e) {
+    if (m.contains(e.target)) return;
+    if (el.contains(e.target)) el._dotCerro = Date.now();
+    cerrar(true);
+  }
+  function alDeslizar(e) { if (!m.contains(e.target)) cerrar(true); }
+  function alAchicar() { cerrar(true); }
+
+  m.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'ArrowDown' || k === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) return;
+      activa = k === 'ArrowDown' ? Math.min(items.length - 1, activa + 1) : Math.max(0, activa - 1);
+      marcar();
+    } else if (k === 'Enter') {
+      e.preventDefault();
+      if (activa > -1 && items[activa]) elegir(items[activa]);
+      else cerrar(true, undefined, null, true);
+    } else if (k === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cerrar(false, null, null, true);
+    } else if (k === 'Tab') {
+      e.preventDefault();
+      var it = !multi && buscar.value.trim() && activa > -1 ? items[activa] : null;
+      cerrar(true, it ? it.usar || it.o.v : undefined, e.shiftKey ? 'izq' : 'der');
+    }
+  });
+  /* Tocar una opción no le saca el foco a la búsqueda (así las flechas siguen andando). */
+  m.addEventListener('mousedown', function (e) { if (e.target !== buscar) e.preventDefault(); });
+  m.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-acc]');
+    if (b) { cerrar(true, b.dataset.acc === 'vaciar' ? '' : undefined, null, true); return; }
+    var op = e.target.closest('.dot-op');
+    if (op) { activa = +op.dataset.i; elegir(items[activa]); }
+  });
+  lista.addEventListener('mousemove', function (e) {
+    var op = e.target.closest('.dot-op');
+    if (op && +op.dataset.i !== activa) { activa = +op.dataset.i; marcar(true); }
+  });
+  buscar.addEventListener('input', function () { pintar(); activa = inicial(); marcar(); });
+
+  if (primera != null) buscar.value = primera;
+  pintar();
+  activa = inicial();
+  marcar();
+  /* En el celular, el teclado sólo si se empezó escribiendo: si no, tapa la lista. */
+  if (primera != null || !window.matchMedia('(pointer: coarse)').matches) buscar.focus({ preventScroll: true });
+  else m.focus({ preventScroll: true });
+  setTimeout(function () {
+    if (_dotElegir !== st) return;
+    document.addEventListener('pointerdown', fuera, true);
+    document.addEventListener('scroll', alDeslizar, true);
+    window.addEventListener('resize', alAchicar);
+  }, 0);
 }
 
 /** Una fila nueva (abajo de otra, o al final de la tabla / de las observaciones / del pie), y a escribir en ella. */
