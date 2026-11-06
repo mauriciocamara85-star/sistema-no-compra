@@ -878,3 +878,91 @@
 .ventana .papel-ayuda { margin: 8px 0 0; font-size: 13px; color: var(--txt-3); }
 .ventana .campo.papel-de-ia > span::after { content: 'IA'; margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--acc); color: var(--acc-ink); font: 700 10.5px var(--sans); vertical-align: 1px; }
 .ventana .campo.papel-de-ia input, .ventana .campo.papel-de-ia textarea, .ventana .campo.papel-de-ia select { border-color: var(--acc); }
+
+/* ── DOTACIÓN (SQL 253, 6/11/2026): la planilla «Dotación Locales» de Google, con sus pestañas abajo ─────────────────
+   Los colores son los de la planilla (encabezado celeste o verde, filas amarillas, la baja en rojo); en el tema
+   oscuro, los mismos tonos apagados. Todo con prefijo dot- (estilos.css es global: ver «Interfaz común»). */
+.imp { --dot-celeste: #CFE2F3; --dot-verde: #D9EAD3; --dot-rosado: #E6B8AF; --dot-amarillo: #FFF2CC; --dot-rojo: #EA9999; --dot-linea: #D3D7DD; }
+html[data-theme="dark"] .imp { --dot-celeste: rgba(120, 170, 225, .24); --dot-verde: rgba(120, 190, 120, .22); --dot-rosado: rgba(225, 140, 120, .24);
+  --dot-amarillo: rgba(255, 214, 102, .09); --dot-rojo: rgba(234, 90, 90, .30); --dot-linea: var(--line); }
+.imp .dot { display: flex; flex-direction: column; min-width: 0; }
+.imp .dot-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.imp .dot-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; min-height: 36px; }
+.imp .dot-titulo { margin-left: -6px; padding: 4px 6px; border: 0; border-radius: 8px; background: none; font: 700 15px/1.3 var(--sans); color: var(--txt); text-align: left; cursor: text; }
+.imp .dot-titulo:hover { background: var(--info-soft); }
+.imp .dot-titulo-in { width: min(440px, 100%); padding: 5px 8px; border: 1px solid var(--sel-borde); border-radius: 8px; background: var(--surface); font: 700 15px/1.3 var(--sans); color: var(--txt); }
+.imp .dot-acc { display: flex; align-items: center; gap: 10px; }
+.imp .dot-cuantas { font-size: 13px; color: var(--txt-2); white-space: nowrap; }
+
+/* La hoja: se desliza para los dos lados adentro de su marco; el encabezado y los números de fila quedan quietos. */
+.imp .dot-marco { position: relative; overflow: auto; min-height: 240px; border: 1px solid var(--line); border-bottom: 0; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: var(--surface); scrollbar-width: thin; overscroll-behavior: contain; }
+.imp .dot-tabla { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font: 400 13px/1.35 var(--sans); color: var(--txt); }
+.imp .dot-tabla .dot-gut-col { width: 40px; }
+.imp .dot-tabla th, .imp .dot-tabla td { padding: 5px 7px; border-right: 1px solid var(--dot-linea); border-bottom: 1px solid var(--dot-linea); text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+.imp .dot-tabla thead th { position: sticky; top: 0; z-index: 2; font-weight: 700; background-color: var(--surface); background-image: linear-gradient(var(--dot-celeste), var(--dot-celeste)); }
+.imp .dot-tabla thead th.dot-enc-verde { background-image: linear-gradient(var(--dot-verde), var(--dot-verde)); }
+.imp .dot-tabla thead th.dot-enc-rosado { background-image: linear-gradient(var(--dot-rosado), var(--dot-rosado)); }
+.imp .dot-tabla .dot-centro { text-align: center; }
+.imp .dot-tabla .dot-gut { position: sticky; left: 0; z-index: 1; padding: 0; text-align: center; background: var(--surface-2); background-image: none; }
+.imp .dot-tabla thead .dot-gut { z-index: 3; }
+.imp .dot-num { width: 100%; min-height: 28px; padding: 0 2px; border: 0; background: none; font: 500 11.5px var(--sans); color: var(--txt-2); font-variant-numeric: tabular-nums; cursor: pointer; }
+.imp .dot-num:hover, .imp .dot-num[aria-expanded] { background: var(--info-soft); color: var(--txt); }
+.imp .dot-tabla td { cursor: text; }
+.imp .dot-tabla td.dot-rel-amarillo { background: var(--dot-amarillo); }
+.imp .dot-tabla tr.dot-fila-rojo td { background: var(--dot-rojo); }
+.imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 0 0 9999px rgba(20, 23, 27, .035); }
+html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, .04); }
+.imp .dot-tabla td:focus { outline: 2px solid var(--sel-borde); outline-offset: -2px; }
+.imp .dot-tabla td.dot-guardando, .imp .dot-txt.dot-guardando { color: var(--txt-3); }
+.imp .dot-tabla td.dot-editando { padding: 0; }
+.imp .dot-in { display: block; width: 100%; min-height: 30px; margin: 0; padding: 5px 7px; border: 0; border-radius: 0; outline: 2px solid var(--sel-borde); outline-offset: -2px;
+  background: var(--surface); font: inherit; color: var(--txt); resize: none; overflow: hidden; }
+.imp select.dot-in { cursor: pointer; }
+.imp .dot-casilla { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--sel-borde); cursor: pointer; }
+.imp .dot-chip { display: inline-block; margin: 1px 0; padding: 1px 9px; border-radius: var(--r-pill); font: 600 12px/1.5 var(--sans); white-space: nowrap; }
+.imp .dot-tabla tfoot td { position: sticky; bottom: 0; z-index: 1; background: var(--surface-2); cursor: default; }
+.imp .dot-tabla tfoot .dot-gut { z-index: 2; }
+.imp .dot-tabla tr.dot-recien td { animation: dotRecien 1.6s ease-out; }
+@keyframes dotRecien { from { box-shadow: inset 0 0 0 9999px var(--sel-fondo); } }
+
+.imp .dot-mas { padding: 8px 10px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--sans); color: var(--acc-txt); cursor: pointer; }
+.imp .dot-mas:hover { background: var(--acc-soft); }
+.imp .dot-mas:disabled { opacity: .5; cursor: default; }
+.imp .dot-mas-fila { position: sticky; left: 0; margin: 4px 0 2px 34px; }
+
+/* Observaciones y Responsables, debajo de la tabla (quietos aunque la tabla se deslice de costado). */
+.imp .dot-bloque { position: sticky; left: 0; max-width: 920px; padding: 10px 14px 4px; }
+.imp .dot-bloque h4 { margin: 4px 0 2px; font: 700 14px var(--sans); color: var(--txt); }
+.imp .dot-lista { margin: 0; padding: 0; list-style: none; }
+.imp .dot-lista li { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+.imp .dot-lista .dot-casilla { margin-top: 3px; flex: none; }
+.imp .dot-sin-marca { flex: none; width: 16px; }
+.imp .dot-txt { flex: 1; min-width: 0; min-height: 22px; padding: 1px 4px; border-radius: 6px; cursor: text; }
+.imp .dot-txt:hover { background: var(--info-soft); }
+.imp .dot-txt:focus-visible { outline: 2px solid var(--sel-borde); outline-offset: 0; }
+.imp .dot-txt.dot-editando { padding: 0; background: none; }
+.imp .dot-x { flex: none; padding: 0 6px; border: 0; border-radius: 6px; background: none; font: 400 18px/1.2 var(--sans); color: var(--txt-2); cursor: pointer; opacity: 0; }
+.imp .dot-lista li:hover .dot-x, .imp .dot-x:focus-visible { opacity: 1; }
+.imp .dot-x:hover { background: var(--bad-soft); color: var(--bad-txt); }
+@media (hover: none) { .imp .dot-x { opacity: 1; } }
+
+/* Las pestañas, abajo de la hoja, como en Google: la elegida en blanco con su raya. */
+.imp .dot-pestanas { position: sticky; bottom: 0; z-index: 4; border: 1px solid var(--line); border-radius: 0 0 var(--r-sm) var(--r-sm); background: var(--surface-2); }
+.imp .dot-pest-in { display: flex; gap: 2px; padding: 0 6px; overflow-x: auto; scrollbar-width: thin; }
+.imp .dot-pest { flex: none; padding: 7px 14px 8px; border: 0; border-top: 3px solid transparent; border-radius: 0 0 8px 8px; background: none;
+  font: 500 13px var(--sans); color: var(--txt-2); white-space: nowrap; cursor: pointer; }
+.imp .dot-pest:hover { background: var(--info-soft); color: var(--txt); }
+.imp .dot-pest.activa { border-top-color: var(--sel-borde); background: var(--surface); font-weight: 700; color: var(--sel-txt); box-shadow: 0 1px 3px rgba(20, 23, 27, .10); }
+.imp .dot-pest:focus-visible { outline: 2px solid var(--foco); outline-offset: -2px; }
+
+/* El menú de una fila (al tocar su número): va en el body, fuera de .imp. */
+.dot-menu { position: fixed; z-index: 80; display: flex; flex-direction: column; min-width: 210px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); box-shadow: var(--sombra); }
+.dot-menu button { padding: 9px 12px; border: 0; border-radius: 8px; background: none; text-align: left; font: 500 14px var(--sans); color: var(--txt); cursor: pointer; }
+.dot-menu button:hover, .dot-menu button:focus-visible { background: var(--info-soft); outline: none; }
+.dot-menu .dot-peligro { color: var(--bad-txt); }
+@media (max-width: 599px) {
+  .imp .dot-tabla { font-size: 12.5px; }
+  .imp .dot-pest { padding: 7px 11px 8px; font-size: 12.5px; }
+}

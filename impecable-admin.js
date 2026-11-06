@@ -88,6 +88,8 @@ var ICONO_MENU = {
   llegadas: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9.5 2h5M12 2v3"/>',
   /* Papeles (SQL 209): la hoja con la camarita, como en la app. */
   papeles: '<path d="M10 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l4 4v4"/><path d="M14 3v4h4"/><rect x="12" y="13.5" width="10" height="7.5" rx="1.5"/><path d="M15 13.5l1-1.5h2l1 1.5"/><circle cx="17" cy="17.2" r="1.7"/>',
+  /* Dotación (SQL 253): una hoja con sus pestañas abajo, como la planilla de Google. */
+  dotacion: '<path d="M4 3h16a1 1 0 0 1 1 1v12H3V4a1 1 0 0 1 1-1z"/><path d="M3 8.5h18M9 3v13"/><path d="M5 16v4h6v-4M13 16v4h6v-4"/>',
   testigo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   app: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
@@ -106,10 +108,12 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                /* Era «Papeles» hasta el 31/10 a la noche (Mauricio: "no me gusta ese nombre"), después «Legajos», y desde
                   el 1/11 «Registro», como en la app ("Me gusta más registro"). */
                ['papeles', 'Registro', 'Ausencias, certificados médicos y apercibimientos'],
+               /* 6/11/2026 (SQL 253): la planilla «Dotación Locales» de Google, adentro del sistema. */
+               ['dotacion', 'Dotación', 'La planilla de la dotación de los locales, con todas sus pestañas'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
                ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
-/* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). */
-var SOLO_ADMIN = ['tareas', 'ajustes'];
+/* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). La Dotación tiene sueldos (6/11). */
+var SOLO_ADMIN = ['tareas', 'ajustes', 'dotacion'];
 var _solapa = 'panorama';
 function svgMenu(k) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONO_MENU[k] + '</svg>';
@@ -184,9 +188,9 @@ function cabezaAdmin() {
   var per = yo();
   var solapas = SOLAPAS.filter(function (x) { return SOLO_ADMIN.indexOf(x[0]) < 0 || esAdmin(); });
   var actual = SOLAPAS.filter(function (x) { return x[0] === _solapa; })[0] || SOLAPAS[0];
-  /* El local se elige en todo salvo en el Panorama, que es de todos, en Tareas, que tiene su lista de locales, y en
-     Llegadas, que va por zona. */
-  var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _solapa !== 'llegadas' && _locales.length > 1;
+  /* El local se elige en todo salvo en el Panorama, que es de todos, en Tareas, que tiene su lista de locales, en
+     Llegadas, que va por zona, y en la Dotación, que es la planilla de todos. */
+  var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _solapa !== 'llegadas' && _solapa !== 'dotacion' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
   /* Sin la barra del sistema (31/10/2026): "‹ Sistema" arriba de las secciones, como en el POS. */
@@ -231,7 +235,7 @@ function ir(solapa) {
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
   /* La bandeja ya cuenta sola al cargar; en lo demás, el número del menú se pide aparte. */
   if (solapa !== 'local' && !(solapa === 'fotos' && _fotoDe === 'revisar')) contarRevisar();
-  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, papeles: verPapeles, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, papeles: verPapeles, dotacion: verDotacion, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
 /** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
@@ -5919,4 +5923,494 @@ function dibujarMandadas(cont, lista) {
       });
     });
   });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DOTACIÓN (SQL 253, 6/11/2026): la planilla «Dotación Locales» de Google, con sus pestañas abajo
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Pedido de Mauricio (6/11): "que esté todo dentro del sistema y que no haya más planillas por ahí dando vueltas…
+   que quede lo más parecido a la planilla, por ahora, después le vamos haciendo modificaciones".
+   Cada pestaña es una tabla con las columnas de la planilla (por letra: b, c, d…, como en Google) y se cambia celda por
+   celda: se toca (o Enter), se escribe y Enter baja, Tab va a la derecha, Esc deja todo como estaba. Las casillas se
+   tildan con un toque. Cada cambio se guarda solo y la base no pisa lo que otro cambió mientras tanto. Debajo de la
+   tabla, las «Observaciones» con su casilla y los «Responsables»; abajo de todo, las pestañas.
+   Sólo la administración: hay sueldos (la base lo controla, acá sólo no se ofrece). */
+var K_DOT_HOJA = 'nc_dot_hoja';
+var _dot = null, _dotHoja = null, _dotPedido = 0, _dotCola = {};
+
+function verDotacion() {
+  var n = ++_dotPedido, c = document.getElementById('cuerpo');
+  c.innerHTML = '<p class="cargando">Cargando…</p>';
+  if (!_dotHoja) { try { _dotHoja = localStorage.getItem(K_DOT_HOJA); } catch (e) {} }
+  llamar('dotacion_leer').then(function (d) {
+    if (n !== _dotPedido || _solapa !== 'dotacion') return;
+    _dot = (d && d.hojas) || [];
+    dotDibujar();
+  }).catch(function (e) {
+    if (n !== _dotPedido || _solapa !== 'dotacion') return;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    c = document.getElementById('cuerpo');
+    if (!c) return;
+    if (e && e.delServidor && /PGRST202|could not find the function/i.test(e.message || '')) {
+      c.innerHTML = '<div class="nota">Para ver la Dotación falta correr en Supabase el SQL 253. Está en el Escritorio, en «App Orden».</div>';
+      return;
+    }
+    c.innerHTML = '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div><button class="boton chico" id="dotOtraVez">Probar de nuevo</button>';
+    document.getElementById('dotOtraVez').onclick = verDotacion;
+  });
+}
+
+function dotHoja() { return (_dot || []).filter(function (h) { return h.id === _dotHoja; })[0] || (_dot || [])[0] || null; }
+function dotCol(h, k) { return h.columnas.filter(function (c) { return c.k === k; })[0] || null; }
+function dotFila(h, id) { return h.filas.filter(function (f) { return f.id === id; })[0] || null; }
+function dotParte(h, p) { return h.filas.filter(function (f) { return f.parte === p; }); }
+/* Los anchos de la planilla, un poco más chicos (la PC del local mide 1366): las columnas de texto largo hacen renglones. */
+var _dotRegla = null;
+/** Lo que mide un texto con la letra de la tabla (13 px): para que las columnas no corten palabras. */
+function dotMedir(t, peso) {
+  if (!_dotRegla) _dotRegla = document.createElement('canvas').getContext('2d');
+  var fam = getComputedStyle(document.documentElement).getPropertyValue('--sans').trim() || 'sans-serif';
+  _dotRegla.font = (peso || 400) + ' 13px ' + fam;
+  return _dotRegla.measureText(t).width;
+}
+/** El ancho de la columna en la planilla, pero como mínimo el de su palabra más larga (y el de su pastilla más ancha):
+    Google no corta una palabra por la mitad, y acá la letra es un poco más ancha. Tope 440 px (lo más largo se parte). */
+function dotAncho(c, filas) {
+  var larga = 0;
+  String(c.n || '').split(/\s+/).forEach(function (p) { larga = Math.max(larga, dotMedir(p, 700)); });
+  if (c.t !== 'casilla') (filas || []).forEach(function (f) {
+    var v = f.celdas[c.k];
+    if (v == null || v === 'TRUE' || v === 'FALSE') return;
+    (c.t === 'lista' && c.multi ? String(v).split(/,\s*/) : [String(v)]).forEach(function (p) {
+      var o = c.t === 'lista' && dotOpcion(c, p);
+      if (o && DOT_COLOR.test(o.f)) larga = Math.max(larga, dotMedir(p.trim(), 600) * 12 / 13 + 20);
+      else p.split(/\s+/).forEach(function (w) { larga = Math.max(larga, dotMedir(w)); });
+    });
+  });
+  return Math.max(44, Math.min(440, Math.max(Math.round((c.w || 100) * 0.9), Math.ceil(larga * 1.04) + 16)));
+}
+var DOT_COLOR = /^#[0-9A-Fa-f]{6}$/;
+function dotOpcion(c, v) {
+  return (c.op || []).filter(function (o) { return typeof o === 'object' && String(o.v).trim() === String(v).trim(); })[0] || null;
+}
+function dotClases(c) {
+  var centro = c.t === 'casilla' || c.t === 'fecha' || c.t === 'plata' || c.al === 'c' || c.n === 'A o X';
+  return 'dot-' + c.t + (centro ? ' dot-centro' : '') + (c.rel ? ' dot-rel-' + c.rel : '');
+}
+/** Lo que se ve en una celda: TRUE/FALSE es una casilla (como en Google), una opción de color es una pastilla. */
+function dotCeldaHtml(c, v) {
+  v = v == null ? '' : String(v);
+  if (v === 'TRUE' || v === 'FALSE') return '<input type="checkbox" class="dot-casilla"' + (v === 'TRUE' ? ' checked' : '') + ' aria-label="' + esc(c.n || 'Casilla') + '">';
+  if (c.t === 'lista' && v) {
+    return (c.multi ? v.split(/,\s*/) : [v]).map(function (p) {
+      var o = dotOpcion(c, p);
+      return o && DOT_COLOR.test(o.f) && DOT_COLOR.test(o.l)
+        ? '<span class="dot-chip" style="background:' + o.f + ';color:' + o.l + '">' + esc(p.trim()) + '</span>' : esc(p);
+    }).join(' ');
+  }
+  return esc(v);
+}
+/** "$86.000" → 86000 (los puntos son de miles, la coma de decimales). */
+function dotNumero(v) {
+  var t = String(v == null ? '' : v).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  var n = parseFloat(t);
+  return isFinite(n) ? n : 0;
+}
+function dotPlata(n) { return '$' + Math.round(n).toLocaleString('es-AR'); }
+function dotSuma(h, k) { return dotParte(h, 'tabla').reduce(function (a, f) { return a + dotNumero(f.celdas[k]); }, 0); }
+
+function dotTablaHtml(h) {
+  var cols = h.columnas, filas = dotParte(h, 'tabla');
+  var html = '<table class="dot-tabla"><colgroup><col class="dot-gut-col">' +
+    cols.map(function (c) { return '<col style="width:' + dotAncho(c, filas) + 'px">'; }).join('') + '</colgroup>' +
+    '<thead><tr><th class="dot-gut" scope="col"><span class="dot-oculto">Fila</span></th>' + cols.map(function (c) {
+      return '<th scope="col" class="dot-enc-' + esc(c.enc || 'celeste') + (dotClases(c).indexOf('dot-centro') > -1 ? ' dot-centro' : '') + '">' + esc(c.n) + '</th>';
+    }).join('') + '</tr></thead><tbody>';
+  html += filas.map(function (f, i) {
+    return '<tr data-fila="' + esc(f.id) + '"' + (f.color ? ' class="dot-fila-' + esc(f.color) + '"' : '') + '>' +
+      '<th class="dot-gut" scope="row"><button type="button" class="dot-num" data-menu="' + esc(f.id) + '" title="Fila ' + (i + 1) + ': agregar una abajo o borrarla">' + (i + 1) + '</button></th>' +
+      cols.map(function (c) { return '<td data-c="' + esc(c.k) + '" class="' + dotClases(c) + '" tabindex="-1">' + dotCeldaHtml(c, f.celdas[c.k]) + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  html += '</tbody>';
+  /* El total: la suma de las columnas de plata, de TODAS las filas (en la planilla, el de Zona Franco sumaba sólo
+     algunas: la fórmula había quedado corta). */
+  if (cols.some(function (c) { return c.t === 'plata'; })) {
+    html += '<tfoot><tr><th class="dot-gut"></th>' + cols.map(function (c, i) {
+      return '<td class="' + dotClases(c) + '" data-total="' + (c.t === 'plata' ? esc(c.k) : '') + '">' + (i === 0 ? '<b>Total</b>' : c.t === 'plata' ? '<b>' + esc(dotPlata(dotSuma(h, c.k))) + '</b>' : '') + '</td>';
+    }).join('') + '</tr></tfoot>';
+  }
+  return html + '</table>';
+}
+
+/** «Observaciones» (casilla + texto) y el pie («Responsables», o las frases sueltas de Apercibimientos). */
+function dotBloquesHtml(h) {
+  var renglon = function (f, conMarca) {
+    var m = f.celdas.marca;
+    return '<li data-fila="' + esc(f.id) + '">' + (conMarca ? (m === 'TRUE' || m === 'FALSE'
+        ? '<input type="checkbox" class="dot-casilla" data-c="marca"' + (m === 'TRUE' ? ' checked' : '') + ' aria-label="Hecho">' : '<span class="dot-sin-marca"></span>') : '') +
+      '<span class="dot-txt" data-c="texto" tabindex="0">' + esc(f.celdas.texto || '') + '</span>' +
+      '<button type="button" class="dot-x" data-borrar="' + esc(f.id) + '" title="Borrar este renglón" aria-label="Borrar este renglón">×</button></li>';
+  };
+  var notas = dotParte(h, 'notas'), pie = dotParte(h, 'pie'), html = '';
+  if (h.notas_titulo || notas.length) {
+    html += '<section class="dot-bloque"><h4>' + esc(h.notas_titulo || 'Observaciones') + '</h4><ul class="dot-lista">' +
+      notas.map(function (f) { return renglon(f, true); }).join('') + '</ul><button type="button" class="dot-mas" data-nueva="notas">+ Agregar una observación</button></section>';
+  }
+  if (h.pie_titulo || pie.length) {
+    html += '<section class="dot-bloque">' + (h.pie_titulo ? '<h4>' + esc(h.pie_titulo) + '</h4>' : '') + '<ul class="dot-lista">' +
+      pie.map(function (f) { return renglon(f, false); }).join('') + '</ul><button type="button" class="dot-mas" data-nueva="pie">+ Agregar un renglón</button></section>';
+  }
+  return html;
+}
+
+function dotDibujar() {
+  var c = document.getElementById('cuerpo');
+  if (!c || _solapa !== 'dotacion') return;
+  var h = dotHoja();
+  if (!h) { c.innerHTML = '<div class="vacio">Todavía no hay pestañas cargadas.</div>'; return; }
+  _dotHoja = h.id;
+  /* Al volver a dibujar (una fila nueva o borrada) la hoja queda donde estaba. */
+  var m0 = document.getElementById('dotMarco'), arriba = m0 ? m0.scrollTop : 0, izq = m0 ? m0.scrollLeft : 0, misma = m0 && m0.dataset.hoja === h.id;
+  var n = dotParte(h, 'tabla').length;
+  c.innerHTML = '<div class="dot">' +
+    '<div class="dot-barra">' + (h.titulo != null
+        ? '<button type="button" class="dot-titulo" data-titulo title="Tocá para cambiar el título">' + esc(h.titulo) + '</button>' : '<span></span>') +
+      '<div class="dot-acc"><span class="dot-cuantas">' + n + (n === 1 ? ' fila' : ' filas') + '</span>' +
+      '<button type="button" class="boton chico" id="dotExcel">Bajar para Excel</button></div></div>' +
+    '<div class="dot-marco" id="dotMarco" data-hoja="' + esc(h.id) + '">' + dotTablaHtml(h) +
+      '<button type="button" class="dot-mas dot-mas-fila" data-nueva="tabla">+ Agregar una fila</button>' + dotBloquesHtml(h) + '</div>' +
+    '<nav class="dot-pestanas" aria-label="Pestañas de la planilla"><div class="dot-pest-in">' + _dot.map(function (x) {
+      return '<button type="button" class="dot-pest' + (x.id === h.id ? ' activa" aria-current="page' : '') + '" data-hoja="' + esc(x.id) + '">' + esc(x.nombre) + '</button>';
+    }).join('') + '</div></nav></div>';
+  var marco = document.getElementById('dotMarco');
+  if (misma) { marco.scrollTop = arriba; marco.scrollLeft = izq; }
+  dotAltura();
+  var act = c.querySelector('.dot-pest.activa'), tira = act && act.parentNode;
+  if (tira && tira.scrollWidth > tira.clientWidth + 1 && (act.offsetLeft < tira.scrollLeft || act.offsetLeft + act.offsetWidth > tira.scrollLeft + tira.clientWidth)) {
+    tira.scrollLeft = Math.max(0, act.offsetLeft - (tira.clientWidth - act.offsetWidth) / 2);
+  }
+  dotEnganchar(c.querySelector('.dot'), h);
+}
+
+/* La hoja ocupa lo que queda de la pantalla, así las pestañas de abajo siempre se ven (como en Google). */
+function dotAltura() {
+  var m = document.getElementById('dotMarco'), p = app.querySelector('.dot-pestanas');
+  if (!m || !p) return;
+  var arriba = m.getBoundingClientRect().top + window.pageYOffset;
+  m.style.maxHeight = Math.max(240, window.innerHeight - arriba - p.offsetHeight - 14) + 'px';
+}
+window.addEventListener('resize', function () { if (_solapa === 'dotacion') dotAltura(); });
+
+function dotEnganchar(raiz, h) {
+  raiz.addEventListener('click', function (e) {
+    var t = e.target;
+    var pest = t.closest('.dot-pest');
+    if (pest) {
+      if (pest.dataset.hoja === h.id) return;
+      _dotHoja = pest.dataset.hoja;
+      try { localStorage.setItem(K_DOT_HOJA, _dotHoja); } catch (er) {}
+      dotDibujar();
+      var m = document.getElementById('dotMarco');
+      if (m) { m.scrollTop = 0; m.scrollLeft = 0; }
+      return;
+    }
+    if (t.closest('.dot-casilla')) return;   // la casilla va por 'change'
+    var num = t.closest('[data-menu]');
+    if (num) { dotMenu(num, h); return; }
+    var nueva = t.closest('[data-nueva]');
+    if (nueva) { dotNueva(h, nueva.dataset.nueva, null, nueva); return; }
+    var borrar = t.closest('[data-borrar]');
+    if (borrar) { dotBorrar(h, borrar.dataset.borrar, borrar); return; }
+    if (t.closest('[data-titulo]')) { dotEditarTitulo(h, t.closest('[data-titulo]')); return; }
+    if (t.id === 'dotExcel') { dotExcel(h); return; }
+    var celda = t.closest('td[data-c], .dot-txt');
+    if (celda && !t.closest('.dot-in')) dotEditar(h, celda);
+  });
+  raiz.addEventListener('change', function (e) {
+    if (e.target.classList.contains('dot-casilla')) dotCasilla(h, e.target);
+  });
+  raiz.addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (t.classList.contains('dot-in')) return;
+    var celda = t.matches && t.matches('td[data-c], .dot-txt') ? t : null;
+    if (!celda) return;
+    if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); dotEditar(h, celda); return; }
+    var mov = { ArrowDown: 'abajo', ArrowUp: 'arriba', ArrowRight: 'der', ArrowLeft: 'izq' }[e.key];
+    if (mov && celda.tagName === 'TD') { e.preventDefault(); dotMover(celda, mov); return; }
+    /* Escribir sobre una celda la reemplaza, como en Google. */
+    if (celda.tagName === 'TD' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); dotEditar(h, celda, e.key); }
+  });
+}
+
+/** La celda de al lado (Enter baja, Tab va a la derecha). Sólo la marca: para escribir, Enter o una letra. */
+function dotMover(td, hacia) {
+  var tr = td.parentNode, i = [].indexOf.call(tr.children, td), otra = null;
+  if (hacia === 'der') otra = td.nextElementSibling;
+  else if (hacia === 'izq') otra = td.previousElementSibling && td.previousElementSibling.tagName === 'TD' ? td.previousElementSibling : null;
+  else {
+    var tr2 = hacia === 'abajo' ? tr.nextElementSibling : tr.previousElementSibling;
+    otra = tr2 ? tr2.children[i] : null;
+  }
+  if (otra && otra.tagName === 'TD') { otra.focus(); otra.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+}
+
+/** Escribir en una celda (o en un renglón de Observaciones / Responsables). */
+function dotEditar(h, el, primera) {
+  if (el.classList.contains('dot-editando') || el.classList.contains('dot-guardando')) return;
+  var tr = el.closest('[data-fila]'), f = tr && dotFila(h, tr.dataset.fila);
+  if (!f) return;
+  var k = el.dataset.c, c = f.parte === 'tabla' ? dotCol(h, k) : { k: k, t: 'texto', n: k };
+  if (!c) return;
+  var antes = f.celdas[k] == null ? '' : String(f.celdas[k]);
+  if (antes === 'TRUE' || antes === 'FALSE') return;   // las casillas se tildan con un toque
+  var ed;
+  if (c.t === 'lista' && !c.multi && primera == null) {
+    var ops = (c.op || []).map(function (o) { return typeof o === 'object' ? o.v : o; });
+    if (antes && ops.indexOf(antes) < 0) ops.unshift(antes);
+    ed = document.createElement('select');
+    ed.className = 'dot-in';
+    ed.innerHTML = '<option value="">—</option>' + ops.map(function (o) { return '<option' + (o === antes ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('');
+  } else {
+    ed = document.createElement('textarea');
+    ed.className = 'dot-in';
+    ed.rows = 1;
+    ed.maxLength = 2000;
+    ed.value = primera != null ? primera : antes;
+  }
+  ed.setAttribute('aria-label', c.n || 'Celda');
+  el.classList.add('dot-editando');
+  el.innerHTML = '';
+  el.appendChild(ed);
+  var crecer = function () { if (ed.tagName === 'TEXTAREA') { ed.style.height = 'auto'; ed.style.height = ed.scrollHeight + 'px'; } };
+  crecer();
+  ed.focus();
+  if (ed.tagName === 'TEXTAREA') { var largo = ed.value.length; ed.setSelectionRange(largo, largo); }
+  var listo = false;
+  function terminar(guardar, mover) {
+    if (listo) return;
+    listo = true;
+    var v = ed.value.replace(/\r?\n/g, ' ');
+    el.classList.remove('dot-editando');
+    if (!guardar || v === antes) dotPintar(el, c, antes);
+    else dotGuardar(h, f, el, c, v, antes);
+    /* Con Enter o Tab se sigue en la de al lado; al tocar otra cosa (blur), el foco queda donde se tocó. */
+    if (mover) { if (el.tagName === 'TD') dotMover(el, mover); else el.focus(); }
+  }
+  ed.addEventListener('input', crecer);
+  ed.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); terminar(true, 'abajo'); }
+    else if (e.key === 'Escape') { e.preventDefault(); terminar(false); el.focus(); }
+    else if (e.key === 'Tab') { e.preventDefault(); terminar(true, e.shiftKey ? 'izq' : 'der'); }
+  });
+  if (ed.tagName === 'SELECT') ed.addEventListener('change', function () { terminar(true); el.focus(); });
+  ed.addEventListener('blur', function () { terminar(true); });
+}
+
+function dotPintar(el, c, v) {
+  if (!document.body.contains(el)) return;
+  if (el.classList.contains('dot-txt')) el.textContent = v || '';
+  else el.innerHTML = dotCeldaHtml(c, v);
+}
+
+/** Los cambios de una misma fila van de a uno, en orden (si no, el segundo podía llegar antes que el primero). */
+function dotEnCola(id, fn) {
+  var p = (_dotCola[id] || Promise.resolve()).then(fn, fn);
+  _dotCola[id] = p.then(function () {}, function () {});
+  return p;
+}
+
+function dotGuardar(h, f, el, c, valor, antes) {
+  var k = c.k;
+  if (valor) f.celdas[k] = valor; else delete f.celdas[k];
+  dotPintar(el, c, valor);
+  el.classList.add('dot-guardando');
+  return dotEnCola(f.id, function () {
+    return llamar('dotacion_celda', { p_fila: f.id, p_col: k, p_valor: valor, p_antes: antes });
+  }).then(function (r) {
+    if (r && r.celdas) f.celdas = r.celdas;
+    el.classList.remove('dot-guardando');
+    dotPintar(el, c, f.celdas[k]);
+    dotTotales(h);
+  }, function (e) {
+    el.classList.remove('dot-guardando');
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    if (antes) f.celdas[k] = antes; else delete f.celdas[k];
+    dotPintar(el, c, antes);
+    dotTotales(h);
+    var msg = esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e);
+    avisar(msg);
+    /* Otro lo cambió (o borró la fila): se trae lo de ahora, sin perder dónde estaba. */
+    if (/cambió recién|ya no está/.test(msg)) dotRecargar();
+  });
+}
+
+function dotCasilla(h, inp) {
+  var tr = inp.closest('[data-fila]'), f = tr && dotFila(h, tr.dataset.fila), el = inp.closest('[data-c]');
+  if (!f || !el) return;
+  var k = el.dataset.c, valor = inp.checked ? 'TRUE' : 'FALSE', antes = inp.checked ? 'FALSE' : 'TRUE';
+  f.celdas[k] = valor;
+  inp.disabled = true;
+  dotEnCola(f.id, function () {
+    return llamar('dotacion_celda', { p_fila: f.id, p_col: k, p_valor: valor, p_antes: antes });
+  }).then(function (r) {
+    if (r && r.celdas) f.celdas = r.celdas;
+    inp.disabled = false;
+  }, function (e) {
+    inp.disabled = false;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    f.celdas[k] = antes;
+    inp.checked = antes === 'TRUE';
+    var msg = esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e);
+    avisar(msg);
+    if (/cambió recién|ya no está/.test(msg)) dotRecargar();
+  });
+}
+
+/** El total de las columnas de plata, al día después de cada cambio. */
+function dotTotales(h) {
+  app.querySelectorAll('[data-total]').forEach(function (td) {
+    if (td.dataset.total) td.innerHTML = '<b>' + esc(dotPlata(dotSuma(h, td.dataset.total))) + '</b>';
+  });
+}
+
+/** Traer todo de nuevo sin perder la pestaña ni dónde estaba (lo usa el aviso de "alguien la cambió recién"). */
+function dotRecargar() {
+  var n = ++_dotPedido;
+  llamar('dotacion_leer').then(function (d) {
+    if (n !== _dotPedido || _solapa !== 'dotacion') return;
+    _dot = (d && d.hojas) || [];
+    dotDibujar();
+  }, function () {});
+}
+
+function dotMenu(btn, h) {
+  dotCerrarMenu();
+  var id = btn.dataset.menu, f = dotFila(h, id);
+  if (!f) return;
+  var m = document.createElement('div');
+  m.className = 'dot-menu';
+  m.setAttribute('role', 'menu');
+  m.innerHTML = '<button type="button" role="menuitem" data-acc="abajo">Agregar una fila abajo</button>' +
+    '<button type="button" role="menuitem" data-acc="borrar" class="dot-peligro">Borrar esta fila</button>';
+  document.body.appendChild(m);
+  var r = btn.getBoundingClientRect();
+  m.style.left = Math.min(r.left, window.innerWidth - m.offsetWidth - 8) + 'px';
+  m.style.top = (r.bottom + m.offsetHeight + 6 > window.innerHeight ? r.top - m.offsetHeight - 4 : r.bottom + 4) + 'px';
+  btn.setAttribute('aria-expanded', 'true');
+  m.querySelector('button').focus();
+  m.onclick = function (e) {
+    var b = e.target.closest('[data-acc]');
+    if (!b) return;
+    dotCerrarMenu();
+    if (b.dataset.acc === 'abajo') dotNueva(h, 'tabla', id, btn);
+    else dotBorrar(h, id, btn);
+  };
+  m.onkeydown = function (e) { if (e.key === 'Escape') { dotCerrarMenu(); btn.focus(); } };
+  setTimeout(function () { document.addEventListener('mousedown', dotFueraMenu, true); }, 0);
+}
+function dotFueraMenu(e) { if (!e.target.closest('.dot-menu')) dotCerrarMenu(); }
+function dotCerrarMenu() {
+  document.removeEventListener('mousedown', dotFueraMenu, true);
+  document.querySelectorAll('.dot-menu').forEach(function (m) { m.remove(); });
+  app.querySelectorAll('.dot-num[aria-expanded]').forEach(function (b) { b.removeAttribute('aria-expanded'); });
+}
+
+/** Una fila nueva (abajo de otra, o al final de la tabla / de las observaciones / del pie), y a escribir en ella. */
+function dotNueva(h, parte, despues, boton) {
+  if (boton) boton.disabled = true;
+  llamar('dotacion_fila_nueva', { p_hoja: h.id, p_parte: parte, p_despues: despues }).then(function (f) {
+    if (boton) boton.disabled = false;
+    if (!f || !f.id) return;
+    var lista = h.filas, i = despues ? lista.indexOf(dotFila(h, despues)) + 1 : 0;
+    if (!despues) lista.forEach(function (x, j) { if (x.parte === parte) i = j + 1; });
+    lista.splice(i || lista.length, 0, f);
+    if (_solapa !== 'dotacion' || dotHoja() !== h) return;
+    dotDibujar();
+    var tr = app.querySelector('[data-fila="' + f.id + '"]');
+    if (!tr) return;
+    tr.classList.add('dot-recien');
+    var primera = parte === 'tabla'
+      ? [].filter.call(tr.querySelectorAll('td[data-c]'), function (td) { var c = dotCol(h, td.dataset.c); return c && c.t !== 'casilla' && c.n; })[0]
+      : tr.querySelector('.dot-txt');
+    if (primera) { primera.scrollIntoView({ block: 'nearest', inline: 'nearest' }); dotEditar(h, primera); }
+  }, function (e) {
+    if (boton) boton.disabled = false;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    avisar(esDeRed(e) ? 'Sin señal: no se agregó. Probá de nuevo.' : mensajeDe(e));
+  });
+}
+
+function dotBorrar(h, id, boton) {
+  var f = dotFila(h, id);
+  if (!f) return;
+  /* Quién es, para la pregunta: Nombre y Apellido (o Empleado); si no hay, lo primero que diga la fila. */
+  var quien = h.columnas.filter(function (c) { return /^(nombre|apellido|empleado)$/i.test(c.n); })
+    .map(function (c) { return String(f.celdas[c.k] || '').trim(); }).filter(Boolean).join(' ') ||
+    h.columnas.map(function (c) { return String(f.celdas[c.k] || '').trim(); }).filter(function (v) { return v && v !== 'TRUE' && v !== 'FALSE'; }).slice(0, 2).join(' · ') ||
+    f.celdas.texto || '';
+  var n = f.parte === 'tabla' ? dotParte(h, 'tabla').indexOf(f) + 1 : 0;
+  if (!confirm(f.parte === 'tabla' ? '¿Borrar la fila ' + n + (quien ? ' (' + quien.trim() + ')' : '') + '?' : '¿Borrar este renglón?' + (quien ? '\n\n«' + quien.slice(0, 120) + '»' : ''))) return;
+  if (boton) boton.disabled = true;
+  llamar('dotacion_fila_borrar', { p_fila: id }).then(function () {
+    h.filas = h.filas.filter(function (x) { return x.id !== id; });
+    if (_solapa === 'dotacion' && dotHoja() === h) dotDibujar();
+    avisar(f.parte === 'tabla' ? 'Fila borrada.' : 'Renglón borrado.');
+  }, function (e) {
+    if (boton) boton.disabled = false;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    avisar(esDeRed(e) ? 'Sin señal: no se borró. Probá de nuevo.' : mensajeDe(e));
+  });
+}
+
+function dotEditarTitulo(h, el) {
+  var antes = h.titulo || '';
+  var ed = document.createElement('input');
+  ed.className = 'dot-in dot-titulo-in';
+  ed.value = antes;
+  ed.maxLength = 200;
+  ed.setAttribute('aria-label', 'Título de la pestaña');
+  el.replaceWith(ed);
+  ed.focus();
+  ed.select();
+  var listo = false;
+  function terminar(guardar) {
+    if (listo) return;
+    listo = true;
+    var v = ed.value.trim();
+    if (!guardar || v === antes.trim()) { ed.replaceWith(el); return; }
+    ed.disabled = true;
+    llamar('dotacion_titulo', { p_hoja: h.id, p_titulo: v }).then(function () {
+      h.titulo = v || null;
+      if (_solapa === 'dotacion' && dotHoja() === h) dotDibujar();
+    }, function (e) {
+      if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+      if (document.body.contains(ed)) ed.replaceWith(el);
+      avisar(esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e));
+    });
+  }
+  ed.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); terminar(true); } else if (e.key === 'Escape') { e.preventDefault(); terminar(false); } };
+  ed.onblur = function () { terminar(true); };
+}
+
+/** "Bajar para Excel": la pestaña como está (CSV con punto y coma y BOM, como en Registro). */
+function dotExcel(h) {
+  var celda = function (t) { t = String(t == null ? '' : t); return /[;"\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  var filas = [];
+  if (h.titulo) filas.push([h.titulo], []);
+  filas.push(h.columnas.map(function (c) { return c.n; }));
+  dotParte(h, 'tabla').forEach(function (f) { filas.push(h.columnas.map(function (c) { return f.celdas[c.k] || ''; })); });
+  if (h.columnas.some(function (c) { return c.t === 'plata'; })) {
+    filas.push(h.columnas.map(function (c, i) { return i === 0 ? 'Total' : c.t === 'plata' ? dotPlata(dotSuma(h, c.k)) : ''; }));
+  }
+  var notas = dotParte(h, 'notas'), pie = dotParte(h, 'pie');
+  if (notas.length) { filas.push([], [h.notas_titulo || 'Observaciones']); notas.forEach(function (f) { filas.push([f.celdas.marca === 'TRUE' ? 'Sí' : f.celdas.marca === 'FALSE' ? 'No' : '', f.celdas.texto || '']); }); }
+  if (pie.length) { filas.push([]); if (h.pie_titulo) filas.push([h.pie_titulo]); pie.forEach(function (f) { filas.push([f.celdas.texto || '']); }); }
+  var csv = '﻿' + filas.map(function (r) { return r.map(celda).join(';'); }).join('\r\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'Dotación - ' + h.nombre + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
