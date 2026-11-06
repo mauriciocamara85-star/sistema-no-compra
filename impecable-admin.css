@@ -919,16 +919,28 @@
 /* ── DOTACIÓN (SQL 253, 6/11/2026): la planilla «Dotación Locales» de Google, con sus pestañas abajo ─────────────────
    Los colores son los de la planilla (encabezado celeste o verde, filas amarillas, la baja en rojo); en el tema
    oscuro, los mismos tonos apagados. Todo con prefijo dot- (estilos.css es global: ver «Interfaz común»). */
-.imp { --dot-celeste: #CFE2F3; --dot-verde: #D9EAD3; --dot-rosado: #E6B8AF; --dot-amarillo: #FFF2CC; --dot-rojo: #EA9999; --dot-linea: #D3D7DD; }
+.imp { --dot-celeste: #CFE2F3; --dot-verde: #D9EAD3; --dot-rosado: #E6B8AF; --dot-amarillo: #FFF2CC; --dot-rojo: #EA9999; --dot-linea: #D3D7DD;
+  --dot-hallada: rgba(227, 161, 119, .40); --dot-sombra: rgba(20, 23, 27, .16); }
 html[data-theme="dark"] .imp { --dot-celeste: rgba(120, 170, 225, .24); --dot-verde: rgba(120, 190, 120, .22); --dot-rosado: rgba(225, 140, 120, .24);
-  --dot-amarillo: rgba(255, 214, 102, .09); --dot-rojo: rgba(234, 90, 90, .30); --dot-linea: var(--line); }
+  --dot-amarillo: rgba(255, 214, 102, .09); --dot-rojo: rgba(234, 90, 90, .30); --dot-linea: var(--line); --dot-hallada: rgba(227, 161, 119, .30); --dot-sombra: rgba(0, 0, 0, .55); }
 .imp .dot { display: flex; flex-direction: column; min-width: 0; }
 .imp .dot-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .imp .dot-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 8px; min-height: 36px; }
 .imp .dot-titulo { margin-left: -6px; padding: 4px 6px; border: 0; border-radius: 8px; background: none; font: 700 15px/1.3 var(--sans); color: var(--txt); text-align: left; cursor: text; }
 .imp .dot-titulo:hover { background: var(--info-soft); }
 .imp .dot-titulo-in { width: min(440px, 100%); padding: 5px 8px; border: 1px solid var(--sel-borde); border-radius: 8px; background: var(--surface); font: 700 15px/1.3 var(--sans); color: var(--txt); }
-.imp .dot-acc { display: flex; align-items: center; gap: 10px; }
+.imp .dot-acc { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 10px; }
+/* El buscador: .imp .dot-buscar delante, porque la regla general de los input (ancho 100 %, 16 px, relleno grande) le gana a una clase sola. */
+.imp .dot-buscar { position: relative; display: flex; align-items: center; margin: 0; }
+.imp .dot-buscar svg { position: absolute; left: 9px; width: 15px; height: 15px; color: var(--txt-3); pointer-events: none; }
+.imp .dot-buscar input { box-sizing: border-box; width: 230px; min-width: 0; padding: 6px 30px 6px 30px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); font: 400 13.5px/1.3 var(--sans); color: var(--txt); }
+.imp .dot-buscar input::-webkit-search-cancel-button { display: none; -webkit-appearance: none; }
+.imp .dot-buscar-x { position: absolute; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px;
+  background: none; color: var(--txt-2); cursor: pointer; }
+.imp .dot-buscar-x:hover { background: var(--info-soft); color: var(--txt); }
+.imp .dot-buscar-x svg { width: 14px; height: 14px; }
+.imp .dot-buscar input:focus { border-color: var(--sel-borde); background: var(--surface); box-shadow: 0 0 0 1px var(--sel-borde); }
 .imp .dot-cuantas { font-size: 13px; color: var(--txt-2); white-space: nowrap; }
 
 /* La hoja: se desliza para los dos lados adentro de su marco; el encabezado y los números de fila quedan quietos. */
@@ -946,8 +958,11 @@ html[data-theme="dark"] .imp { --dot-celeste: rgba(120, 170, 225, .24); --dot-ve
 .imp .dot-num { width: 100%; min-height: 28px; padding: 0 2px; border: 0; background: none; font: 500 11.5px var(--sans); color: var(--txt-2); font-variant-numeric: tabular-nums; cursor: pointer; }
 .imp .dot-num:hover, .imp .dot-num[aria-expanded] { background: var(--info-soft); color: var(--txt); }
 .imp .dot-tabla td { cursor: text; }
-.imp .dot-tabla td.dot-rel-amarillo { background: var(--dot-amarillo); }
-.imp .dot-tabla tr.dot-fila-rojo td { background: var(--dot-rojo); }
+/* Cada celda con su fondo entero y el color de la planilla encima: las columnas fijas tapan lo que pasa por debajo. */
+.imp .dot-tabla tbody td { background-color: var(--surface); }
+.imp .dot-tabla td.dot-rel-amarillo { background-image: linear-gradient(var(--dot-amarillo), var(--dot-amarillo)); }
+.imp .dot-tabla tr.dot-fila-rojo td { background-image: linear-gradient(var(--dot-rojo), var(--dot-rojo)); }
+.imp .dot-tabla tbody td.dot-hallada { background-image: linear-gradient(var(--dot-hallada), var(--dot-hallada)); }
 .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 0 0 9999px rgba(20, 23, 27, .035); }
 html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, .04); }
 .imp .dot-tabla td:focus { outline: 2px solid var(--sel-borde); outline-offset: -2px; }
@@ -965,6 +980,7 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .imp .dot-tabla td.dot-abierta .dot-flecha { transform: rotate(180deg); }
 .imp .dot-tabla tfoot td, .imp .dot-tabla tfoot th { position: sticky; bottom: 0; z-index: 2; background: var(--surface-2); cursor: default; }
 .imp .dot-tabla tfoot .dot-gut { left: 0; z-index: 4; }
+.imp .dot-tabla tfoot .dot-gut-total { font: 700 12px/1.2 var(--sans); color: var(--txt); }
 .imp .dot-tabla tr.dot-recien td { animation: dotRecien 1.6s ease-out; }
 @keyframes dotRecien { from { box-shadow: inset 0 0 0 9999px var(--sel-fondo); } }
 
@@ -972,6 +988,7 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .imp .dot-mas:hover { background: var(--acc-soft); }
 .imp .dot-mas:disabled { opacity: .5; cursor: default; }
 .imp .dot-mas-fila { position: sticky; left: 0; margin: 4px 0 2px 34px; }
+.imp .dot-nada { position: sticky; left: 0; margin: 0; padding: 14px 16px 6px 44px; font-size: 13.5px; color: var(--txt-2); }
 
 /* Observaciones y Responsables, debajo de la tabla (quietos aunque la tabla se deslice de costado). */
 .imp .dot-bloque { position: sticky; left: 0; max-width: 920px; padding: 10px 14px 4px; }
@@ -997,6 +1014,11 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .imp .dot-pest:hover { background: var(--info-soft); color: var(--txt); }
 .imp .dot-pest.activa { border-top-color: var(--sel-borde); background: var(--surface); font-weight: 700; color: var(--sel-txt); box-shadow: 0 1px 3px rgba(20, 23, 27, .10); }
 .imp .dot-pest:focus-visible { outline: 2px solid var(--foco); outline-offset: -2px; }
+.imp .dot-pest-n { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 5px; box-sizing: border-box; border-radius: var(--r-pill); background: var(--acc); color: var(--acc-ink);
+  font: 700 11px/17px var(--sans); text-align: center; font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.imp .dot-pest-n:empty { display: none; }
+.imp .dot-pest.dot-pest-cero { opacity: .55; }
+.imp .dot-pest.dot-pest-cero .dot-pest-n { background: var(--surface-3); color: var(--txt-2); }
 
 /* El menú de una fila (al tocar su número): va en el body, fuera de .imp. */
 .dot-menu { position: fixed; z-index: 80; display: flex; flex-direction: column; min-width: 210px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-sm);
@@ -1027,8 +1049,29 @@ html[data-theme="dark"] .imp .dot-tabla tbody tr:hover td { box-shadow: inset 0 
 .dot-elegir-pie button { padding: 7px 12px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--sans); color: var(--acc-txt); cursor: pointer; }
 .dot-elegir-pie button:hover { background: var(--acc-soft); }
 .dot-elegir-pie .dot-elegir-vaciar { color: var(--txt-2); }
+.dot-cal { position: fixed; z-index: 80; width: 268px; box-sizing: border-box; padding: 8px 10px 2px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); box-shadow: var(--sombra); color: var(--txt); }
+.dot-cal-cab { display: flex; align-items: center; gap: 2px; margin-bottom: 2px; }
+.dot-cal-cab b { flex: 1; text-align: center; font: 700 14px/1 var(--display); }
+.dot-cal-cab button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--txt-3); cursor: pointer; }
+.dot-cal-cab button:hover { background: var(--surface-2); color: var(--txt); }
+.dot-cal-cab svg { width: 16px; height: 16px; }
+.dot-cal-grilla { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 1px; }
+.dot-cal-dsem { padding: 6px 0 5px; font: 600 10px/1 var(--sans); letter-spacing: .05em; color: var(--txt-3); text-align: center; }
+.dot-cal-dia { height: 33px; min-width: 0; padding: 0; border: 0; background: none; font: 500 13px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--txt); cursor: pointer; }
+.dot-cal-dia span { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; }
+.dot-cal-dia:hover span { background: var(--surface-2); }
+.dot-cal-dia.dot-cal-otro { color: var(--txt-3); opacity: .65; }
+.dot-cal-dia.dot-cal-hoy span { box-shadow: inset 0 0 0 1.5px var(--cobre); }
+.dot-cal-dia.dot-cal-elegida span { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
+.dot-cal-pie { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 5px 0 4px; border-top: 1px solid var(--line); }
+.dot-cal-pie button { padding: 6px 10px; border: 0; border-radius: 8px; background: none; font: 600 13px var(--sans); color: var(--acc-txt); cursor: pointer; }
+.dot-cal-pie button:hover { background: var(--acc-soft); }
+.dot-cal-pie small { font-size: 11.5px; color: var(--txt-2); }
 @media (prefers-reduced-motion: reduce) { .imp .dot-flecha { transition: none; } }
 @media (max-width: 599px) {
   .imp .dot-tabla { font-size: 12.5px; }
   .imp .dot-pest { padding: 7px 11px 8px; font-size: 12.5px; }
+  .imp .dot-buscar { flex: 1 1 100%; }
+  .imp .dot-buscar input { width: 100%; font-size: 16px; }
 }

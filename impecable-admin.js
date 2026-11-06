@@ -6018,6 +6018,7 @@ function dibujarMandadas(cont, lista) {
    Sólo la administración: hay sueldos (la base lo controla, acá sólo no se ofrece). */
 var K_DOT_HOJA = 'nc_dot_hoja';
 var _dot = null, _dotHoja = null, _dotPedido = 0, _dotCola = {};
+var _dotBuscar = '', _dotAMano = {};   // lo buscado (sigue al cambiar de pestaña) y las filas recién agregadas, que se ven igual
 
 function verDotacion() {
   var n = ++_dotPedido, c = document.getElementById('cuerpo');
@@ -6068,6 +6069,8 @@ function dotAncho(c, filas) {
       else p.split(/\s+/).forEach(function (w) { larga = Math.max(larga, dotMedir(w)); });
     });
   });
+  /* Las de plata, también lo que mide su total (en negrita): si no, $688.000 se partía en dos renglones. */
+  if (c.t === 'plata') larga = Math.max(larga, dotMedir(dotPlata((filas || []).reduce(function (a, f) { return a + dotNumero(f.celdas[c.k]); }, 0)), 700));
   return Math.max(44, Math.min(440, Math.max(Math.round((c.w || 100) * 0.9), Math.ceil(larga * 1.04) + 16 + (c.t === 'lista' ? 18 : 0))));
 }
 var DOT_COLOR = /^#[0-9A-Fa-f]{6}$/;
@@ -6114,10 +6117,11 @@ function dotTablaHtml(h) {
   }).join('');
   html += '</tbody>';
   /* El total: la suma de las columnas de plata, de TODAS las filas (en la planilla, el de Zona Franco sumaba sólo
-     algunas: la fórmula había quedado corta). */
+     algunas: la fórmula había quedado corta). «Total» va en la columna de los números de fila: así se ve aunque la
+     hoja esté corrida a la derecha. */
   if (cols.some(function (c) { return c.t === 'plata'; })) {
-    html += '<tfoot><tr><th class="dot-gut"></th>' + cols.map(function (c, i) {
-      return '<td class="' + dotClases(c) + '" data-total="' + (c.t === 'plata' ? esc(c.k) : '') + '">' + (i === 0 ? '<b>Total</b>' : c.t === 'plata' ? '<b>' + esc(dotPlata(dotSuma(h, c.k))) + '</b>' : '') + '</td>';
+    html += '<tfoot><tr><th class="dot-gut dot-gut-total" scope="row">Total</th>' + cols.map(function (c) {
+      return '<td class="' + dotClases(c) + '" data-total="' + (c.t === 'plata' ? esc(c.k) : '') + '">' + (c.t === 'plata' ? '<b>' + esc(dotPlata(dotSuma(h, c.k))) + '</b>' : '') + '</td>';
     }).join('') + '</tr></tfoot>';
   }
   return html + '</table>';
@@ -6146,6 +6150,7 @@ function dotBloquesHtml(h) {
 
 function dotDibujar() {
   dotElegirCerrar(false);
+  dotCalCerrar();
   var c = document.getElementById('cuerpo');
   if (!c || _solapa !== 'dotacion') return;
   var h = dotHoja();
@@ -6153,16 +6158,23 @@ function dotDibujar() {
   _dotHoja = h.id;
   /* Al volver a dibujar (una fila nueva o borrada) la hoja queda donde estaba. */
   var m0 = document.getElementById('dotMarco'), arriba = m0 ? m0.scrollTop : 0, izq = m0 ? m0.scrollLeft : 0, misma = m0 && m0.dataset.hoja === h.id;
+  /* Si estaba escribiendo en el buscador (y llegó, por ejemplo, un cambio de otro), sigue escribiendo donde estaba. */
+  var b0 = document.activeElement && document.activeElement.id === 'dotBuscar' ? document.activeElement : null, selB = b0 ? [b0.selectionStart, b0.selectionEnd] : null;
   var n = dotParte(h, 'tabla').length;
   c.innerHTML = '<div class="dot">' +
     '<div class="dot-barra">' + (h.titulo != null
         ? '<button type="button" class="dot-titulo" data-titulo title="Tocá para cambiar el título">' + esc(h.titulo) + '</button>' : '<span></span>') +
-      '<div class="dot-acc"><span class="dot-cuantas">' + n + (n === 1 ? ' fila' : ' filas') + '</span>' +
+      '<div class="dot-acc"><div class="dot-buscar">' + DOT_LUPA + '<input type="search" id="dotBuscar" maxlength="80" autocomplete="off" spellcheck="false"' +
+        ' placeholder="Buscar en la pestaña" aria-label="Buscar en la pestaña (un nombre, un local…)" value="' + esc(_dotBuscar) + '">' +
+        '<button type="button" class="dot-buscar-x" id="dotBuscarX" title="Borrar lo buscado" aria-label="Borrar lo buscado" hidden>' + dotSvg('<path d="M18 6 6 18M6 6l12 12"/>') + '</button></div>' +
+      '<span class="dot-cuantas" id="dotCuantas" aria-live="polite">' + n + (n === 1 ? ' fila' : ' filas') + '</span>' +
       '<button type="button" class="boton chico" id="dotExcel">Bajar para Excel</button></div></div>' +
     '<div class="dot-marco" id="dotMarco" data-hoja="' + esc(h.id) + '">' + dotTablaHtml(h) +
+      '<p class="dot-nada" id="dotNada" hidden></p>' +
       '<button type="button" class="dot-mas dot-mas-fila" data-nueva="tabla">+ Agregar una fila</button>' + dotBloquesHtml(h) + '</div>' +
     '<nav class="dot-pestanas" aria-label="Pestañas de la planilla"><div class="dot-pest-in">' + _dot.map(function (x) {
-      return '<button type="button" class="dot-pest' + (x.id === h.id ? ' activa" aria-current="page' : '') + '" data-hoja="' + esc(x.id) + '">' + esc(x.nombre) + '</button>';
+      return '<button type="button" class="dot-pest' + (x.id === h.id ? ' activa" aria-current="page' : '') + '" data-hoja="' + esc(x.id) + '">' + esc(x.nombre) +
+        '<span class="dot-pest-n"></span></button>';
     }).join('') + '</div></nav></div>';
   var marco = document.getElementById('dotMarco');
   if (misma) { marco.scrollTop = arriba; marco.scrollLeft = izq; }
@@ -6172,18 +6184,38 @@ function dotDibujar() {
     tira.scrollLeft = Math.max(0, act.offsetLeft - (tira.clientWidth - act.offsetWidth) / 2);
   }
   dotEnganchar(c.querySelector('.dot'), h);
+  dotFiltrar();
+  dotFijas();
+  if (b0) { var b1 = document.getElementById('dotBuscar'); b1.focus({ preventScroll: true }); try { b1.setSelectionRange(selB[0], selB[1]); } catch (e) {} }
 }
 
-/* La hoja ocupa lo que queda de la pantalla, así las pestañas de abajo siempre se ven (como en Google). */
+/* La hoja ocupa lo que queda de la pantalla, así las pestañas de abajo siempre se ven (como en Google). Alto fijo, no
+   tope: con pocas filas (o buscando) las pestañas se quedan abajo y no suben mientras se escribe. */
 function dotAltura() {
   var m = document.getElementById('dotMarco'), p = app.querySelector('.dot-pestanas');
   if (!m || !p) return;
   var arriba = m.getBoundingClientRect().top + window.pageYOffset;
-  m.style.maxHeight = Math.max(240, window.innerHeight - arriba - p.offsetHeight - 14) + 'px';
+  m.style.height = Math.max(240, window.innerHeight - arriba - p.offsetHeight - 14) + 'px';
 }
-window.addEventListener('resize', function () { if (_solapa === 'dotacion') dotAltura(); });
+window.addEventListener('resize', function () { if (_solapa === 'dotacion') { dotAltura(); dotFijas(); } });
 
 function dotEnganchar(raiz, h) {
+  var bus = raiz.querySelector('#dotBuscar'), marco = raiz.querySelector('.dot-marco');
+  bus.addEventListener('input', function () { _dotBuscar = bus.value; _dotAMano = {}; dotFiltrar(); });
+  raiz.querySelector('#dotBuscarX').addEventListener('click', function () { bus.value = ''; _dotBuscar = ''; _dotAMano = {}; dotFiltrar(); bus.focus(); });
+  bus.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && bus.value) { e.preventDefault(); e.stopPropagation(); bus.value = ''; _dotBuscar = ''; _dotAMano = {}; dotFiltrar(); }
+    else if (e.key === 'Enter') {
+      /* Enter va a la primera celda encontrada; de ahí, las flechas (que saltean las filas escondidas). */
+      e.preventDefault();
+      var td = marco.querySelector('tbody tr:not([hidden]) td.dot-hallada') || marco.querySelector('tbody tr:not([hidden]) td[data-c]');
+      if (td) td.focus();
+    }
+  });
+  /* Con la hoja corrida a la derecha, una sombrita marca dónde terminan las columnas fijas. */
+  var corrida = function () { marco.classList.toggle('dot-corrida', marco.scrollLeft > 1); };
+  marco.addEventListener('scroll', corrida, { passive: true });
+  corrida();
   raiz.addEventListener('click', function (e) {
     var t = e.target;
     var pest = t.closest('.dot-pest');
@@ -6230,7 +6262,8 @@ function dotMover(td, hacia) {
   if (hacia === 'der') otra = td.nextElementSibling;
   else if (hacia === 'izq') otra = td.previousElementSibling && td.previousElementSibling.tagName === 'TD' ? td.previousElementSibling : null;
   else {
-    var tr2 = hacia === 'abajo' ? tr.nextElementSibling : tr.previousElementSibling;
+    var tr2 = tr;
+    do { tr2 = hacia === 'abajo' ? tr2.nextElementSibling : tr2.previousElementSibling; } while (tr2 && tr2.hidden);
     otra = tr2 ? tr2.children[i] : null;
   }
   if (otra && otra.tagName === 'TD') { otra.focus(); otra.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
@@ -6263,12 +6296,19 @@ function dotEditar(h, el, primera) {
   el.appendChild(ed);
   var crecer = function () { if (ed.tagName === 'TEXTAREA') { ed.style.height = 'auto'; ed.style.height = ed.scrollHeight + 'px'; } };
   crecer();
+  /* Una fecha, con su calendario abajo: tocar un día la deja escrita y la guarda (también se puede escribir). */
+  var cal = c.t === 'fecha' && f.parte === 'tabla' ? dotCalendario(el, ed, function (v) {
+    ed.value = v;
+    terminar(true);
+    if (document.body.contains(el)) el.focus({ preventScroll: true });
+  }) : null;
   ed.focus();
   if (ed.tagName === 'TEXTAREA') { var largo = ed.value.length; ed.setSelectionRange(largo, largo); }
   var listo = false;
   function terminar(guardar, mover) {
     if (listo) return;
     listo = true;
+    if (cal) cal.cerrar();
     var v = ed.value.replace(/\r?\n/g, ' ');
     el.classList.remove('dot-editando');
     if (!guardar || v === antes) dotPintar(el, c, antes);
@@ -6276,7 +6316,7 @@ function dotEditar(h, el, primera) {
     /* Con Enter o Tab se sigue en la de al lado; al tocar otra cosa (blur), el foco queda donde se tocó. */
     if (mover) { if (el.tagName === 'TD') dotMover(el, mover); else el.focus(); }
   }
-  ed.addEventListener('input', crecer);
+  ed.addEventListener('input', function () { crecer(); if (cal) cal.ir(ed.value); });
   ed.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); terminar(true, 'abajo'); }
     else if (e.key === 'Escape') { e.preventDefault(); terminar(false); el.focus(); }
@@ -6411,7 +6451,7 @@ function dotPartes(c, v) {
 }
 /** Cierra la lista abierta; guardar = lo tildado en un desplegable de varias se guarda. */
 function dotElegirCerrar(guardar) { if (_dotElegir) _dotElegir.cerrar(!!guardar); }
-window.addEventListener('hashchange', function () { dotElegirCerrar(true); });
+window.addEventListener('hashchange', function () { dotElegirCerrar(true); dotCalCerrar(); });
 
 function dotElegir(h, el, f, c, primera) {
   dotElegirCerrar(true);
@@ -6574,6 +6614,172 @@ function dotElegir(h, el, f, c, primera) {
   }, 0);
 }
 
+/* El buscador (tanda 2, 6/11/2026): deja a la vista sólo las filas que tienen TODAS las palabras buscadas (sin importar
+   tildes ni mayúsculas, en cualquier columna), marca las celdas donde aparecen y dice en cada pestaña cuántas tiene: así
+   se encuentra a alguien en toda la planilla. Las filas conservan su número, como el filtro de Google. Lo buscado sigue
+   al cambiar de pestaña; Esc lo borra. Las Observaciones y los Responsables no se filtran. */
+function dotPalabras() { return dotSinTilde(_dotBuscar).split(/\s+/).filter(Boolean); }
+function dotTexto(v) { return v == null || v === 'TRUE' || v === 'FALSE' ? '' : dotSinTilde(v); }
+function dotCoincide(h, f, pal) {
+  if (!pal.length) return true;
+  var t = h.columnas.map(function (c) { return dotTexto(f.celdas[c.k]); });
+  return pal.every(function (p) { return t.some(function (x) { return x.indexOf(p) > -1; }); });
+}
+function dotFiltrar() {
+  var h = dotHoja(), marco = document.getElementById('dotMarco');
+  if (!h || !marco) return;
+  var pal = dotPalabras(), total = dotParte(h, 'tabla').length, vis = 0;
+  marco.querySelectorAll('.dot-tabla tbody tr').forEach(function (tr) {
+    var f = dotFila(h, tr.dataset.fila), si = !f || !pal.length || !!_dotAMano[f.id] || dotCoincide(h, f, pal);
+    tr.hidden = !si;
+    if (si) vis++;
+    tr.querySelectorAll('td[data-c]').forEach(function (td) {
+      var t = f ? dotTexto(f.celdas[td.dataset.c]) : '';
+      td.classList.toggle('dot-hallada', si && pal.some(function (p) { return t.indexOf(p) > -1; }));
+    });
+  });
+  var filas = function (n) { return n + (n === 1 ? ' fila' : ' filas'); };
+  var x = document.getElementById('dotBuscarX');
+  if (x) x.hidden = !pal.length;
+  var cu = document.getElementById('dotCuantas');
+  if (cu) cu.textContent = pal.length ? vis + ' de ' + filas(total) : filas(total);
+  var nada = document.getElementById('dotNada');
+  if (nada) { nada.hidden = !pal.length || vis > 0; nada.textContent = 'Ninguna fila de esta pestaña tiene «' + _dotBuscar.trim() + '».'; }
+  app.querySelectorAll('.dot-pest').forEach(function (b) {
+    var x = (_dot || []).filter(function (y) { return y.id === b.dataset.hoja; })[0], n = 0, s = b.querySelector('.dot-pest-n');
+    if (x && pal.length) dotParte(x, 'tabla').forEach(function (f) { if (dotCoincide(x, f, pal)) n++; });
+    if (s) s.textContent = pal.length ? String(n) : '';
+    b.classList.toggle('dot-pest-cero', !!pal.length && !n);
+  });
+}
+
+/* Las columnas fijas (tanda 2): al deslizar a la derecha, el Local, el Nombre y el Apellido (o el Empleado) quedan quietos
+   al lado del número de fila, como «Inmovilizar» de Google pero salteando las del medio (A o X, Puesto) para no tapar
+   media hoja. Si no entran en el 45 % del ancho (el celular), quedan las que entran, primero el nombre. Las reglas van en
+   un <style> propio porque dependen de lo que mide cada columna en esta pantalla. El scroll-padding hace que una celda
+   a la que se llega con las flechas no quede tapada por las fijas ni por el encabezado. */
+var DOT_FIJAS = ['nombre', 'empleado', 'apellido', 'local'];
+function dotFijas() {
+  var css = document.getElementById('dotFijasCss');
+  if (!css) { css = document.createElement('style'); css.id = 'dotFijasCss'; document.head.appendChild(css); }
+  var marco = document.getElementById('dotMarco'), h = dotHoja(), reglas = [];
+  var ths = marco ? marco.querySelectorAll('.dot-tabla > thead > tr > *') : [];
+  if (h && ths.length === h.columnas.length + 1) {
+    var izq = ths[0].getBoundingClientRect().width, tope = marco.clientWidth * 0.45 - izq, usado = 0, fijas = [], pre = '.imp .dot-marco .dot-tabla > ';
+    h.columnas.map(function (c, i) { return { i: i, p: DOT_FIJAS.indexOf(dotSinTilde(c.n)), w: ths[i + 1].getBoundingClientRect().width }; })
+      .filter(function (x) { return x.p > -1; })
+      .sort(function (a, b) { return a.p - b.p; })
+      .forEach(function (x) { if (usado + x.w <= tope) { fijas.push(x); usado += x.w; } });
+    fijas.sort(function (a, b) { return a.i - b.i; });
+    fijas.forEach(function (x, j) {
+      var n = ':nth-child(' + (x.i + 2) + ')';
+      reglas.push(pre + '* > tr > ' + n + ' { position: sticky; left: ' + izq.toFixed(2) + 'px; z-index: 1; }',
+        pre + 'thead > tr > ' + n + ', ' + pre + 'tfoot > tr > ' + n + ' { z-index: 3; }');
+      if (j === fijas.length - 1) {
+        reglas.push('.imp .dot-marco.dot-corrida .dot-tabla > * > tr > ' + n + '::after { content: ""; position: absolute; top: 0; bottom: -1px; left: 100%; width: 7px;' +
+          ' pointer-events: none; background: linear-gradient(to right, var(--dot-sombra), transparent); }');
+      }
+      izq += x.w;
+    });
+    var cab = marco.querySelector('.dot-tabla > thead'), pie = marco.querySelector('.dot-tabla > tfoot');
+    reglas.push('.imp .dot-marco { scroll-padding: ' + Math.ceil(cab ? cab.offsetHeight : 0) + 'px 0 ' + Math.ceil(pie ? pie.offsetHeight : 0) + 'px ' + Math.ceil(izq) + 'px; }');
+    marco.dataset.fijas = fijas.map(function (x) { return h.columnas[x.i].k; }).join(',');
+  }
+  css.textContent = reglas.join('\n');
+}
+
+/* Las fechas con calendario (tanda 2): al escribir en una celda de fecha se abre abajo (o arriba, si abajo no entra) el
+   mes de la fecha que ya tiene, o el de hoy. Tocar un día la deja como están todas en la planilla (30/04/2022) y se
+   guarda; «Hoy», el de hoy. Lo escrito a mano sigue valiendo («BAJA», «baja 15/03/2024»): si es una fecha, el calendario
+   va a ese mes. ‹ › cambian el mes y « » el año (las de ingreso son de años atrás). */
+var _dotCal = null;
+var DOT_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+var DOT_DSEM = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+function dotSvg(t) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + t + '</svg>'; }
+var DOT_LUPA = dotSvg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>');
+var DOT_CAL_MOV = {
+  '-12': ['Un año antes', '<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>'],
+  '-1': ['Mes anterior', '<path d="m15 18-6-6 6-6"/>'],
+  '1': ['Mes siguiente', '<path d="m9 18 6-6-6-6"/>'],
+  '12': ['Un año después', '<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>']
+};
+function dotCalCerrar() { if (_dotCal) _dotCal.cerrar(); }
+/** "30/04/2022" (o 1/3/23) → esa fecha; cualquier otra cosa → null. */
+function dotFechaDe(t) {
+  var m = String(t == null ? '' : t).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})$/);
+  if (!m) return null;
+  var a = +m[3] < 100 ? 2000 + +m[3] : +m[3], d = new Date(a, +m[2] - 1, +m[1]);
+  return d.getMonth() === +m[2] - 1 && d.getDate() === +m[1] ? d : null;
+}
+function dotFechaTexto(d) { return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear(); }
+
+function dotCalendario(el, ed, alElegir) {
+  dotCalCerrar();
+  var p = hoyAR().split('-'), hoy = new Date(+p[0], +p[1] - 1, +p[2]);
+  var mes = function (d) { return new Date(d.getFullYear(), d.getMonth(), 1); };
+  var elegida = dotFechaDe(ed.value), vista = mes(elegida || hoy), arriba = null, st = {};
+  var m = document.createElement('div');
+  m.className = 'dot-cal';
+  m.setAttribute('role', 'group');
+  m.setAttribute('aria-label', 'Calendario');
+  document.body.appendChild(m);
+  function pintar() {
+    var corr = (vista.getDay() + 6) % 7, dias = '';
+    for (var i = 0; i < 42; i++) {
+      var d = new Date(vista.getFullYear(), vista.getMonth(), 1 - corr + i);
+      if (i >= 35 && d.getMonth() !== vista.getMonth()) break;
+      var es = !!elegida && +d === +elegida;
+      dias += '<button type="button" tabindex="-1" class="dot-cal-dia' + (d.getMonth() !== vista.getMonth() ? ' dot-cal-otro' : '') + (+d === +hoy ? ' dot-cal-hoy' : '') +
+        (es ? ' dot-cal-elegida" aria-pressed="true' : '') + '" data-d="' + dotFechaTexto(d) + '" aria-label="' + d.getDate() + ' de ' + DOT_MESES[d.getMonth()].toLowerCase() +
+        ' de ' + d.getFullYear() + '"><span>' + d.getDate() + '</span></button>';
+    }
+    var mov = function (k) { return '<button type="button" tabindex="-1" data-mov="' + k + '" aria-label="' + DOT_CAL_MOV[k][0] + '" title="' + DOT_CAL_MOV[k][0] + '">' + dotSvg(DOT_CAL_MOV[k][1]) + '</button>'; };
+    m.innerHTML = '<div class="dot-cal-cab">' + mov('-12') + mov('-1') + '<b>' + DOT_MESES[vista.getMonth()] + ' ' + vista.getFullYear() + '</b>' + mov('1') + mov('12') + '</div>' +
+      '<div class="dot-cal-grilla">' + DOT_DSEM.map(function (x) { return '<span class="dot-cal-dsem">' + x + '</span>'; }).join('') + dias + '</div>' +
+      '<div class="dot-cal-pie"><button type="button" tabindex="-1" data-d="' + dotFechaTexto(hoy) + '">Hoy</button><small>Tocá un día o escribí la fecha</small></div>';
+    ubicar();
+  }
+  /* Pegado a la celda: abajo, o arriba si abajo no entra y arriba hay más lugar (y ya no cambia de lado). Si la celda sale
+     de la vista al deslizar la hoja, se esconde hasta que vuelva. */
+  function ubicar() {
+    if (!document.body.contains(el)) return;
+    var r = el.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight, mc = el.closest('.dot-marco');
+    var mr = mc ? mc.getBoundingClientRect() : { top: 0, bottom: vh, left: 0, right: vw };
+    m.style.visibility = r.bottom < mr.top + 4 || r.top > mr.bottom - 4 || r.right < mr.left + 4 || r.left > mr.right - 4 ? 'hidden' : '';
+    var alto = m.offsetHeight, abajo = vh - r.bottom - 8, encima = r.top - 8;
+    if (arriba === null) arriba = abajo < alto && encima > abajo;
+    m.style.left = Math.max(8, Math.min(r.left, vw - m.offsetWidth - 8)) + 'px';
+    m.style.top = Math.max(8, arriba ? r.top - alto - 2 : Math.min(r.bottom + 2, vh - alto - 8)) + 'px';
+  }
+  st.ir = function (t) {
+    var d = dotFechaDe(t);
+    if (d ? elegida && +d === +elegida : !elegida) return;
+    elegida = d;
+    if (d) vista = mes(d);
+    pintar();
+  };
+  st.cerrar = function () {
+    if (_dotCal !== st) return;
+    _dotCal = null;
+    m.remove();
+    document.removeEventListener('scroll', ubicar, true);
+    window.removeEventListener('resize', ubicar);
+  };
+  /* Tocar el calendario no le saca el foco a lo que se escribe (si no, se guardaría antes de elegir el día). */
+  m.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  m.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.mov) { vista = new Date(vista.getFullYear(), vista.getMonth() + +b.dataset.mov, 1); pintar(); return; }
+    if (b.dataset.d) alElegir(b.dataset.d);
+  });
+  _dotCal = st;
+  pintar();
+  document.addEventListener('scroll', ubicar, true);
+  window.addEventListener('resize', ubicar);
+  return st;
+}
+
 /** Una fila nueva (abajo de otra, o al final de la tabla / de las observaciones / del pie), y a escribir en ella. */
 function dotNueva(h, parte, despues, boton) {
   if (boton) boton.disabled = true;
@@ -6583,6 +6789,7 @@ function dotNueva(h, parte, despues, boton) {
     var lista = h.filas, i = despues ? lista.indexOf(dotFila(h, despues)) + 1 : 0;
     if (!despues) lista.forEach(function (x, j) { if (x.parte === parte) i = j + 1; });
     lista.splice(i || lista.length, 0, f);
+    if (parte === 'tabla') _dotAMano[f.id] = true;
     if (_solapa !== 'dotacion' || dotHoja() !== h) return;
     dotDibujar();
     var tr = app.querySelector('[data-fila="' + f.id + '"]');
