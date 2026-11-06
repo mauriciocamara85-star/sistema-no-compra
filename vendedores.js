@@ -2694,7 +2694,8 @@ var FILAS_CAJA = [
   ['Go Cuotas', 'sis_gocuotas', 'real_gocuotas', 'Go Cuotas'],
   ['Efectivo', 'sis_saldo_final_efvo', 'real_efectivo', 'Lo que contaste']
 ];
-var _tolCaja = 100;
+var TOL_CAJA = 100;     // sin la del local (Ajustes → El local → La caja)
+var _tolCaja = TOL_CAJA;
 /* (SQL 134) La IA de la caja se puede apagar por local (Ajustes → El local → La caja): las fotos se guardan y los
    números se cargan a mano. Sin el dato (todavía sin el SQL), prendida. */
 var _cajaIA = true;
@@ -2852,17 +2853,96 @@ function pantallaCaja() {
   _papel = 'caja';
   app.innerHTML = cabeza('Registro') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
+  /* (SQL 254) Con más de un local, primero de cuál es la caja (una vez por día). */
+  cajaLocales().then(function (locs) {
+    if (!enPapel('caja')) return;
+    if (locs.length < 2) { _cajaLocal = null; abrirCajaDe(null); return; }
+    var l = localCajaGuardado(locs);
+    if (!l) { elegirLocalCaja(locs); return; }
+    _cajaLocal = l;
+    abrirCajaDe(l.propio ? null : l);
+  });
+}
+
+/** La caja de hoy de su local (otro = null) o la del local que cubre (otro = {id, nombre, caja_ia, caja_tolerancia_pesos}). */
+function abrirCajaDe(otro) {
+  _tolCaja = TOL_CAJA;
   /* select=*: así también trae caja_ia (SQL 134) sin romperse si todavía no está. (SQL 244) La caja se dibuja con esto
-     ya leído: con la IA prendida los números están trabados. */
-  var cfg = !yo().local_id ? Promise.resolve() : leer('/orden_config?select=*&local_id=eq.' + valor(yo().local_id)).then(function (f) {
-    var v = f && f[0] ? Number(f[0].caja_tolerancia_pesos) : NaN;
+     ya leído: con la IA prendida los números están trabados. (SQL 254) La de otro local viene en orden_mis_cajas: su
+     orden_config el vendedor no la puede leer. */
+  function usar(c) {
+    var v = c && c.caja_tolerancia_pesos != null ? Number(c.caja_tolerancia_pesos) : NaN;
     if (isFinite(v) && v >= 0) _tolCaja = v;
-    _cajaIA = iaDeCaja(f && f[0]);
-  }).catch(function () {});
-  var atrasadas = cargarAtrasadas();
-  llamar('orden_caja_hoy').then(function (caja) {
+    _cajaIA = iaDeCaja(c);
+  }
+  var cfg = otro ? Promise.resolve(usar(otro))
+    : !yo().local_id ? Promise.resolve()
+    : leer('/orden_config?select=*&local_id=eq.' + valor(yo().local_id)).then(function (f) { usar(f && f[0]); }).catch(function () {});
+  /* Los días anteriores son de su local: en la caja de otro local no salen. */
+  var atrasadas = otro ? Promise.resolve(_cajasAtrasadas = []) : cargarAtrasadas();
+  (otro ? llamar('orden_caja_hoy_de', { p_local: otro.id }) : llamar('orden_caja_hoy')).then(function (caja) {
     return Promise.all([fotosDeCaja(caja.id), atrasadas, cfg]).then(function (r) { if (enPapel('caja')) dibujarCaja(caja, r[0]); });
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
+}
+
+/* ── La caja de otro local (SQL 254). Mauricio (6/11): "Karen Ramos no puede sacar fotos del cierre de San Justo1, solo
+   la deja del Shopping SJ su app … la vendedora debe estar en otro local y cubra … había que habilitar eso". Quien está
+   en la lista de Ventas de otro local (la del mes) también carga la caja de ese local, como la gente de ahí. Con más de
+   un local, la Caja pregunta primero de cuál es (una vez por día: si cierra en los dos, no le carga las fotos a la caja
+   equivocada) y arriba dice de qué local es, con «Cambiar de local». Sin el SQL, en «Ver su app» o con un solo local,
+   como siempre. ── */
+var K_CAJA_LOCAL = 'vdh_vend_caja_local';
+var _cajaLocales = null, _cajaLocalesEn = 0;   // orden_mis_cajas y cuándo se leyó (se vuelve a pedir a los 10 minutos)
+var _cajaLocal = null;                          // el local de la caja que se muestra, si tiene más de uno
+function cajaLocales() {
+  if (_espejo || !yo().local_id) return Promise.resolve([]);
+  if (_cajaLocales && Date.now() - _cajaLocalesEn < 600000) return Promise.resolve(_cajaLocales);
+  return llamar('orden_mis_cajas').then(function (r) {
+    _cajaLocales = Array.isArray(r) ? r : []; _cajaLocalesEn = Date.now();
+    return _cajaLocales;
+  }, function () { return _cajaLocales || []; });   // sin el SQL (PGRST202) o sin señal: su local, como siempre
+}
+/** El local que eligió hoy (si sigue en la lista). */
+function localCajaGuardado(locs) {
+  try {
+    var x = JSON.parse(localStorage.getItem(K_CAJA_LOCAL) || 'null');
+    if (x && x.p === yo().id && x.d === hoyAR()) return locs.filter(function (l) { return l.id === x.l; })[0] || null;
+  } catch (e) {}
+  return null;
+}
+function elegirLocalCaja(locs) {
+  app.innerHTML = cabeza('Registro') + pestanitasPapeles() +
+    '<div class="perfil caja-locales">' +
+    '<div class="titulo">¿De qué local es la caja?</div>' +
+    '<p class="detalle">' + esc('Estás en la lista de ' + (locs.length === 2 ? 'dos locales' : locs.length + ' locales') +
+      '. Elegí el local donde estás cerrando: las fotos se cargan en la caja de ese local.') + '</p>' +
+    locs.map(function (l) {
+      return '<button class="fila fila-boton" data-caja-local="' + esc(l.id) + '"><span><b>' + esc(l.nombre) + '</b>' +
+        (l.propio ? '<small>Tu local</small>' : '') + '</span><span class="chip empezar">Elegir</span></button>';
+    }).join('') + '</div>';
+  engancharCabeza();
+  app.querySelectorAll('[data-caja-local]').forEach(function (b) {
+    b.onclick = function () {
+      var l = locs.filter(function (x) { return x.id === b.dataset.cajaLocal; })[0];
+      if (!l) return;
+      try { localStorage.setItem(K_CAJA_LOCAL, JSON.stringify({ p: yo().id, l: l.id, d: hoyAR() })); } catch (e) {}
+      _cajaLocal = l;
+      app.innerHTML = cabeza('Registro', debajoLocalCaja()) + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
+      engancharCabeza();
+      abrirCajaDe(l.propio ? null : l);
+    };
+  });
+}
+/** Debajo de «Caja», el local de la caja (si es otro; si no, el suyo, como siempre). */
+function debajoLocalCaja() {
+  return _cajaLocal && !_cajaLocal.propio && _cajaLocales && _cajaLocales.length > 1 ? _cajaLocal.nombre + ' · ' + fechaLarga() : null;
+}
+/** Arriba de la caja, de qué local es (sólo a quien tiene más de uno). */
+function htmlLocalCaja() {
+  if (!_cajaLocal || !_cajaLocales || _cajaLocales.length < 2) return '';
+  return '<div class="caja-local' + (_cajaLocal.propio ? '' : ' otro') + '"><span>Caja de <b>' + esc(_cajaLocal.nombre) + '</b>' +
+    (_cajaLocal.propio ? '' : '<small>No es tu local: la cargás porque estás en su lista.</small>') + '</span>' +
+    '<button type="button" class="caja-local-cambiar" id="cambiarLocalCaja">Cambiar de local</button></div>';
 }
 
 /* ── Días anteriores para cargar (SQL 243). Mauricio (5/11): "como empezamos ayer 4 … habilitar para que puedan cargar
@@ -2960,7 +3040,7 @@ function dibujarCaja(caja, fotos, corrige) {
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
         ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: los números se cargan solos. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
-    : cabeza('Registro') + pestanitasPapeles() + '<div id="avisosCaja"></div>' +
+    : cabeza('Registro', debajoLocalCaja()) + pestanitasPapeles() + htmlLocalCaja() + '<div id="avisosCaja"></div>' +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : _cajaIA ? '' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>') +
       /* Con los días anteriores arriba, lo de abajo dice que es la de hoy (si no, las fotos parecían de esos días). */
       (_cajasAtrasadas.length ? htmlAtrasadas() + '<div class="seccion">La caja de hoy · ' + esc(diaSemanaMes(caja.fecha)) + '</div>' : '');
@@ -2983,12 +3063,22 @@ function dibujarCaja(caja, fotos, corrige) {
   else if (supervisor) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
   else {
     engancharCabeza(); engancharAtrasadas();
-    ponerBannerAvisos(document.getElementById('avisosCaja'), 'Activá los avisos: te avisamos si falta cargar la caja o si una foto no se leyó.', pantallaCaja, function () {
+    var sinEscribir = function (texto) {
       var obs = document.getElementById('obs');
       if (!Object.keys(cambios()).length && !(obs && obs.value.trim() !== String(caja.observaciones || '').trim())) return true;
-      avisar('Primero guardá la caja: si salís ahora, se pierde lo que escribiste.');
+      avisar(texto);
       return false;
-    });
+    };
+    ponerBannerAvisos(document.getElementById('avisosCaja'), 'Activá los avisos: te avisamos si falta cargar la caja o si una foto no se leyó.', pantallaCaja,
+      function () { return sinEscribir('Primero guardá la caja: si salís ahora, se pierde lo que escribiste.'); });
+    /* (SQL 254) Otro local: vuelve a preguntar de cuál es la caja. */
+    var cambiarLocal = document.getElementById('cambiarLocalCaja');
+    if (cambiarLocal) cambiarLocal.onclick = function () {
+      if (!sinEscribir('Primero guardá la caja: si cambiás de local, se pierde lo que escribiste.')) return;
+      try { localStorage.removeItem(K_CAJA_LOCAL); } catch (e) {}
+      _cajaLocal = null;
+      pantallaCaja();
+    };
   }
 
   /* Un casillero: trabado (sale de la foto), abierto o, con la caja controlada, apagado. «a mano»: lo marcó la base. */

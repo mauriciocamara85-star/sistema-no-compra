@@ -859,3 +859,20 @@ body.con-instr { overflow: hidden; }
 .instr-pie .boton svg { width: 22px; height: 22px; }
 /* Celulares bajos (360x640): el dibujo «Así sí» más chico, así entran los tres pasos sin bajar. */
 @media (max-height: 700px) { .instr-si .instr-dibujo { max-width: 215px; margin: 0 auto; } .instr h1 { font-size: 21px; } .instr-pasos { margin-top: 12px; gap: 8px; } }
+
+/* (SQL 254) La caja de otro local: quien está en la lista de más de un local elige de cuál es la caja, y arriba de la caja
+   dice de cuál es (en ámbar si no es el suyo), con «Cambiar de local». */
+.caja-locales { padding: 14px 16px 4px; }
+.caja-locales .titulo { font-weight: 800; font-size: 17px; }
+.caja-locales .detalle { margin: 4px 0 2px; }
+.caja-locales .fila { min-height: 56px; justify-content: space-between; flex-wrap: nowrap; }
+.caja-locales .fila:last-child { border-bottom: 0; }
+.caja-local { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap;
+  margin: 12px 0 4px; padding: 10px 14px; border: 1px solid var(--borde); border-radius: 14px; background: var(--tarjeta); }
+.caja-local.otro { border-color: var(--ambar); }
+.caja-local > span { min-width: 0; }
+.caja-local b { font-weight: 800; }
+.caja-local.otro b { color: var(--ambar); }
+.caja-local small { display: block; color: var(--suave); font-size: 13px; margin-top: 2px; }
+.caja-local-cambiar { background: none; border: 1px solid var(--borde); border-radius: 99px; color: var(--suave); font: inherit;
+  font-size: 13px; font-weight: 700; padding: 6px 12px; min-height: 34px; cursor: pointer; white-space: nowrap; }
