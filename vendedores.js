@@ -1055,13 +1055,14 @@ function bannerAvisos(estado, texto) {
 /* (5/11, Mauricio) Los avisos de la caja casi no llegaban: desde el 4/11, 114 de 121 fallaron porque ese celular no tenía
    los avisos activados (sólo 13 de 56 personas; supervisores, ninguno). El mismo cartel de Hoy, arriba de la Caja y de
    Revisar, hasta que los activen en ese celular. Tocándolo, la pantalla de activarlos, y después vuelve. */
-function ponerBannerAvisos(el, texto, volver) {
+function ponerBannerAvisos(el, texto, volver, puedeSalir) {
   if (!el) return;
   estadoAvisos().catch(function () { return 'no-soportado'; }).then(function (e) {
     if (!document.body.contains(el)) return;
     el.innerHTML = bannerAvisos(e, texto);
     var b = el.querySelector('.banner');
-    if (b) b.onclick = function () { pantallaBienvenida(volver); };
+    /* (6/11, el árbitro) puedeSalir: en la caja, con algo escrito sin guardar, no sale (se perdía lo escrito a mano). */
+    if (b) b.onclick = function () { if (puedeSalir && !puedeSalir()) return; pantallaBienvenida(volver); };
   });
 }
 
@@ -2982,7 +2983,12 @@ function dibujarCaja(caja, fotos, corrige) {
   else if (supervisor) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
   else {
     engancharCabeza(); engancharAtrasadas();
-    ponerBannerAvisos(document.getElementById('avisosCaja'), 'Activá los avisos: te avisamos si falta cargar la caja o si una foto no se leyó.', pantallaCaja);
+    ponerBannerAvisos(document.getElementById('avisosCaja'), 'Activá los avisos: te avisamos si falta cargar la caja o si una foto no se leyó.', pantallaCaja, function () {
+      var obs = document.getElementById('obs');
+      if (!Object.keys(cambios()).length && !(obs && obs.value.trim() !== String(caja.observaciones || '').trim())) return true;
+      avisar('Primero guardá la caja: si salís ahora, se pierde lo que escribiste.');
+      return false;
+    });
   }
 
   /* Un casillero: trabado (sale de la foto), abierto o, con la caja controlada, apagado. «a mano»: lo marcó la base. */
@@ -3093,6 +3099,8 @@ function dibujarCaja(caja, fotos, corrige) {
     if (!_cajaIA || !REAL_DE_FOTO[tipo] || valorDe(REAL_DE_FOTO[tipo]) != null) return null;
     var vig = fotosVigentes(fotos, caja.fecha);
     var sm = tipo === 'mp' ? sisMpCaja(vig, valorDe('sis_mp')) : null;
+    /* (6/11, el árbitro) Si el sistema dice $ 0 en ese medio, esa foto no hace falta: no está «Incompleta». */
+    if (sisDe(tipo) === 0 || sm === 0) return null;
     var l = lecturaCaja(vig, tipo, sm, _tolCaja);
     /* Mercado Pago sin saber todavía lo que dice el sistema: la barra pide antes esa foto, y con ella puede alcanzar. */
     if (!l || l.total != null || (tipo === 'mp' && sm == null)) return null;
@@ -3103,7 +3111,25 @@ function dibujarCaja(caja, fotos, corrige) {
     if (!ps.length) return null;
     var r1 = ult[ps[0]].ia_resultado || {};
     if (tipo === 'mp' && ps.length === 1 && r1.suma_operaciones != null && max < MAX_PARTES_CAJA) return { parteLeida: ps[0], parte: max + 1, otra: true, malas: 0 };
-    var mala = ps.filter(function (p) {
+    /* (6/11, el árbitro) Del posnet, la foto a repetir es la que tiene un posnet que sigue sin leer (cruzando por nombre con
+       las otras fotos, como posnetsSinRepetir), no la última con el total vacío: con [Getnet 508.600, Payway sin leer] y
+       [Getnet sin leer], lo que falta es el Payway de la primera. */
+    var sinLeer = null;
+    if (tipo === 'lote') {
+      var esNum = function (v) { return v != null && v !== '' && isFinite(Number(v)); }, leidos = {};
+      ps.forEach(function (p) {
+        ((ult[p].ia_resultado || {}).posnets || []).forEach(function (x) { var k = nombrePosnet(x && x.nombre); if (k && esNum(x.total)) (leidos[k] = leidos[k] || []).push(p); });
+      });
+      sinLeer = ps.filter(function (p) {
+        var px = (ult[p].ia_resultado || {}).posnets;
+        return Array.isArray(px) && px.some(function (x) {
+          if (x && esNum(x.total)) return false;
+          var k = nombrePosnet(x && x.nombre);
+          return !k || !(leidos[k] || []).some(function (q) { return q !== p; });
+        });
+      }).pop() || null;
+    }
+    var mala = sinLeer || ps.filter(function (p) {
       var r = ult[p].ia_resultado || {};
       return r.total == null && !(tipo === 'mp' && r.suma_operaciones != null);
     }).pop() || ps[ps.length - 1];
