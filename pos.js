@@ -6373,8 +6373,8 @@
      La "Disponibilidad de Cajas" de BlueSoft: la caja chica y la caja
      fuerte de cada sucursal con cuánto hay hoy según el sistema. Mauricio:
      "cuando apretamos en una de las cajas, nos despliega los movimientos
-     que se hicieron… de entradas y salidas": al tocar una se abre su
-     "Consulta de Valores", con el saldo después de cada movimiento. La
+     que se hicieron… de entradas y salidas": al tocar una se despliega
+     abajo su "Consulta de Valores", con el saldo después de cada uno. La
      caja chica la deja en lo contado cada cierre; la caja fuerte arranca
      en $0 hasta que la oficina la cuenta con «Ajustar» (su "Ajustar/Cerrar
      Caja"). Sólo lo de verdad: las pruebas no son plata.
@@ -6393,99 +6393,143 @@
     return (u.tipo === 'cierre' ? 'Cierre Nº ' : 'Ajuste Nº ') + u.numero + ' · ' + fechaHora(u.fecha);
   }
 
+  /* Mauricio (6/11, sobre la foto de la caja fuerte): "más parecida a la de BlueSoft… al principio caja chica y caja fuerte
+     y el monto total de cada una. Hacías clic en una de ellas y ahí se te desplegaban los movimientos entrantes y salientes".
+     Arriba, cada sucursal con sus dos cajas: cuánto hay hoy y su último control. Al tocar una, abajo se despliega su
+     "Consulta de Valores" (el período, lo que entró y salió, los movimientos con el saldo, Excel y su Ajustar/Cerrar) sin
+     cambiar de pantalla; tocarla otra vez la cierra. El «Actualizar» vuelve a traer las cajas y, si hay una abierta, sus
+     movimientos. Hasta el 6/11 cada caja abría una pantalla aparte, con un selector «Caja» y «‹ Disponibilidad». */
   function verDisponibilidad() {
-    var c = $('cuerpo'), pedido = 0;
-    S.dispVer = null;   // desde el menú, siempre la lista
-    /* El «Actualizar» con letras de antes es ahora el botón común (actualizable, 5/11). */
-    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en la caja chica y en la caja fuerte de cada sucursal, según el sistema. Tocá una caja para ver sus movimientos.') +
+    var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], abierta = null, ult = null;
+    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en cada caja, según el sistema. Tocá una para ver lo que entró y lo que salió.') +
       '<div id="dpLista"><p class="cargando">Cargando…</p></div>';
+    /* El panel de los movimientos se arma una sola vez y se muda abajo de la sucursal de la caja abierta: así el período
+       elegido queda al pasar de una caja a la otra. */
+    var panel = document.createElement('div');
+    panel.className = 'dp-panel';
+    panel.id = 'dpPanel';
+    panel.innerHTML = '<div class="dp-panel-cab"><h3 class="dp-panel-tit" id="dpTit"></h3><div id="dpPer"></div>' +
+        '<div class="dp-panel-acc"><button type="button" class="btn btn-sec btn-chico" id="dpExcel" disabled>Bajar para Excel</button><span id="dpAccion"></span></div></div>' +
+      '<div id="dpMov"></div>';
+    var en = function (id) { return panel.querySelector('#' + id); };
+    var per = periodoPos(en('dpPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: function () { cargarMov(); } });
+    en('dpExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r, ult.caja); };
+
     function cargar() {
       var n = ++pedido;
-      $('dpLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      llamar('pos_disponibilidad').then(function (d) {
+      if (!cajas.length) $('dpLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      var p = llamar('pos_disponibilidad').then(function (d) {
         if (n !== pedido || !$('dpLista')) return;
-        S.dispCajas = d.cajas || [];
         pintar(d);
-      }).catch(function (e) { if ($('dpLista')) $('dpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+      }).catch(function (e) { if (n === pedido && $('dpLista')) { cajas = []; $('dpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; } });
+      /* A la vez (no después): así el botón de actualizar gira hasta que llegan las dos cosas. */
+      if (abierta) cargarMov(true);
+      return p;
     }
     function pintar(d) {
-      var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, cajas = d.cajas || [];
+      var p = function (n) { return plata(cent(n || 0)); };
+      cajas = d.cajas || [];
       if (!cajas.length) {
+        cerrar();
         $('dpLista').innerHTML = '<div class="pos-cartel">Todavía ninguna sucursal usa el POS de verdad. Cuando una venda, cargue un movimiento o cierre la caja, aparece acá.</div>';
         return;
       }
-      var sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
-      /* Como el "Resumen" de BlueSoft: el total y lo de cada tipo de caja (sin cheques: no se usan). */
-      $('dpLista').innerHTML = '<div class="pos-totales">' +
-          '<div class="pos-kpi fuerte"><span>Total</span><b>' + p(Number(t.chica) + Number(t.fuerte)) + '</b></div>' +
-          '<div class="pos-kpi"><span>En las cajas chicas</span><b>' + p(t.chica) + '</b></div>' +
-          '<div class="pos-kpi"><span>En las cajas fuertes</span><b>' + p(t.fuerte) + '</b></div></div>' +
-        '<div class="pos-marco-tabla"><table class="pos-tabla dp-tabla"><thead><tr><th>Sucursal</th><th>Caja</th><th>Último control</th><th class="n">Hay</th></tr></thead><tbody>' +
-        cajas.map(function (x, i) {
-          return '<tr data-caja="' + i + '" tabindex="0" title="Ver los movimientos de esta caja">' +
-            '<td>' + esc(bonito(x.local)) + '</td><td><b>' + esc(nombreCaja(x)) + '</b></td>' +
-            '<td class="' + (x.ultimo ? '' : 'dp-nunca') + '">' + esc(ultimoControl(x)) + '</td>' +
-            '<td class="n"><b>' + p(x.saldo) + '</b></td></tr>';
-        }).join('') + '</tbody></table></div>' +
-        (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar» con lo que hay de verdad.</p>' : '');
-      $('dpLista').querySelectorAll('tr[data-caja]').forEach(function (tr) {
-        var x = cajas[Number(tr.getAttribute('data-caja'))];
-        tr.onclick = function () { S.dispVer = { local: x.local_id, caja: x.caja }; verValores(); };
-        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      /* Las sucursales en el orden en que vienen; en cada una, la caja chica primero (como en BlueSoft). */
+      var sucs = [], porId = {};
+      cajas.forEach(function (x, i) {
+        var s = porId[x.local_id];
+        if (!s) { s = porId[x.local_id] = { id: x.local_id, nombre: x.local, cajas: [], total: 0 }; sucs.push(s); }
+        s.cajas.push(i);
+        s.total += cent(x.saldo || 0);
       });
+      sucs.forEach(function (s) { s.cajas.sort(function (a, b) { return (cajas[a].caja === 'chica' ? 0 : 1) - (cajas[b].caja === 'chica' ? 0 : 1); }); });
+      var t = d.totales || {}, sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
+      $('dpLista').innerHTML =
+        /* Con más de una sucursal, arriba lo de todas (el "Resumen" de BlueSoft, sin cheques: no se usan). */
+        (sucs.length > 1 ? '<div class="pos-totales">' +
+          '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.chica || 0) + cent(t.fuerte || 0)) + '</b></div>' +
+          '<div class="pos-kpi"><span>En las cajas chicas</span><b>' + p(t.chica) + '</b></div>' +
+          '<div class="pos-kpi"><span>En las cajas fuertes</span><b>' + p(t.fuerte) + '</b></div></div>' : '') +
+        sucs.map(function (s) {
+          return '<section class="dp-suc" data-local="' + esc(s.id) + '"><h3 class="dp-suc-nom">' + esc(bonito(s.nombre)) + '</h3><div class="dp-fila">' +
+            s.cajas.map(function (i) {
+              var x = cajas[i];
+              return '<button type="button" class="dp-caja" data-i="' + i + '" aria-expanded="false" aria-controls="dpPanel" title="Ver lo que entró y lo que salió">' +
+                '<span class="dp-caja-ico">' + icono(x.caja === 'chica' ? 'caja' : 'fuerte') + '</span>' +
+                '<span class="dp-caja-txt"><span class="dp-caja-nom">' + esc(nombreCaja(x)) + '</span><b>' + p(x.saldo) + '</b>' +
+                  '<small' + (x.ultimo ? '' : ' class="dp-nunca"') + '>' + esc(ultimoControl(x)) + '</small></span>' +
+                '<span class="dp-caja-flecha">' + icono('abajo') + '</span></button>';
+            }).join('') +
+            (s.cajas.length > 1 ? '<div class="dp-total"><span>Total</span><b>' + plata(s.total) + '</b></div>' : '') +
+          '</div><div class="dp-slot"></div></section>';
+        }).join('') +
+        (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar…» con lo que hay de verdad.</p>' : '');
+      $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) {
+        b.onclick = function () {
+          var x = cajas[Number(b.getAttribute('data-i'))];
+          if (esLaAbierta(x)) cerrar(); else abrir(x);
+        };
+      });
+      /* La que estaba abierta (el «Actualizar», o después de un ajuste) sigue abierta. */
+      var x = abierta && cajas.filter(esLaAbierta)[0];
+      if (x) ubicar(x); else cerrar();
     }
-    cargar();
-    actualizable(cargar);
-  }
-
-  /* La "Consulta de Valores de Caja" de BlueSoft: los movimientos de una caja en el período, del más nuevo al más viejo,
-     con el saldo después de cada uno. En un cierre o un ajuste, el importe es la diferencia (lo contado menos lo que
-     decía el sistema), así cada renglón es el de abajo más su importe. */
-  function verValores() {
-    var c = $('cuerpo'), sel = S.dispVer, pedido = 0, ult = null;
-    var cajas = S.dispCajas || [];
-    var opcs = cajas.map(function (x) { return [x.local_id + '|' + x.caja, bonito(x.local) + ' · ' + nombreCaja(x)]; });
-    if (!opcs.some(function (o) { return o[0] === sel.local + '|' + sel.caja; })) opcs.unshift([sel.local + '|' + sel.caja, nombreCaja(sel)]);
-    c.innerHTML = cabeza('<span id="vlTit">' + esc(nombreCaja(sel)) + '</span>', 'Los movimientos de la caja, con lo que había después de cada uno.',
-        '<button type="button" class="btn btn-sec btn-chico" id="vlVolver">‹ Disponibilidad</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="vlExcel" disabled>Bajar para Excel</button>' +
-        '<span id="vlAccion"></span>') +
-      '<div class="pos-filtros"><div id="vlPer"></div>' +
-        campo('', 'Caja', '<select id="vlCaja" class="desplegable">' + opciones(opcs, sel.local + '|' + sel.caja) + '</select>') +
-      '</div><div id="vlLista"><p class="cargando">Cargando…</p></div>';
-    $('vlVolver').onclick = function () { S.dispVer = null; verDisponibilidad(); };
-    var per = periodoPos($('vlPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: cargar });
-    $('vlCaja').onchange = function () {
-      var v = $('vlCaja').value.split('|');
-      sel = S.dispVer = { local: v[0], caja: v[1] };
-      cargar();
-    };
-    $('vlExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r); };
-    function cargar() {
-      var r = per.rango(), n = ++pedido;
-      $('vlLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      $('vlExcel').disabled = true;
-      $('vlAccion').innerHTML = '';
-      llamar('pos_caja_valores', { p_local: sel.local, p_caja: sel.caja, p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
-        if (n !== pedido || !$('vlLista')) return;
-        ult = { d: d, r: r };
-        pintar(d);
-      }).catch(function (e) { if ($('vlLista')) $('vlLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+    function esLaAbierta(x) { return !!abierta && abierta.local === x.local_id && abierta.caja === x.caja; }
+    /** Marca la caja abierta y pone el panel abajo de su sucursal. */
+    function ubicar(x) {
+      $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) {
+        var si = esLaAbierta(cajas[Number(b.getAttribute('data-i'))]);
+        b.classList.toggle('abierta', si);
+        b.setAttribute('aria-expanded', si ? 'true' : 'false');
+      });
+      en('dpTit').textContent = 'Movimientos de la ' + nombreCaja(x).toLowerCase();
+      var suc = [].filter.call($('dpLista').querySelectorAll('.dp-suc'), function (s) { return s.getAttribute('data-local') === x.local_id; })[0];
+      var slot = suc && suc.querySelector('.dp-slot');
+      if (slot && panel.parentNode !== slot) slot.appendChild(panel);
+      return suc;
     }
-    function pintar(d) {
+    function abrir(x) {
+      abierta = { local: x.local_id, caja: x.caja };
+      ult = null;
+      var suc = ubicar(x);
+      cargarMov();
+      /* Con varias sucursales, la de abajo de todo: que se vea lo que se abrió. */
+      if (suc && panel.getBoundingClientRect().top > (window.innerHeight || 0) - 140) suc.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+    function cerrar() {
+      abierta = null;
+      ult = null;
+      pedidoMov++;
+      if ($('dpLista')) $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) { b.classList.remove('abierta'); b.setAttribute('aria-expanded', 'false'); });
+      if (panel.parentNode) panel.parentNode.removeChild(panel);
+    }
+    /* Con suave (el «Actualizar»), lo que se ve queda hasta que llega lo nuevo. */
+    function cargarMov(suave) {
+      if (!abierta) return null;
+      var sel = abierta, r = per.rango(), n = ++pedidoMov;
+      if (!suave || !ult) { en('dpMov').innerHTML = '<p class="cargando">Cargando…</p>'; en('dpAccion').innerHTML = ''; en('dpExcel').disabled = true; }
+      return llamar('pos_caja_valores', { p_local: sel.local, p_caja: sel.caja, p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
+        if (n !== pedidoMov) return;
+        ult = { d: d, r: r, caja: sel.caja };
+        pintarMov(d, sel);
+      }).catch(function (e) { if (n === pedidoMov) en('dpMov').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+    }
+    /* La "Consulta de Valores de Caja" de BlueSoft: los movimientos de la caja en el período, del más nuevo al más viejo,
+       con el saldo después de cada uno. En un cierre o un ajuste, el importe es la diferencia (lo contado menos lo que
+       decía el sistema), así cada renglón es el de abajo más su importe. Cuánto hay hoy ya está en la tarjeta de arriba. */
+    function pintarMov(d, sel) {
       var p = function (n) { return plata(cent(n || 0)); }, chica = sel.caja === 'chica', filas = d.filas || [];
-      $('vlTit').textContent = nombreCaja(sel) + ' · ' + bonito(d.local);
       /* Su "Ajustar/Cerrar Caja": la chica se cierra en el mostrador; la fuerte la cuenta la oficina acá. */
-      $('vlAccion').innerHTML = chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
-                                      : '<button type="button" class="btn btn-pri btn-chico" id="vlAjustar">Ajustar…</button>';
-      if (!chica) $('vlAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
-      $('vlExcel').disabled = !filas.length;
+      en('dpAccion').innerHTML = chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
+                                       : '<button type="button" class="btn btn-pri btn-chico" id="dpAjustar">Ajustar…</button>';
+      if (!chica) en('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
+      en('dpExcel').disabled = !filas.length;
       var u = d.ultimo;
-      $('vlLista').innerHTML = '<div class="pos-totales">' +
-          '<div class="pos-kpi fuerte"><span>Hoy hay</span><b>' + p(d.saldo) + '</b></div>' +
+      en('dpMov').innerHTML = '<div class="pos-totales">' +
           '<div class="pos-kpi"><span>Al empezar el período</span><b>' + p(d.antes) + '</b></div>' +
-          '<div class="pos-kpi"><span>Entró</span><b>' + p(d.entro) + '</b></div>' +
-          '<div class="pos-kpi"><span>Salió</span><b>' + p(d.salio) + '</b></div>' +
+          /* En verde lo que entró y en rojo lo que salió; un $0 va sin color. */
+          '<div class="pos-kpi"><span>Entró</span><b' + (cent(d.entro || 0) ? ' class="dp-entra"' : '') + '>' + p(d.entro) + '</b></div>' +
+          '<div class="pos-kpi"><span>Salió</span><b' + (cent(d.salio || 0) ? ' class="dp-sale"' : '') + '>' + p(d.salio) + '</b></div>' +
           (Number(d.ajustado) ? '<div class="pos-kpi"><span>' + (chica ? 'Diferencias de los cierres' : 'Ajustes') + '</span><b>' + esc(importeConSigno(d.ajustado)) + '</b></div>' : '') +
         '</div>' +
         (!filas.length ? '<div class="pos-cartel">No hubo movimientos en esta caja en ese período.</div>' :
@@ -6495,7 +6539,9 @@
             /* El cierre (y lo que pasaba a la caja fuerte al cerrar, hasta el SQL 180) abre el cierre; el ajuste, el suyo. */
             var abre = f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste';
             var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : f.detalle;
-            var imp = f.control && f.tipo !== 'inicial' && !cent(f.importe) ? '<small class="dp-cero">sin diferencia</small>' : esc(importeConSigno(f.importe));
+            var c0 = cent(f.importe);
+            var imp = f.control && f.tipo !== 'inicial' && !c0 ? '<small class="dp-cero">sin diferencia</small>' :
+              '<span class="' + (f.control ? '' : c0 > 0 ? 'dp-entra' : c0 < 0 ? 'dp-sale' : '') + '">' + esc(importeConSigno(f.importe)) + '</span>';
             return '<tr class="' + (f.control ? 'dp-control' : '') + '"' + (abre ? ' data-fila="' + i + '" tabindex="0" title="Ver el ' + (f.tipo === 'ajuste' ? 'ajuste' : 'cierre') + '"' : '') + '>' +
               '<td>' + esc(fechaHora(f.fecha)) + '</td><td><b>' + esc(f.ref) + '</b></td><td>' + esc(det) + '</td><td>' + esc(f.persona || '—') + '</td>' +
               '<td class="n">' + imp + '</td><td class="n"><b>' + p(f.saldo) + '</b></td></tr>';
@@ -6505,8 +6551,8 @@
         '<p class="pos-ayuda">' + (u ? (chica ? 'Último cierre: Nº ' : 'Último ajuste: Nº ') + u.numero + ', el ' + esc(fechaHora(u.fecha)) +
             (u.persona ? ', ' + esc(u.persona) : '') + '. Contaron ' + p(u.contado) + '.' :
           chica ? 'Esta caja todavía no se cerró nunca: el saldo es lo de hoy desde $0.' :
-                  'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar» para que dé lo de verdad.') + '</p>';
-      $('vlLista').querySelectorAll('tr[data-fila]').forEach(function (tr) {
+                  'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar…» para que dé lo de verdad.') + '</p>';
+      en('dpMov').querySelectorAll('tr[data-fila]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-fila'))];
         tr.onclick = function () { if (f.tipo === 'ajuste') abrirAjusteHecho(f, d, cargar); else abrirCierre(f.id, cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
@@ -6516,13 +6562,12 @@
     actualizable(cargar);
   }
 
-  function bajarValores(d, r) {
+  function bajarValores(d, r, caja) {
     var cab = ['Fecha', 'Comprobante', 'Detalle', 'Cargó', 'Contaron', 'Importe', 'Saldo'];
     var filas = (d.filas || []).map(function (f) {
       return [fechaLarga(f.fecha), f.ref, f.detalle, f.persona || '', f.control && f.tipo !== 'inicial' ? Number(f.contado) : '', Number(f.importe), Number(f.saldo)];
     });
-    var caja = S.dispVer && S.dispVer.caja === 'chica' ? 'caja-chica' : 'caja-fuerte';
-    bajarCsv(caja + '-' + String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
+    bajarCsv((caja === 'chica' ? 'caja-chica' : 'caja-fuerte') + '-' + String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
   }
 
   /* El «Ajustar» de la caja fuerte: la oficina la cuenta y escribe cuánto hay. Muestra lo que dice el sistema y,
