@@ -183,7 +183,9 @@
   var CUOTAS = [1, 2, 3, 6, 9, 12, 18, 24];
   /* SQL 215: el interés de las cuotas (Mauricio, 31/10): 3 cuotas sin interés desde $80.000 y 6 cuotas desde $150.000;
      con menos, 8 % y 17 %. Viene puesto, para que se acuerden la regla, y se saca con el tilde cuando se hace una
-     excepción. Las demás cuotas, sin interés. Los montos, en centavos. */
+     excepción. Los montos, en centavos. desde: desde ese total va sin interés; sin desde, lleva el interés siempre
+     (6/11: «que 12 cuotas tenga también el interés»; p. ej. 12: { pct: 30 }). Las cuotas que no están, sin interés.
+     La lista de «Cuotas» muestra el % de cada una (textoCuota). */
   var INTERES = { 3: { desde: 8000000, pct: 8 }, 6: { desde: 15000000, pct: 17 } };
   var CONDICION = { consumidor_final: 'Consumidor final', responsable_inscripto: 'Responsable inscripto', monotributo: 'Monotributo', exento: 'Exento' };
   /* La lista del "Agregar descuento" de BlueSoft. */
@@ -1285,14 +1287,29 @@
   }
   function tipoTarjeta(t) { var x = TARJETAS.filter(function (y) { return y[0] === t; })[0]; return x ? x[1] : ''; }
   /* SQL 215: el interés de las cuotas (ver INTERES). total: el del ticket, sin el interés. */
-  function reglaInteres(cuotas, total) { var r = INTERES[Number(cuotas)]; return r && total > 0 && total < r.desde ? r : null; }
+  function reglaInteres(cuotas, total) { var r = INTERES[Number(cuotas)]; return r && total > 0 && (!r.desde || total < r.desde) ? r : null; }
   /** Lo que se suma por pagar monto en esas cuotas, redondeado al peso; sin: le sacaron el tilde (la excepción). */
   function interesDe(monto, cuotas, total, sin) { var r = reglaInteres(cuotas, total); return r && !sin ? Math.round(monto * r.pct / 100 / 100) * 100 : 0; }
+  /** «8 %», «12,5 %». */
+  function pctTxt(p) { return String(p).replace('.', ',') + ' %'; }
+  /** «, con menos de $80.000» (sólo si la regla tiene monto). */
+  function conMenos(r, sep) { return r.desde ? (sep || ', ') + 'con menos de ' + plata(r.desde) : ''; }
   /** El renglón del ticket: «Interés 3 cuotas (8 %)», o la excepción. */
   function notaInteres(cuotas, total, sin) {
     var r = reglaInteres(cuotas, total);
-    return !r ? '' : sin ? cuotas + ' cuotas sin interés: excepción (con menos de ' + plata(r.desde) + ' lleva ' + r.pct + ' %)' : 'Interés ' + cuotas + ' cuotas (' + r.pct + ' %)';
+    return !r ? '' : sin ? cuotas + ' cuotas sin interés: excepción (' + (r.desde ? 'con menos de ' + plata(r.desde) + ' ' : '') + 'lleva ' + pctTxt(r.pct) + ')' :
+      'Interés ' + cuotas + ' cuotas (' + pctTxt(r.pct) + ')';
   }
+  /** Cada opción de «Cuotas» con el interés que lleva ESTE ticket (Mauricio, 6/11: «que estén los porcentajes de interés de
+      cada una», como BlueSoft: «1 cuotas – 0,000% de interés»): «3 · 8 %» o, desde el monto, «3 · 0 %». Sin productos
+      todavía, el de la regla. Corto: la columna deja 70 px de letra en la pantalla de los locales. total: sin el interés. */
+  function textoCuota(n, total) {
+    var r = INTERES[Number(n)];
+    return n + ' · ' + (r && (!r.desde || !(total >= r.desde)) ? pctTxt(r.pct) : '0 %');
+  }
+  function opcionesCuotas(total, actual) { return opciones(CUOTAS.map(function (n) { return [n, textoCuota(n, total)]; }), actual); }
+  /** Al cambiar el total (otro producto, un descuento), las opciones dicen el interés de nuevo; la elegida sigue igual. */
+  function rotularCuotas(sel, total) { if (sel) [].forEach.call(sel.options, function (o) { o.textContent = textoCuota(o.value, total); }); }
   /** El renglón del interés en la grilla de la venta. Con tarjeta en cuotas: la regla, el tilde puesto (sólo si lleva
       interés; sacarlo es la excepción) y de cuánto es cada cuota. En el pago múltiple, lo de sus tarjetas (el tilde
       está en «Cambiar»). Va en la grilla y no debajo de «Cuotas»: ahí empujaba el total fuera de la pantalla de los
@@ -1305,16 +1322,16 @@
     var n = Number(V.pago.cuotas) || 1;
     if (V.forma !== 'tarjeta' || n < 2 || !c.subtotal) return '';
     var r = reglaInteres(n, c.subtotal), q = INTERES[n], sin = !!V.pago.sin_interes, cada = n + ' cuotas de ' + plata(Math.round(c.total / n / 100) * 100);
-    if (!r) return fila(true, esc((q ? n + ' cuotas sin interés (desde ' + plata(q.desde) + ')' : 'Sin interés') + ' · ' + cada), 0);
+    if (!r) return fila(true, esc((q && q.desde ? n + ' cuotas sin interés (desde ' + plata(q.desde) + ')' : 'Sin interés') + ' · ' + cada), 0);
     return fila(sin, '<label class="tk-interes"><input type="checkbox" data-interes' + (sin ? '' : ' checked') + '><span>' +
-      esc((sin ? notaInteres(n, c.subtotal, true) : 'Interés ' + n + ' cuotas (' + r.pct + ' %, con menos de ' + plata(r.desde) + ')') + ' · ' + cada) +
+      esc((sin ? notaInteres(n, c.subtotal, true) : 'Interés ' + n + ' cuotas (' + pctTxt(r.pct) + conMenos(r) + ')') + ' · ' + cada) +
       '</span></label>', c.interes);
   }
   /** En la tarjeta del pago múltiple: la regla, cuánto suma y de cuánto es cada cuota. */
   function textoInteres(monto, cuotas, total, sin) {
     var n = Number(cuotas) || 1, r = reglaInteres(n, total), q = INTERES[n], i = interesDe(monto, n, total, sin);
     var cada = n > 1 && monto > 0 ? n + ' cuotas de ' + plata(Math.round((monto + i) / n / 100) * 100) : '';
-    var que = r ? 'Interés ' + r.pct + ' % (' + n + ' cuotas con menos de ' + plata(r.desde) + ')' : q ? 'Sin interés (desde ' + plata(q.desde) + ')' : '';
+    var que = r ? 'Interés ' + pctTxt(r.pct) + ' (' + n + ' cuotas' + conMenos(r, ' ') + ')' : q && q.desde ? 'Sin interés (desde ' + plata(q.desde) + ')' : '';
     var cuanto = r && monto > 0 ? (sin ? 'sin interés' : '+' + plata(i)) : '';
     return [que, [cuanto, cada].filter(Boolean).join(', ')].filter(Boolean).join(': ');
   }
@@ -1476,9 +1493,9 @@
           campo('', 'Lista de precios', '<select id="vLista"></select>') +
           campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
           '<div class="tk-pagox" id="vPagoX"></div>' +
+          /* 6/11 (Mauricio): sin «Caja» (la venta entra siempre a la caja chica) y el depósito con lugar para su nombre. */
           campo('c6', 'Sucursal', '<select id="vLocal" class="desplegable"></select>') +
-          campo('c3', 'Depósito', '<input type="text" id="vDep" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
-          campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
+          campo('c6', 'Depósito', '<input type="text" id="vDep" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
         '</div>' +
         '<div class="tk-tot">' +
           '<div class="tk-caja"><span>Neto</span><b id="tNeto">$0</b></div>' +
@@ -1653,6 +1670,7 @@
     });
     /* SQL 215: el interés de las cuotas, con su tilde (ver filaInteres). */
     if (V.lineas.length) { var fi = filaInteres(c); if (fi) filas.push(fi); }
+    rotularCuotas($('vCuotas'), c.subtotal);   // 6/11: el % de cada cuota, con el total de ahora
     $('vFilas').innerHTML = filas.length ? filas.join('') :
       '<tr class="tk-vacia"><td colspan="10"><b>Todavía no hay productos</b>Dispará la pistola a la etiqueta o buscá el producto arriba.</td></tr>';
 
@@ -1716,8 +1734,11 @@
         campo('c6 tk-vuelto', 'Vuelto', '<input type="text" id="' + pre + 'Vuelto" readonly>');
     } else if (X.forma === 'tarjeta') {
       x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
-        campo('c3', 'Cuotas', '<select id="' + pre + 'Cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) + '</select>') +
-        campo('c4', 'Cupón', '<input type="text" id="' + pre + 'Cupon" inputmode="numeric" maxlength="20" placeholder="Del posnet" value="' + esc(p.cupon || '') + '">');
+        /* 6/11: en la venta, cada cuota con su interés («3 · 8 %», ver textoCuota); por eso Cuotas es más ancha que el Cupón.
+           En el cambio no hay interés: sólo el número. */
+        campo('c4', 'Cuotas', '<select id="' + pre + 'Cuotas">' + (cb ? opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) :
+          opcionesCuotas(cuenta(V).subtotal, p.cuotas || 1)) + '</select>') +
+        campo('c3', 'Cupón', '<input type="text" id="' + pre + 'Cupon" inputmode="numeric" maxlength="20" placeholder="Posnet" value="' + esc(p.cupon || '') + '">');
     } else if (X.forma === 'giftcard') {
       /* SQL 200: la gift card con la que paga, por la pistola. */
       x.innerHTML = campo('c5', 'Gift card', '<input type="text" id="' + pre + 'Gc" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Pasala por la pistola" value="' + esc(p.gc ? p.gc.codigo : '') + '">') +
@@ -2244,7 +2265,7 @@
     function fila(x, i) {
       var mas = x.medio === 'tarjeta'
         ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), x.tarjeta) + '</select>') +
-          campo('', 'Cuotas', '<select data-k="cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), x.cuotas || 1) + '</select>') +
+          campo('', 'Cuotas', '<select data-k="cuotas">' + opcionesCuotas(tot, x.cuotas || 1) + '</select>') +   // 6/11: con el % de cada una
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
           /* SQL 215: el interés de las cuotas, puesto; se saca para una excepción. */
           '<label class="tk-interes pos-pago-int" data-int hidden><input type="checkbox" data-k="sin"' + (x.sin_interes ? '' : ' checked') + '><span></span></label></div>'
