@@ -180,7 +180,9 @@
   var TARJETAS = [['VISA', 'credito'], ['VISA Débito', 'debito'], ['Mastercard', 'credito'], ['Master Débito', 'debito'],
                   ['AMEX', 'credito'], ['Naranja', 'credito'], ['Cabal', 'credito'], ['Cabal Débito', 'debito'], ['Maestro', 'debito'],
                   ['Otra de crédito', 'credito'], ['Otra de débito', 'debito']];
-  var CUOTAS = [1, 2, 3, 6, 9, 12, 18, 24];
+  /* Mauricio, 6/11: «dejaría solo 1, 3, 6 y 12 cuotas» (antes también 2, 9, 18 y 24). Vale para la venta, el pago múltiple
+     y el cambio; los tickets viejos en otras cuotas se siguen viendo igual. */
+  var CUOTAS = [1, 3, 6, 12];
   /* SQL 215: el interés de las cuotas (Mauricio, 31/10): 3 cuotas sin interés desde $80.000 y 6 cuotas desde $150.000;
      con menos, 8 % y 17 %. Viene puesto, para que se acuerden la regla, y se saca con el tilde cuando se hace una
      excepción. Los montos, en centavos. desde: desde ese total va sin interés; sin desde, lleva el interés siempre
