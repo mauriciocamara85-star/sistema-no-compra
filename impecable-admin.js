@@ -1843,10 +1843,21 @@ function lecturaCierre(t, f, k, enPartes) {
     return '<li>' + esc(c[1]) + ': <b>' + (leido == null ? 'no se leyó' : esc(pesos(leido))) + '</b>' +
       (distinto ? ' <span class="rojo">· cargaron ' + esc(pesos(cargado)) + '</span>' : '') + '</li>';
   });
+  /* (SQL 250, 5/11) Mercado Pago sin el total: la IA leyó los cobros de la lista pero no ve «Hoy» arriba (o la lista sigue
+     abajo). Antes decía «ningún monto» (Grand Bourg: 9 cobros, $ 219.000). Una foto sola vale si ya da lo del sistema. */
+  var lista = '';
+  if (t[0] === 'mp' && r.total == null && r.suma_operaciones != null) {
+    var nOps = Array.isArray(r.operaciones) ? r.operaciones.length : 0;
+    var vale = !enPartes && (lecturaCaja([{ tipo: 'mp', ia_estado: 'ok', ia_resultado: r }], 'mp', k.sis_mp, 100) || {}).total != null;
+    renglones = ['<li>' + (nOps ? nOps + (nOps === 1 ? ' cobro' : ' cobros') + ' en la lista' : 'La lista') + ': <b>' + esc(pesos(r.suma_operaciones)) + '</b></li>'];
+    lista = enPartes ? '' : vale ? 'No se ve «Hoy» arriba de la lista, pero ya da lo que dice el sistema: vale esa suma.'
+                                 : 'No se ve si están todos los cobros de ese día (falta «Hoy» arriba de la lista o sigue más abajo).';
+  }
   /* Dos o más posnet en la misma foto: cada uno y la suma (la hace el código, no la IA). */
   var posnets = Array.isArray(r.posnets) && r.posnets.length > 1 ? detalleSumaCaja([{ tipo: t[0], ia_estado: 'ok', ia_resultado: r }], t[0]) : '';
   var otroDia = r.fecha && r.fecha !== String(k.fecha).slice(0, 10);
   return '<div class="lectura-ia">La IA leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
+    (lista ? '<div>' + esc(lista) + '</div>' : '') +
     (posnets ? '<div>' + esc(posnets) + '</div>' : '') +
     (otroDia ? '<div class="rojo">La foto dice ' + esc(diaMes(r.fecha)) + ': parece de otro día.</div>' : '') +
     ((r.dudas || []).length ? '<div>No se leían bien: ' + esc(r.dudas.join(', ')) + '</div>' : '') + '</div>';
@@ -1854,11 +1865,13 @@ function lecturaCierre(t, f, k, enPartes) {
 
 /** (SQL 241) Debajo de la última foto de un medio con varias: lo leído de todas sumado, comparado con lo que cargaron. */
 function sumaCierre(t, fs, k) {
-  var l = lecturaCaja(fs, t[0]), cargado = k[t[2][0][2]];
+  /* (SQL 250) Con lo que dice el sistema de Mercado Pago (y el mismo posnet en dos fotos, una vez). */
+  var sis = t[0] === 'mp' ? k.sis_mp : null;
+  var l = lecturaCaja(fs, t[0], sis, 100), cargado = k[t[2][0][2]];
   var html = '<div class="lectura-ia suma-cierre" data-tipo="' + t[0] + '">';
   if (!l || l.total == null) return html + 'Las fotos todavía no se leyeron todas.</div>';
   var distinto = cargado == null || Math.abs(Number(l.total) - Number(cargado)) > 0.5;
-  return html + '<b>' + esc(detalleSumaCaja(fs, t[0]) || 'Lo leído de las fotos: ' + pesos(l.total)) + '</b>' +
+  return html + '<b>' + esc(detalleSumaCaja(fs, t[0], sis, 100) || 'Lo leído de las fotos: ' + pesos(l.total)) + '</b>' +
     (distinto ? ' <span class="rojo">· cargaron ' + esc(pesos(cargado)) + '</span>' : '') + '</div>';
 }
 

@@ -1044,12 +1044,25 @@ function estadoDe(c, corregir) {
   return { clase: 'pendiente', texto: 'Pendiente' };
 }
 
-function bannerAvisos(estado) {
+function bannerAvisos(estado, texto) {
   if (estado === 'activos' || estado === 'no-soportado') return '';
   var t = estado === 'bloqueados' ? 'Los avisos están bloqueados en este celular. Tocá para ver cómo prenderlos.'
         : estado === 'instalar' ? 'Para recibir avisos, instalá la app en tu iPhone. Tocá para ver cómo.'
-        : 'Activá los avisos para enterarte de tus controles y tareas.';
+        : texto || 'Activá los avisos para enterarte de tus controles y tareas.';
   return '<button class="banner" id="banner">' + esc(t) + '</button>';
+}
+
+/* (5/11, Mauricio) Los avisos de la caja casi no llegaban: desde el 4/11, 114 de 121 fallaron porque ese celular no tenía
+   los avisos activados (sólo 13 de 56 personas; supervisores, ninguno). El mismo cartel de Hoy, arriba de la Caja y de
+   Revisar, hasta que los activen en ese celular. Tocándolo, la pantalla de activarlos, y después vuelve. */
+function ponerBannerAvisos(el, texto, volver) {
+  if (!el) return;
+  estadoAvisos().catch(function () { return 'no-soportado'; }).then(function (e) {
+    if (!document.body.contains(el)) return;
+    el.innerHTML = bannerAvisos(e, texto);
+    var b = el.querySelector('.banner');
+    if (b) b.onclick = function () { pantallaBienvenida(volver); };
+  });
 }
 
 function horaAR() { return Number(new Intl.DateTimeFormat('en-US', { timeZone: ZONA, hour: 'numeric', hourCycle: 'h23' }).format(new Date())); }
@@ -2566,7 +2579,8 @@ function pantallaBienvenida(despues) {
   marcarBienvenida(yo().id);
   estadoAvisos().catch(function () { return 'no-soportado'; }).then(function (estado) {
     var html = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Activá los avisos</h1>' +
-      '<p class="bajada">' + (soloCaja() ? 'Te avisamos si se pasa la hora y falta cargar la caja del día.'
+      '<p class="bajada">' + (soloCaja() ? 'Te avisamos si se pasa la hora y falta cargar la caja del día, o si una foto de la caja no se leyó.'
+                             : esSupervision() ? 'Te avisamos cuando una caja da distinto o falta cargarla, y cuando hay algo para revisar. Sin avisos, te enterás tarde.'
                                          : 'Te avisamos cuando te toca un control, cuando tenés una tarea y cuando está por vencer. Sin avisos, te enterás tarde.') + '</p>';
     if (estado === 'instalar') {
       html += '<div class="pasos">' +
@@ -2735,6 +2749,14 @@ var LECTURA_A_CAMPO = {
 var MAX_PARTES_CAJA = 6;
 /* Si el cierre del sistema dice $ 0 en ese medio, su foto no hace falta (DOT no vendió con Go Cuotas). */
 var SIS_DE_FOTO = { lote: 'sis_tarjeta', mp: 'sis_mp', gocuotas: 'sis_gocuotas' };
+var REAL_DE_FOTO = { lote: 'real_lote', mp: 'real_mp', gocuotas: 'real_gocuotas' };
+
+/** (SQL 250) Lo que dice el sistema de Mercado Pago, como en la base: lo de la foto del sistema leída; si no, lo cargado.
+    Con eso, una foto de Mercado Pago sin «Hoy» vale si su lista ya da eso (lecturaCaja). */
+function sisMpCaja(vigentes, cargado) {
+  var s = lecturaCaja(vigentes, 'sistema'), v = s && s.ventas_mercado_pago != null && s.ventas_mercado_pago !== '' ? Number(s.ventas_mercado_pago) : NaN;
+  return isFinite(v) ? v : cargado;
+}
 
 function nombreFotoCaja(tipo, parte, partes) {
   var t = FOTOS_CAJA.filter(function (x) { return x[0] === tipo; })[0];
@@ -2768,28 +2790,40 @@ function fotosVigentes(fotos, fecha) {
   return fotos.filter(function (f) { return !(f.ia_estado === 'ok' && fotoDeOtroDia(ultima[f.tipo + ':' + parteFoto(f)], fecha)); });
 }
 
-/* fecha (SQL 244): la de la caja, para marcar «De otro día». */
-function htmlFotosCaja(fotos, estado, fecha) {
+/* fecha (SQL 244): la de la caja, para marcar «De otro día».
+   op (SQL 250, 5/11): libre = los números se escriben (IA apagada, a mano o el supervisor que corrige): nada se traba;
+   incompletas = [{ tipo, parte }] las fotos leídas sin el total («Incompleta», las pide la barra); sisMp y tol para la suma. */
+function htmlFotosCaja(fotos, estado, fecha, op) {
+  op = op || {};
   var ultima = {}, mas = '', sumas = '';
   fotos.forEach(function (f) { var k = f.tipo + ':' + parteFoto(f); if (!ultima[k]) ultima[k] = f; });
+  /* (5/11, Lomas sacó Go Cuotas antes que el cierre del sistema dos días seguidos) Go Cuotas espera al cierre del sistema:
+     recién ahí se sabe si hubo («No hace falta» si dice $ 0). */
+  var sistemaLeido = fotosVigentes(fotos, fecha).some(function (f) { return f.tipo === 'sistema' && f.ia_estado === 'ok'; });
   var grilla = FOTOS_CAJA.map(function (t) {
     var tipo = t[0], partes = 1, html = '';
     fotos.forEach(function (f) { if (f.tipo === tipo) partes = Math.max(partes, parteFoto(f)); });
     Object.keys(estado).forEach(function (k) { if (k.split(':')[0] === tipo) partes = Math.max(partes, Number(k.split(':')[1])); });
     var sis = SIS_DE_FOTO[tipo] && app.querySelector('[data-campo="' + SIS_DE_FOTO[tipo] + '"]');
-    var noHaceFalta = !!sis && numeroCaja(sis.value) === 0 && !fotos.some(function (f) { return f.tipo === tipo; }) && !estado[tipo + ':1'];
+    var sinFoto = !fotos.some(function (f) { return f.tipo === tipo; }) && !estado[tipo + ':1'];
+    var noHaceFalta = !!sis && numeroCaja(sis.value) === 0 && sinFoto;
+    var esperaSistema = tipo === 'gocuotas' && !op.libre && sinFoto && !sistemaLeido && !!sis && numeroCaja(sis.value) == null;
+    var gris = noHaceFalta || esperaSistema;
     for (var p = 1; p <= partes; p++) {
       var f = ultima[tipo + ':' + p], e = estado[tipo + ':' + p];
       var otroDia = !!f && !e && f.ia_estado === 'ok' && !!fecha && fotoDeOtroDia(f, fecha);
-      var chip = e ? e.texto : noHaceFalta ? 'No hace falta' : !f ? 'Falta' : otroDia ? 'De otro día' : f.ia_estado === 'ok' ? 'Leída' : f.ia_estado === 'pendiente' ? 'Subida' : 'Sacala de nuevo';
-      html += '<button class="foto-caja' + (noHaceFalta ? ' no-falta' : '') + '" data-tipo="' + tipo + '" data-parte="' + p + '"' +
-        ((e && e.ocupado) || noHaceFalta ? ' disabled' : '') + '><b>' + esc(nombreFotoCaja(tipo, p, partes)) + '</b>' +
-        '<span class="chip ' + (e || noHaceFalta || !f ? 'pendiente' : otroDia ? 'vencido' : f.ia_estado === 'ok' || f.ia_estado === 'pendiente' ? 'listo' : 'vencido') + '">' + esc(chip) + '</span></button>';
+      var incompleta = !!f && !e && !otroDia && f.ia_estado === 'ok' &&
+        (op.incompletas || []).some(function (x) { return x.tipo === tipo && x.parte === p; });
+      var chip = e ? e.texto : noHaceFalta ? 'No hace falta' : esperaSistema ? 'Primero el sistema' : !f ? 'Falta' : otroDia ? 'De otro día'
+        : incompleta ? 'Incompleta' : f.ia_estado === 'ok' ? 'Leída' : f.ia_estado === 'pendiente' ? 'Subida' : 'Sacala de nuevo';
+      html += '<button class="foto-caja' + (gris ? ' no-falta' : '') + '" data-tipo="' + tipo + '" data-parte="' + p + '"' +
+        ((e && e.ocupado) || gris ? ' disabled' : '') + '><b>' + esc(nombreFotoCaja(tipo, p, partes)) + '</b>' +
+        '<span class="chip ' + (e || gris || !f ? 'pendiente' : otroDia ? 'vencido' : incompleta ? 'corregir' : f.ia_estado === 'ok' || f.ia_estado === 'pendiente' ? 'listo' : 'vencido') + '">' + esc(chip) + '</span></button>';
     }
     if (OTRA_FOTO_CAJA[tipo] && ultima[tipo + ':' + partes] && partes < MAX_PARTES_CAJA) {
       mas += '<button class="foto-caja-mas" data-tipo="' + tipo + '" data-parte="' + (partes + 1) + '">' + esc(OTRA_FOTO_CAJA[tipo][1]) + '</button>';
     }
-    var s = OTRA_FOTO_CAJA[tipo] ? detalleSumaCaja(fotos, tipo) : '';
+    var s = OTRA_FOTO_CAJA[tipo] ? detalleSumaCaja(fotos, tipo, tipo === 'mp' ? op.sisMp : null, op.tol) : '';
     if (s) sumas += '<p class="caja-suma">' + esc(s) + '</p>';
     return html;
   }).join('');
@@ -2895,9 +2929,11 @@ function dibujarCaja(caja, fotos, corrige) {
     base[k] = caja[k] != null && caja[k] !== '' && isFinite(Number(caja[k])) ? Number(caja[k]) : null;
     valores[k] = base[k];
   }); });
-  /* Lo que la IA leyó precarga lo que todavía está vacío (el posnet y Mercado Pago, con sus partes sumadas). */
+  /* Lo que la IA leyó precarga lo que todavía está vacío (el posnet y Mercado Pago, con sus partes sumadas). El sistema va
+     primero: con lo que dice de Mercado Pago, la foto de la lista sin «Hoy» puede valer (SQL 250). */
   FOTOS_CAJA.forEach(function (t) {
-    var l = lecturaCaja(fotosVigentes(fotos, caja.fecha), t[0]), mapa = LECTURA_A_CAMPO[t[0]] || {};
+    var vig = fotosVigentes(fotos, caja.fecha);
+    var l = lecturaCaja(vig, t[0], t[0] === 'mp' ? sisMpCaja(vig, valores.sis_mp) : null, _tolCaja), mapa = LECTURA_A_CAMPO[t[0]] || {};
     if (l) Object.keys(mapa).forEach(function (k) { if (valores[mapa[k]] == null && l[k] != null && isFinite(Number(l[k]))) valores[mapa[k]] = Number(l[k]); });
   });
   var cerrada = caja.estado === 'controlada';
@@ -2918,7 +2954,7 @@ function dibujarCaja(caja, fotos, corrige) {
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
         ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
-    : cabeza('Registro') + pestanitasPapeles() +
+    : cabeza('Registro') + pestanitasPapeles() + '<div id="avisosCaja"></div>' +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : _cajaIA ? '' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>') +
       /* Con los días anteriores arriba, lo de abajo dice que es la de hoy (si no, las fotos parecían de esos días). */
       (_cajasAtrasadas.length ? htmlAtrasadas() + '<div class="seccion">La caja de hoy · ' + esc(diaSemanaMes(caja.fecha)) + '</div>' : '');
@@ -2939,7 +2975,10 @@ function dibujarCaja(caja, fotos, corrige) {
   app.innerHTML = html;
   if (atrasada) document.getElementById('volverCaja').onclick = function () { pantallaCaja(); };
   else if (supervisor) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
-  else { engancharCabeza(); engancharAtrasadas(); }
+  else {
+    engancharCabeza(); engancharAtrasadas();
+    ponerBannerAvisos(document.getElementById('avisosCaja'), 'Activá los avisos: te avisamos si falta cargar la caja o si una foto no se leyó.', pantallaCaja);
+  }
 
   /* Un casillero: trabado (sale de la foto), abierto o, con la caja controlada, apagado. «a mano»: lo marcó la base. */
   function casillero(k, titulo, aria) {
@@ -2960,7 +2999,9 @@ function dibujarCaja(caja, fotos, corrige) {
   function pintarFotos() {
     var lugar = document.getElementById('fotosCaja');
     if (!lugar) return;
-    lugar.innerHTML = htmlFotosCaja(fotos, estado, caja.fecha);
+    var inc = [];
+    ['lote', 'mp', 'gocuotas'].forEach(function (tipo) { var x = incompleta(tipo); if (x) inc.push({ tipo: tipo, parte: x.parteLeida }); });
+    lugar.innerHTML = htmlFotosCaja(fotos, estado, caja.fecha, { libre: !trabar || enMano, incompletas: inc, sisMp: sisMpCaja(fotosVigentes(fotos, caja.fecha), valorDe('sis_mp')), tol: _tolCaja });
     /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
     lugar.querySelectorAll('[data-parte]').forEach(function (b) {
       /* (5/11) Primero el instructivo de esa foto, a pantalla completa (el supervisor que corrige y «Ver su app», directo). */
@@ -3027,6 +3068,31 @@ function dibujarCaja(caja, fotos, corrige) {
   /* Sólo si sigue en pantalla ESTA caja (no se fue a otra pantalla ni se volvió a dibujar mientras se leía). */
   function conInstructivo() { return !!lugarCaja && document.getElementById('fotosCaja') === lugarCaja; }
 
+  /* (SQL 250, 5/11: Grand Bourg) Una foto leída que no da el número: Mercado Pago sin «Hoy» que no llega a lo del sistema
+     (pueden faltar cobros: otra foto de la lista) o un monto sin leer (el posnet cortado, un cobro borroso: de nuevo ésa).
+     Antes quedaba «Leída» en verde y la barra pasaba a «Guardar» con el casillero vacío. Sólo con la IA de la caja y con
+     el casillero todavía vacío. → { parteLeida (la del chip «Incompleta»), parte (la que se pide), otra, malas } o null. */
+  function incompleta(tipo) {
+    if (!_cajaIA || !REAL_DE_FOTO[tipo] || valorDe(REAL_DE_FOTO[tipo]) != null) return null;
+    var vig = fotosVigentes(fotos, caja.fecha);
+    var sm = tipo === 'mp' ? sisMpCaja(vig, valorDe('sis_mp')) : null;
+    var l = lecturaCaja(vig, tipo, sm, _tolCaja);
+    /* Mercado Pago sin saber todavía lo que dice el sistema: la barra pide antes esa foto, y con ella puede alcanzar. */
+    if (!l || l.total != null || (tipo === 'mp' && sm == null)) return null;
+    var ult = {}, max = 0;
+    vig.forEach(function (f) { if (f.tipo === tipo && f.ia_estado === 'ok') { var p = parteFoto(f); if (!ult[p]) ult[p] = f; } });
+    fotos.forEach(function (f) { if (f.tipo === tipo) max = Math.max(max, parteFoto(f)); });
+    var ps = Object.keys(ult).map(Number).sort(function (a, b) { return a - b; });
+    if (!ps.length) return null;
+    var r1 = ult[ps[0]].ia_resultado || {};
+    if (tipo === 'mp' && ps.length === 1 && r1.suma_operaciones != null && max < MAX_PARTES_CAJA) return { parteLeida: ps[0], parte: max + 1, otra: true, malas: 0 };
+    var mala = ps.filter(function (p) {
+      var r = ult[p].ia_resultado || {};
+      return r.total == null && !(tipo === 'mp' && r.suma_operaciones != null);
+    }).pop() || ps[ps.length - 1];
+    return { parteLeida: mala, parte: mala, otra: false, malas: fotos.filter(function (f) { return f.tipo === tipo && parteFoto(f) === mala; }).length };
+  }
+
   /* ── Lo que falta: la foto que sigue (el sistema primero: dice qué otras hacen falta) o guardar. ── */
   function sisDe(tipo) { return SIS_DE_FOTO[tipo] ? valorDe(SIS_DE_FOTO[tipo]) : null; }
   function fotoBien(f) { return f.ia_estado === 'ok' || (!_cajaIA && f.ia_estado === 'pendiente'); }
@@ -3059,6 +3125,9 @@ function dibujarCaja(caja, fotos, corrige) {
           otroDia: up.ia_estado === 'ok' && fotoDeOtroDia(up, caja.fecha) ? String(up.ia_resultado.fecha) : null });
         return;
       }
+      /* (SQL 250) Leída pero sin el número: se pide de nuevo (Mercado Pago sin «Hoy»: otra foto de la lista). */
+      var inc = bien && !sinEfectivo ? incompleta(tipo) : null;
+      if (inc) { faltan.push({ tipo: tipo, parte: inc.parte, malas: inc.malas, incompleta: true, otra: inc.otra }); return; }
       if (bien && !sinEfectivo) return;
       var malas = suyas.filter(function (f) {
         return (f.ia_estado !== 'ok' && f.ia_estado !== 'pendiente') || (f.ia_estado === 'ok' && fotoDeOtroDia(f, caja.fecha)) ||
@@ -3122,13 +3191,19 @@ function dibujarCaja(caja, fotos, corrige) {
       h = '<p class="caja-pie-estado">Esperá: la foto se está leyendo</p><button class="boton lima" disabled><span class="ruedita"></span>' + esc(_cajaIA ? 'Leyendo la foto…' : 'Subiendo la foto…') + '</button>';
     } else if (s.foto) {
       paso = 1;
-      var deNuevo = s.foto.malas > 0;
-      var linea = s.foto.otroDia ? (/^\d{4}-\d{2}-\d{2}$/.test(s.foto.otroDia) ? 'Es del ' + diaMes(s.foto.otroDia) : 'Es de otro día') + ', no de este cierre: sacala de nuevo'
+      var deNuevo = s.foto.malas > 0 || s.foto.incompleta;
+      /* (SQL 250) La foto se leyó pero no da el número: Mercado Pago sin «Hoy» que no llega a lo del sistema, o un monto
+         que no se leyó (el posnet o un cobro). */
+      var linea = s.foto.incompleta ? (s.foto.otra ? 'No se ve si están todos los cobros de hoy: sacá otra foto de la lista'
+          : s.foto.tipo === 'mp' ? 'Hay cobros que no se leyeron: sacala de nuevo'
+          : 'No se leyó el total ' + (s.foto.tipo === 'lote' ? 'del posnet' : 'de Go Cuotas') + ': sacala de nuevo')
+        : s.foto.otroDia ? (/^\d{4}-\d{2}-\d{2}$/.test(s.foto.otroDia) ? 'Es del ' + diaMes(s.foto.otroDia) : 'Es de otro día') + ', no de este cierre: sacala de nuevo'
         : s.foto.sinEfectivo ? 'No se leyó el TOTAL EFECTIVO: que se vea en la foto'
         : deNuevo ? 'No se leyó: sacala de frente, con luz y sin reflejos'
         : s.faltan === 1 ? 'Falta 1 foto' : 'Faltan ' + s.faltan + ' fotos';
       h = '<p class="caja-pie-estado' + (deNuevo ? ' sin-guardar' : '') + '">' + esc(linea) + '</p>' +
-        '<button class="boton lima" id="pieFoto">' + CAMARA + esc((deNuevo ? 'Sacar de nuevo la foto ' : 'Sacar la foto ') + (s.foto.parte > 1 ? FOTO_PIE_OTRA[s.foto.tipo] : FOTO_PIE[s.foto.tipo])) + '</button>' +
+        '<button class="boton lima" id="pieFoto">' + CAMARA + esc(s.foto.otra ? 'Sacar otra foto de Mercado Pago'
+          : (deNuevo ? 'Sacar de nuevo la foto ' : 'Sacar la foto ') + (s.foto.parte > 1 ? FOTO_PIE_OTRA[s.foto.tipo] : FOTO_PIE[s.foto.tipo])) + '</button>' +
         /* Después de dos que no se leyeron, la salida a mano está acá mismo (con su porqué ya puesto). */
         /* La de otro día, enseguida: el posnet que cierra después de las 00 trae la fecha de mañana aunque la saquen de nuevo. */
         (trabar && (s.foto.malas >= 2 || s.foto.otroDia) ? '<button type="button" class="pie-mano" id="pieMano">' + LAPIZ +
@@ -3257,21 +3332,35 @@ function dibujarCaja(caja, fotos, corrige) {
       avisar('Esa foto es ' + (/^\d{4}-\d{2}-\d{2}$/.test(fo) ? 'del ' + diaMes(fo) : 'de otro día') + ', no de este cierre: sacá la de este día.');
       return;
     }
-    var l = nueva.tipo === 'sistema' ? lectura : lecturaCaja(fotosVigentes(fotos, caja.fecha), nueva.tipo), mapa = LECTURA_A_CAMPO[nueva.tipo] || {};
-    Object.keys(mapa).forEach(function (k) {
-      var k2 = mapa[k], campo = app.querySelector('[data-campo="' + k2 + '"]');
-      if (!campo || !l || l[k] == null || !isFinite(Number(l[k])) || tocados[k2]) return;
-      var v = Number(l[k]);
-      campo.value = montoCaja(v);
-      if (enMano && antesDeMano) antesDeMano[k2] = campo.value;   // «Volver a la foto» vuelve a ésta
-      if (base[k2] == null || iaCampos.indexOf(k2) > -1) { base[k2] = v; if (iaCampos.indexOf(k2) < 0) iaCampos.push(k2); }
-    });
+    var vig = fotosVigentes(fotos, caja.fecha);
+    var sm = function () { return sisMpCaja(vig, valorDe('sis_mp')); };
+    var l = nueva.tipo === 'sistema' ? lectura : lecturaCaja(vig, nueva.tipo, nueva.tipo === 'mp' ? sm() : null, _tolCaja);
+    var llenar = function (l, mapa, siVacio) {
+      Object.keys(mapa).forEach(function (k) {
+        var k2 = mapa[k], campo = app.querySelector('[data-campo="' + k2 + '"]');
+        if (!campo || !l || l[k] == null || !isFinite(Number(l[k])) || tocados[k2]) return;
+        if (siVacio && valorDe(k2) != null && iaCampos.indexOf(k2) < 0) return;
+        var v = Number(l[k]);
+        campo.value = montoCaja(v);
+        if (enMano && antesDeMano) antesDeMano[k2] = campo.value;   // «Volver a la foto» vuelve a ésta
+        if (base[k2] == null || iaCampos.indexOf(k2) > -1) { base[k2] = v; if (iaCampos.indexOf(k2) < 0) iaCampos.push(k2); }
+      });
+    };
+    llenar(l, LECTURA_A_CAMPO[nueva.tipo] || {});
+    /* (SQL 250) La foto de Mercado Pago ya estaba (sin «Hoy»): con lo que dice el sistema puede valer (como en la base,
+       que la completa con esta misma foto del sistema). Sólo si está vacío o lo había puesto la IA. */
+    if (nueva.tipo === 'sistema') llenar(lecturaCaja(vig, 'mp', sm(), _tolCaja), LECTURA_A_CAMPO.mp, true);
     revisarFilasCaja();
     var sinEfectivo = nueva.tipo === 'sistema' && valorDe('real_efectivo') == null;
-    var suma = OTRA_FOTO_CAJA[nueva.tipo] && l && l.total != null && detalleSumaCaja(fotos, nueva.tipo);
-    var rep = suma && l.repetidas ? ' (' + l.repetidas + (l.repetidas === 1 ? ' venta repetida va una vez)' : ' ventas repetidas van una vez)') : '';
+    var suma = OTRA_FOTO_CAJA[nueva.tipo] && l && l.total != null && detalleSumaCaja(fotos, nueva.tipo, nueva.tipo === 'mp' ? sm() : null, _tolCaja);
+    var nRep = l && (l.repetidas || l.repetidos);
+    var rep = suma && nRep ? ' (' + nRep + (nueva.tipo === 'lote' ? (nRep === 1 ? ' posnet repetido va una vez)' : ' posnet repetidos van una vez)')
+                                                         : (nRep === 1 ? ' venta repetida va una vez)' : ' ventas repetidas van una vez)')) : '';
     if (sinEfectivo && !supervisor && !_espejo) return;   // lo dice el instructivo (vuelve solo)
+    /* (SQL 250) Leída pero sin el número: lo dice la barra de abajo (otra foto, o de nuevo). */
+    var inc = !supervisor && !_espejo && REAL_DE_FOTO[nueva.tipo] ? incompleta(nueva.tipo) : null;
     avisar(sinEfectivo ? 'No se leyó el TOTAL EFECTIVO: sacala de nuevo, que se vea.'
+      : inc ? (inc.otra ? 'Se leyó, pero no se ve si están todos los cobros de hoy: sacá otra foto de la lista.' : 'Se leyó, pero falta un monto: sacala de nuevo.')
       : suma ? 'Listo: ' + (nueva.tipo === 'lote' ? 'el posnet' : 'Mercado Pago') + ' suma ' + pesos(l.total) + rep + '.'
       : 'Listo: la foto se leyó.');
   }
@@ -3892,10 +3981,12 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
   /* El encargado: el renglón de fichar arriba de todo, mientras le falte (con el día terminado, no va). */
   var fichero = fichaTodosLosDias() ? fichaHoyConocida() : null;
   var fichaFila = fichero && estadoFicha(fichero) !== 'listo' ? filaFichar(fichero) : null;
-  var html = cabeza('Revisar', loc.nombre) + (fichaFila ? '<div class="lista-hoy fichar-revisar">' + htmlItemHoy(fichaFila) + '</div>' : '') +
+  var html = cabeza('Revisar', loc.nombre) + '<div id="avisosRevisar"></div>' + (fichaFila ? '<div class="lista-hoy fichar-revisar">' + htmlItemHoy(fichaFila) + '</div>' : '') +
     selectorLocal(loc) + tarjetasTestigoRevisar(testigos) + tarjetaTareasFoto(tareas);
   var conTarjetas = testigos.length || !!tareas;
   var engancharTestigo = function () {
+    /* (5/11) Los avisos de las cajas para revisar le llegan al celular sólo si los activó. */
+    ponerBannerAvisos(document.getElementById('avisosRevisar'), 'Activá los avisos para enterarte de las cajas que hay que revisar.', pantallaRevisar);
     app.querySelectorAll('[data-trev]').forEach(function (b) { b.onclick = function () { verTestigoRevisar(testigos[+b.dataset.trev]); }; });
     var vt = document.getElementById('verTareasFoto');
     if (vt) vt.onclick = function () { pantallaTareasFoto(loc); };

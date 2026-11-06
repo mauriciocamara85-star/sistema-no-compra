@@ -276,8 +276,8 @@ function textoAManoCaja(a) {
 }
 
 /** Lo que leyó la IA de un medio: del sistema, su foto; de los demás, { total, partes } con las partes sumadas.
-    null si no hay nada leído. */
-function lecturaCaja(fotos, tipo) {
+    null si no hay nada leído. sis y tol (SQL 250, sólo Mercado Pago): lo que dice el sistema y la tolerancia del local. */
+function lecturaCaja(fotos, tipo, sis, tol) {
   var buenas = {};
   fotos.forEach(function (f) {
     var p = parteFoto(f);
@@ -291,7 +291,21 @@ function lecturaCaja(fotos, tipo) {
     var x = l.filter(function (v) { return v != null; });
     return x.length ? x.reduce(function (s, v) { return s + v; }, 0) : null;
   };
-  if (partes.length === 1) return { total: num(partes[0].total), partes: partes };
+  if (partes.length === 1) {
+    var t1 = num(partes[0].total), s1 = num(partes[0].suma_operaciones), si = num(sis), to = num(tol);
+    /* (SQL 250, 5/11: Grand Bourg y Parque Brown) Una sola foto de Mercado Pago sin el total: la lista sin «Hoy» (la IA
+       no sabe si están todos los cobros del día). Si lo que se ve ya da lo que dice el sistema (o más), vale eso: así no
+       puede faltar plata. Si da menos, queda sin leer y la app pide otra foto. */
+    if (tipo === 'mp' && t1 == null && s1 != null && si != null && si > 0 && s1 >= si - (to == null ? 100 : to)) {
+      return { total: s1, partes: partes, deLaLista: true };
+    }
+    return { total: t1, partes: partes };
+  }
+  /* (SQL 250, 5/11: Parque Brown sacó los dos posnet juntos dos veces y daba el doble) Cada posnet una vez. */
+  if (tipo === 'lote') {
+    var pz = posnetsSinRepetir(partes, num);
+    if (pz) return { total: pz.total, partes: partes, posnets: pz.posnets, repetidos: pz.repetidos };
+  }
   if (tipo === 'mp') {
     /* Si una foto muestra el total del día, vale ese (y una vez: la misma pantalla en dos fotos no se cuenta dos veces). */
     var pantalla = [];
@@ -326,11 +340,53 @@ function ventasSinRepetir(partes, num) {
   return { total: Math.round(total * 100) / 100, ventas: ventas, repetidas: todas - ventas };
 }
 
+/* (SQL 250, 5/11) El posnet en varias fotos: cada posnet (por su total) una vez aunque esté en dos fotos, y dos con el
+   mismo total en una misma foto, dos (de cada total, las veces de la foto que más tiene). Un posnet sin leer en una foto
+   que en otra sí se leyó (el mismo nombre) vale el de la otra; si sigue sin leer, el posnet queda sin leer. Como
+   orden_caja_lecturas en la base. null si alguna foto no trae la lista de sus posnet (las de antes del 241). */
+function posnetsSinRepetir(partes, num) {
+  if (!partes.every(function (r) { return Array.isArray(r.posnets) && r.posnets.length; })) return null;
+  var nom = function (n) { var t = String(n == null ? '' : n).toLowerCase().replace(/[^a-z0-9]/g, ''); return t || null; };
+  var todos = [];
+  partes.forEach(function (r, i) {
+    r.posnets.forEach(function (p) { todos.push({ parte: i, clave: nom(p && p.nombre), nombre: p && p.nombre, total: num(p && p.total) }); });
+  });
+  var ok = todos.filter(function (p) {
+    return p.total != null || !todos.some(function (q) { return q.clave != null && q.clave === p.clave && q.parte !== p.parte && q.total != null; });
+  });
+  if (ok.some(function (p) { return p.total == null; })) return { total: null, posnets: [], repetidos: 0 };
+  var orden = [], veces = {}, nombre = {};
+  partes.forEach(function (r, i) {
+    var aca = {};
+    ok.forEach(function (p) {
+      if (p.parte !== i) return;
+      var k = p.total.toFixed(2);
+      aca[k] = (aca[k] || 0) + 1;
+      if (orden.indexOf(k) < 0) orden.push(k);
+      if (!nombre[k] && p.nombre) nombre[k] = String(p.nombre);
+    });
+    Object.keys(aca).forEach(function (k) { veces[k] = Math.max(veces[k] || 0, aca[k]); });
+  });
+  var total = 0, lista = [];
+  orden.forEach(function (k) {
+    for (var j = 0; j < veces[k]; j++) lista.push({ nombre: nombre[k] || null, total: Number(k) });
+    total += veces[k] * Number(k);
+  });
+  return { total: Math.round(total * 100) / 100, posnets: lista, repetidos: todos.length - lista.length };
+}
+
 /** "Posnet: Payway $ 253.000 + Getnet $ 564.500 = $ 817.500", si el comprobante sale de sumar. */
-function detalleSumaCaja(fotos, tipo) {
-  var l = lecturaCaja(fotos, tipo);
+function detalleSumaCaja(fotos, tipo, sis, tol) {
+  var l = lecturaCaja(fotos, tipo, sis, tol);
   if (!l || !l.partes) return '';
   if (l.pantalla) return 'Mercado Pago: vale el total del día de la pantalla, ' + pesos(l.total) + '.';
+  /* (SQL 250) Cada posnet una vez: "Posnet: Getnet $ 508.600 + Payway $ 200.000 = $ 708.600 (2 repetidos no se suman)". */
+  if (l.posnets && l.posnets.length) {
+    var ps = l.posnets.map(function (p) { return (p.nombre ? p.nombre + ' ' : '') + pesos(p.total); });
+    if (ps.length < 2 && !l.repetidos) return '';
+    return 'Posnet: ' + ps.join(' + ') + (ps.length > 1 ? ' = ' + pesos(l.total) : '') +
+      (l.repetidos ? ' (' + l.repetidos + (l.repetidos === 1 ? ' repetido no se suma)' : ' repetidos no se suman)') : '');
+  }
   if (l.ventas != null) {
     return 'Mercado Pago: ' + l.ventas + (l.ventas === 1 ? ' venta' : ' ventas') + ' en ' + l.partes.length + ' fotos' +
       (l.repetidas ? ' (' + l.repetidas + (l.repetidas === 1 ? ' repetida, no se suma)' : ' repetidas, no se suman)') : '') + ' = ' + pesos(l.total);
