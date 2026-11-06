@@ -121,7 +121,9 @@ function svgMenu(k) {
 var _locales = [];
 var _local = null;
 var K_LOCAL_SUP = 'vdh_vend_local_sup';
-var K_MENU_CHICO = 'nc_panel_equipo';
+/* El menú arranca achicado y se abre con el mouse (6/11/2026, como el POS); '1' = lo dejaron fijo abierto con el botón de
+   arriba. La clave de antes (nc_panel_equipo, el botón de achicar) ya no se usa acá. */
+var K_MENU_FIJO = 'nc_menu_sup_fijo';
 
 var _atrasPropio = 0;
 (function () {
@@ -191,10 +193,11 @@ function cabezaAdmin() {
   /* El local se elige en todo salvo en el Panorama, que es de todos, en Tareas, que tiene su lista de locales, en
      Llegadas, que va por zona, y en la Dotación, que es la planilla de todos. */
   var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _solapa !== 'llegadas' && _solapa !== 'dotacion' && _locales.length > 1;
-  /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
-  var chico = Interfaz.panelChico(K_MENU_CHICO);
+  /* En la compu el menú arranca achicado (sólo los íconos) y se abre por encima con el mouse; el botón lo deja fijo.
+     Si se tocó una sección con el menú abierto por encima, sale abierto igual (el mouse sigue ahí). */
+  var chico = menuChico(), flota = chico && _menuFlota && menuEnCompu();
   /* Sin la barra del sistema (31/10/2026): "‹ Sistema" arriba de las secciones, como en el POS. */
-  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
+  return '<div class="imp-grid' + (flota ? ' menu-flota' : chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuEquipo') + '</div>' +
     '<a class="imp-item imp-volver" href="' + esc(Interfaz.volverAlSistema()) + '" title="Volver al sistema">' + svgMenu('volver') + '<span>Sistema</span></a><div class="imp-raya" aria-hidden="true"></div>' +
     solapas.map(function (x) {
       /* Revisar lleva cuántas cosas esperan (contarRevisar la llena después de dibujar). */
@@ -238,20 +241,88 @@ function ir(solapa) {
   ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, papeles: verPapeles, dotacion: verDotacion, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
+/* El menú achicado se abre por encima al pasar el mouse y se achica solo al salir (Mauricio, 6/11/2026: "quiero que la
+   barra izquierda haga el mismo efecto, que se encoja cuando no está el mouse apoyado en la barra, como hicimos en el
+   sistema de POS, con un movimiento suave de transición"). Igual que pos.js: un cuarto de segundo de demora para abrir
+   (que no salte cada vez que el mouse cruza) y 150 ms para cerrar. Se mira dónde está el mouse en cada movimiento, no al
+   entrar y salir: al tocar una sección el menú se rehace debajo del mouse y el nuevo no se enteraría de que está encima. */
+var _mAbrir = null, _mCerrar = null;
+var _menuFlota = false;     // abierto por encima: si el menú se rehace (se tocó una sección), sale igual
+var _menuEsperar = false;   // se achicó con el mouse encima (Escape, el botón): no se vuelve a abrir hasta que salga
+function menuEnCompu() { return !window.matchMedia || matchMedia('(min-width: 1000px)').matches; }
+function menuChico() { try { return localStorage.getItem(K_MENU_FIJO) !== '1'; } catch (e) { return true; } }
+function guardarMenu(chico) { try { if (chico) localStorage.removeItem(K_MENU_FIJO); else localStorage.setItem(K_MENU_FIJO, '1'); } catch (e) {} }
+function menuTiempos() { clearTimeout(_mAbrir); clearTimeout(_mCerrar); _mAbrir = _mCerrar = null; }
+function menuFlotar(si) {
+  var g = app.querySelector('.imp-grid');
+  if (!si) _menuFlota = false;
+  if (!g || (si ? !g.classList.contains('menu-chico') : !g.classList.contains('menu-flota'))) return;
+  g.classList.toggle('menu-chico', !si);
+  g.classList.toggle('menu-flota', si);
+  _menuFlota = si;
+  menuTitulo();
+}
+function menuCerrarEnUnRato() {
+  clearTimeout(_mAbrir); _mAbrir = null;
+  var g = app.querySelector('.imp-grid');
+  if (g && g.classList.contains('menu-flota') && !_mCerrar) _mCerrar = setTimeout(function () { _mCerrar = null; menuFlotar(false); }, 150);
+}
+document.addEventListener('mousemove', function (e) {
+  var g = app.querySelector('.imp-grid'), nav = g && g.querySelector('.imp-menu');
+  if (!nav || !menuEnCompu()) return;
+  if (!nav.contains(e.target)) { _menuEsperar = false; menuCerrarEnUnRato(); return; }
+  clearTimeout(_mCerrar); _mCerrar = null;
+  if (g.classList.contains('menu-chico') && !_menuEsperar && !_mAbrir) _mAbrir = setTimeout(function () { _mAbrir = null; menuFlotar(true); }, 250);
+});
+document.addEventListener('mouseout', function (e) { if (!e.relatedTarget) { _menuEsperar = false; menuCerrarEnUnRato(); } });   // se fue de la ventana
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  var g = app.querySelector('.imp-grid');
+  if (!g || !g.classList.contains('menu-flota')) return;
+  _menuEsperar = true; menuTiempos(); menuFlotar(false);
+});
+/** El botón de arriba: achicado o abierto por encima, lo deja fijo; fijo, lo achica. */
+function menuTitulo() {
+  var pl = app.querySelector('.imp-menu .plegar-panel'), g = app.querySelector('.imp-grid');
+  if (!pl || !g) return;
+  var chico = g.classList.contains('menu-chico'), t = chico || g.classList.contains('menu-flota') ? 'Dejar el panel abierto' : 'Achicar el panel';
+  pl.title = t;
+  pl.setAttribute('aria-label', t);
+  pl.setAttribute('aria-expanded', String(!chico));
+}
+
 /** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
     árbitro vio que, desde el 2.º toque, decía lo contrario de lo que hacía). */
 function engancharPlegar() {
-  var pl = app.querySelector('.imp-menu .plegar-panel');
+  menuTiempos();   // la pantalla se rehízo: los tiempos de antes no valen
+  menuTitulo();
+  var pl = app.querySelector('.imp-menu .plegar-panel'), nav = app.querySelector('.imp-menu');
   if (!pl) return;
   pl.onclick = function () {
-    var g = app.querySelector('.imp-grid'), ch = !g.classList.contains('menu-chico');
-    Interfaz.panelChico(K_MENU_CHICO, ch);
+    var g = app.querySelector('.imp-grid'), ch = g.classList.contains('menu-flota') ? false : !g.classList.contains('menu-chico');
+    menuTiempos();
+    _menuFlota = false;
+    if (ch) _menuEsperar = true;   // se achicó con el mouse encima: que no se vuelva a abrir solo
+    g.classList.remove('menu-flota');
+    guardarMenu(ch);
     g.classList.toggle('menu-chico', ch);
     pl.outerHTML = Interfaz.botonPanel(ch, '', 'menuEquipo');
     engancharPlegar();
     var nuevo = app.querySelector('.imp-menu .plegar-panel');
     if (nuevo) nuevo.focus();
   };
+  if (nav && !nav._foco) {   // el botón vuelve a llamar a engancharPlegar con el mismo menú: una sola vez
+    nav._foco = true;
+    /* Con el teclado (Tab) también se abre, y se cierra al salir del foco. Con el mouse no: al achicarlo con el botón, el
+       foco queda en el botón y se volvería a abrir. */
+    nav.addEventListener('focusin', function (e) {
+      var visible = true;
+      try { visible = e.target.matches(':focus-visible'); } catch (x) {}
+      var g = app.querySelector('.imp-grid');
+      if (visible && menuEnCompu() && g && g.classList.contains('menu-chico')) { menuTiempos(); menuFlotar(true); }
+    });
+    nav.addEventListener('focusout', function (e) { if (!nav.contains(e.relatedTarget) && !nav.matches(':hover')) { menuTiempos(); menuFlotar(false); } });
+  }
 }
 
 function elegirLocal(id) {
