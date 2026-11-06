@@ -36,6 +36,16 @@
     /* El z-index baja recién al terminar de achicarse: mientras se cierra, sigue por encima de la pantalla. */
     transition: width .24s var(--curva-menu), box-shadow .24s var(--curva-menu), z-index 0s .24s;
   }
+  /* Quieta debajo de la franja de arriba (Mauricio, 6/11/2026: "estaría bueno que quede fija, porque cuando me deslizo
+     para abajo, la barra se esconde arriba de la parte superior donde dice Supervisión"). Se pega donde ya está (la
+     franja, --imp-cab, la mide impecable-admin.js, + los 22 px de arriba de la hoja), así al bajar no se mueve, y mide lo
+     que queda de la ventana: entra entera. El espacio de abajo de la página va adentro del cuerpo: si quedara afuera, al
+     llegar al final la barra se correría para arriba (no puede salirse de la grilla). */
+  .imp-menu { top: calc(var(--imp-cab, 61px) + 22px); max-height: calc(100vh - var(--imp-cab, 61px) - 34px); }
+  .hoja.imp { padding-bottom: 12px; }
+  .imp-cuerpo { padding-bottom: 36px; }
+  /* Que entre sin deslizar: si no entra, las secciones se achican parejo hasta 28 px (como el POS). */
+  .imp-menu > .imp-item { flex: 0 1 42px; min-height: 28px; }
 }
 .imp-menu-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 6px 10px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
 .imp-menu-cab > span { white-space: nowrap; overflow: hidden; }

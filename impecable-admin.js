@@ -13,6 +13,14 @@
  */
 
 var app = document.getElementById('app');
+/* La barra de la izquierda queda quieta debajo de la franja de arriba (6/11/2026): el CSS usa su alto, --imp-cab. */
+(function () {
+  var cab = document.querySelector('.app-head');
+  if (!cab) return;
+  function medir() { document.documentElement.style.setProperty('--imp-cab', Math.round(cab.getBoundingClientRect().height) + 'px'); }
+  medir();
+  if (window.ResizeObserver) new ResizeObserver(medir).observe(cab); else addEventListener('resize', medir);
+})();
 var cartel = document.getElementById('cartel');
 
 var _cartelTimer = null;
