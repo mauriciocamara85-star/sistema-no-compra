@@ -6459,11 +6459,33 @@
   /** El importe de un movimiento, con su signo: "+$180.000" o "−$32.000". */
   function importeConSigno(n) { var c = cent(n || 0); return (c > 0 ? '+' : '') + plata(c); }
   function nombreCaja(c) { return c.caja === 'chica' ? 'Caja chica' : 'Caja fuerte'; }
-  /** Lo que dice el último control de una caja: el cierre de la chica o el ajuste de la fuerte. */
+  /* La caja fuerte sólo se controla cuando alguien la cuenta con «Ajustar…». Mauricio (6/11, «dale» a la propuesta): que
+     avise cuántos días hace que nadie la cuenta; desde DP_DIAS_AVISO, en ámbar. */
+  var DP_DIAS_AVISO = 7;
+  /** Los días (de calendario, en Argentina) desde un momento hasta hoy. */
+  function diasSinContar(ts) {
+    var dia;
+    try { dia = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts)); }
+    catch (e) { dia = new Date(new Date(ts).getTime() - 3 * 3600e3).toISOString().slice(0, 10); }
+    var utc = function (x) { return Date.UTC(+x.slice(0, 4), +x.slice(5, 7) - 1, +x.slice(8, 10)); };
+    return Math.max(0, Math.round((utc(hoyAR()) - utc(dia)) / 864e5));
+  }
+  /** Lo que dice el último control de una caja (el cierre de la chica o el ajuste de la fuerte) y si hay que avisar. */
   function ultimoControl(c) {
     var u = c.ultimo;
-    if (!u) return c.caja === 'chica' ? 'Todavía no cerró la caja' : 'Nunca se contó: arranca en $0';
-    return (u.tipo === 'cierre' ? 'Cierre Nº ' : 'Ajuste Nº ') + u.numero + ' · ' + fechaHora(u.fecha);
+    if (!u) return { txt: c.caja === 'chica' ? 'Todavía no cerró la caja' : 'Nunca se contó: arranca en $0', aviso: true };
+    var txt = (u.tipo === 'cierre' ? 'Cierre Nº ' : 'Ajuste Nº ') + u.numero;
+    if (c.caja !== 'fuerte') return { txt: txt + ' · ' + fechaHora(u.fecha), aviso: false };
+    var n = diasSinContar(u.fecha);
+    if (n >= DP_DIAS_AVISO) return { txt: txt + ' · hace ' + n + ' días', aviso: true, dias: n };
+    /* Desde los 2 días, sólo cuántos (con la fecha y la hora no entra en un renglón; están al pasar el mouse). */
+    return { txt: txt + (n > 1 ? ' · hace ' + n + ' días' : ' · ' + fechaHora(u.fecha) + (n === 1 ? ' · ayer' : '')), aviso: false, dias: n };
+  }
+  /** Si un movimiento entra en el filtro de la caja abierta ('entra', 'sale' o '' = todos). Los controles no entran ni salen. */
+  function dpPasa(f, filtro) {
+    if (!filtro) return true;
+    var c0 = cent(f.importe);
+    return !f.control && (filtro === 'entra' ? c0 > 0 : c0 < 0);
   }
 
   /* Mauricio (6/11, sobre la foto de la caja fuerte): "más parecida a la de BlueSoft… al principio caja chica y caja fuerte
@@ -6473,7 +6495,8 @@
      cambiar de pantalla; tocarla otra vez la cierra. El «Actualizar» vuelve a traer las cajas y, si hay una abierta, sus
      movimientos. Hasta el 6/11 cada caja abría una pantalla aparte, con un selector «Caja» y «‹ Disponibilidad». */
   function verDisponibilidad() {
-    var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], abierta = null, ult = null;
+    /* filtro: tocar «Entró» o «Salió» deja sólo las entradas o sólo las salidas ('entra' / 'sale'; '' = todo). */
+    var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], abierta = null, ult = null, filtro = '';
     c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en cada caja, según el sistema. Tocá una para ver lo que entró y lo que salió.') +
       '<div id="dpLista"><p class="cargando">Cargando…</p></div>';
     /* El panel de los movimientos se arma una sola vez y se muda abajo de la sucursal de la caja abierta: así el período
@@ -6486,7 +6509,7 @@
       '<div id="dpMov"></div>';
     var en = function (id) { return panel.querySelector('#' + id); };
     var per = periodoPos(en('dpPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: function () { cargarMov(); } });
-    en('dpExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r, ult.caja); };
+    en('dpExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r, ult.caja, filtro); };
 
     function cargar() {
       var n = ++pedido;
@@ -6517,20 +6540,27 @@
       });
       sucs.forEach(function (s) { s.cajas.sort(function (a, b) { return (cajas[a].caja === 'chica' ? 0 : 1) - (cajas[b].caja === 'chica' ? 0 : 1); }); });
       var t = d.totales || {}, sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
+      /* Las cajas fuertes que hace DP_DIAS_AVISO días o más que nadie cuenta. */
+      var viejas = cajas.filter(function (x) { return x.caja === 'fuerte' && x.ultimo && ultimoControl(x).aviso; });
+      var nomViejas = viejas.map(function (x) { return bonito(x.local); }).join(', ').replace(/, ([^,]*)$/, ' y $1');
       $('dpLista').innerHTML =
         /* Con más de una sucursal, arriba lo de todas (el "Resumen" de BlueSoft, sin cheques: no se usan). */
         (sucs.length > 1 ? '<div class="pos-totales">' +
           '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.chica || 0) + cent(t.fuerte || 0)) + '</b></div>' +
           '<div class="pos-kpi"><span>En las cajas chicas</span><b>' + p(t.chica) + '</b></div>' +
           '<div class="pos-kpi"><span>En las cajas fuertes</span><b>' + p(t.fuerte) + '</b></div></div>' : '') +
+        /* Arriba de las cajas (abajo quedaría después de la tabla abierta): la caja fuerte que hace días que nadie cuenta. */
+        (viejas.length ? '<div class="pos-cartel dp-cartel-aviso">Hace ' + (viejas.length === 1 ? ultimoControl(viejas[0]).dias : DP_DIAS_AVISO + ' días o más') +
+          (viejas.length === 1 ? ' días' : '') + ' que nadie cuenta la caja fuerte de ' + esc(nomViejas) + ': contala y cargá lo que hay con «Ajustar…».</div>' : '') +
         sucs.map(function (s) {
           return '<section class="dp-suc" data-local="' + esc(s.id) + '"><h3 class="dp-suc-nom">' + esc(bonito(s.nombre)) + '</h3><div class="dp-fila">' +
             s.cajas.map(function (i) {
-              var x = cajas[i];
+              var x = cajas[i], uc = ultimoControl(x);
               return '<button type="button" class="dp-caja" data-i="' + i + '" aria-expanded="false" aria-controls="dpPanel" title="Ver lo que entró y lo que salió">' +
                 '<span class="dp-caja-ico">' + icono(x.caja === 'chica' ? 'caja' : 'fuerte') + '</span>' +
                 '<span class="dp-caja-txt"><span class="dp-caja-nom">' + esc(nombreCaja(x)) + '</span><b>' + p(x.saldo) + '</b>' +
-                  '<small' + (x.ultimo ? '' : ' class="dp-nunca"') + '>' + esc(ultimoControl(x)) + '</small></span>' +
+                  '<small' + (uc.aviso ? ' class="dp-nunca"' : '') + (x.ultimo ? ' title="Último ' + (x.caja === 'chica' ? 'cierre' : 'ajuste') + ': ' + esc(fechaHora(x.ultimo.fecha)) + '"' : '') + '>' +
+                  esc(uc.txt) + '</small></span>' +
                 '<span class="dp-caja-flecha">' + icono('abajo') + '</span></button>';
             }).join('') +
             (s.cajas.length > 1 ? '<div class="dp-total"><span>Total</span><b>' + plata(s.total) + '</b></div>' : '') +
@@ -6564,6 +6594,7 @@
     function abrir(x) {
       abierta = { local: x.local_id, caja: x.caja };
       ult = null;
+      filtro = '';   // otra caja: se ve todo
       var suc = ubicar(x);
       cargarMov();
       /* Con varias sucursales, la de abajo de todo: que se vea lo que se abrió. */
@@ -6596,19 +6627,33 @@
       en('dpAccion').innerHTML = chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
                                        : '<button type="button" class="btn btn-pri btn-chico" id="dpAjustar">Ajustar…</button>';
       if (!chica) en('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
-      en('dpExcel').disabled = !filas.length;
+      /* Si en este período no entró (o no salió) nada, el filtro no tiene qué mostrar: se ve todo. */
+      if ((filtro === 'entra' && !cent(d.entro || 0)) || (filtro === 'sale' && !cent(d.salio || 0))) filtro = '';
+      var vis = filas.filter(function (f) { return dpPasa(f, filtro); });
+      en('dpExcel').disabled = !vis.length;
+      en('dpExcel').textContent = filtro ? 'Bajar ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') + ' para Excel' : 'Bajar para Excel';
       var u = d.ultimo;
+      /* «Entró» y «Salió» se tocan: dejan sólo las entradas o sólo las salidas, y otra vez, todo. En verde lo que entró y en
+         rojo lo que salió; un $0 va sin color y no se toca. */
+      function kpiFiltro(k, lbl, monto, cls) {
+        if (!cent(monto || 0)) return '<div class="pos-kpi"><span>' + lbl + '</span><b>' + p(0) + '</b></div>';
+        var si = filtro === k;
+        return '<button type="button" class="pos-kpi dp-filtro" data-filtro="' + k + '" aria-pressed="' + si + '" title="' +
+          (si ? 'Ver todos los movimientos' : 'Ver sólo lo que ' + lbl.toLowerCase()) + '"><span>' + lbl + (si ? ' · sólo esto' : '') + '</span><b class="' + cls + '">' + p(monto) + '</b></button>';
+      }
       en('dpMov').innerHTML = '<div class="pos-totales">' +
           '<div class="pos-kpi"><span>Al empezar el período</span><b>' + p(d.antes) + '</b></div>' +
-          /* En verde lo que entró y en rojo lo que salió; un $0 va sin color. */
-          '<div class="pos-kpi"><span>Entró</span><b' + (cent(d.entro || 0) ? ' class="dp-entra"' : '') + '>' + p(d.entro) + '</b></div>' +
-          '<div class="pos-kpi"><span>Salió</span><b' + (cent(d.salio || 0) ? ' class="dp-sale"' : '') + '>' + p(d.salio) + '</b></div>' +
+          kpiFiltro('entra', 'Entró', d.entro, 'dp-entra') + kpiFiltro('sale', 'Salió', d.salio, 'dp-sale') +
           (Number(d.ajustado) ? '<div class="pos-kpi"><span>' + (chica ? 'Diferencias de los cierres' : 'Ajustes') + '</span><b>' + esc(importeConSigno(d.ajustado)) + '</b></div>' : '') +
         '</div>' +
+        (filtro ? '<p class="dp-filtrado">Se ven sólo ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') + ' (' + vis.length + ' de ' + filas.length + ' movimientos). ' +
+          '<button type="button" class="pos-link" id="dpTodo">Ver todo</button></p>' : '') +
         (!filas.length ? '<div class="pos-cartel">No hubo movimientos en esta caja en ese período.</div>' :
+          !vis.length ? '<div class="pos-cartel">No hay ' + (filtro === 'entra' ? 'entradas' : 'salidas') + ' entre los movimientos que se ven.</div>' :
           '<div class="pos-marco-tabla"><table class="pos-tabla dp-tabla"><thead><tr><th>Fecha</th><th>Comprobante</th><th>Detalle</th><th>Cargó</th>' +
             '<th class="n">Importe</th><th class="n">Saldo</th></tr></thead><tbody>' +
           filas.map(function (f, i) {
+            if (!dpPasa(f, filtro)) return '';
             /* El cierre (y lo que pasaba a la caja fuerte al cerrar, hasta el SQL 180) abre el cierre; el ajuste, el suyo. */
             var abre = f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste';
             var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : f.detalle;
@@ -6630,17 +6675,31 @@
         tr.onclick = function () { if (f.tipo === 'ajuste') abrirAjusteHecho(f, d, cargar); else abrirCierre(f.id, cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
+      /* El filtro no vuelve a la base: pinta otra vez lo mismo con o sin el filtro, y el foco queda en el botón que se tocó. */
+      en('dpMov').querySelectorAll('[data-filtro]').forEach(function (b) {
+        b.onclick = function () {
+          var k = b.getAttribute('data-filtro');
+          filtro = filtro === k ? '' : k;
+          pintarMov(d, sel);
+          var otra = en('dpMov').querySelector('[data-filtro="' + k + '"]');
+          if (otra) otra.focus();
+        };
+      });
+      var todo = en('dpTodo');
+      if (todo) todo.onclick = function () { filtro = ''; pintarMov(d, sel); };
     }
     cargar();
     actualizable(cargar);
   }
 
-  function bajarValores(d, r, caja) {
+  /* Baja lo que se ve: con el filtro de «Entró» o «Salió», sólo las entradas o sólo las salidas. */
+  function bajarValores(d, r, caja, filtro) {
     var cab = ['Fecha', 'Comprobante', 'Detalle', 'Cargó', 'Contaron', 'Importe', 'Saldo'];
-    var filas = (d.filas || []).map(function (f) {
+    var filas = (d.filas || []).filter(function (f) { return dpPasa(f, filtro); }).map(function (f) {
       return [fechaLarga(f.fecha), f.ref, f.detalle, f.persona || '', f.control && f.tipo !== 'inicial' ? Number(f.contado) : '', Number(f.importe), Number(f.saldo)];
     });
-    bajarCsv((caja === 'chica' ? 'caja-chica' : 'caja-fuerte') + '-' + String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
+    bajarCsv((caja === 'chica' ? 'caja-chica' : 'caja-fuerte') + (filtro === 'entra' ? '-entradas' : filtro === 'sale' ? '-salidas' : '') + '-' +
+      String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
   }
 
   /* El «Ajustar» de la caja fuerte: la oficina la cuenta y escribe cuánto hay. Muestra lo que dice el sistema y,

@@ -1232,6 +1232,15 @@ html[data-theme="dark"] .dp-caja.abierta { border-color: var(--cobre); box-shado
 .dp-panel .pos-ayuda { margin-bottom: 0; }
 .dp-entra { color: var(--ok-txt); }
 .dp-sale { color: var(--bad-txt); }
+/* 6/11: «Entró» y «Salió» se tocan y filtran; el que está puesto lleva el aro cobre. El aviso de la caja fuerte que
+   hace días que nadie cuenta, en ámbar como su tarjeta. */
+.pos-kpi.dp-filtro:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.pos-kpi.dp-filtro[aria-pressed="true"] { border-color: var(--cobre); box-shadow: 0 0 0 1px var(--cobre); }
+.dp-filtrado { margin: -2px 0 8px; font-size: 13px; color: var(--txt-2); }
+.dp-filtrado .pos-link { margin-left: 4px; }
+.pos-cartel.dp-cartel-aviso { margin-bottom: 12px; background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
+/* Sobre el negro de la tarjeta abierta, un ámbar claro (el de siempre no se lee). */
+.dp-caja.abierta .dp-caja-txt small.dp-nunca { color: #F2C063; }
 @media (max-width: 600px) {
   .dp-caja { flex: 1 1 100%; }
   .dp-total { flex-direction: row; align-items: baseline; gap: 8px; padding: 2px 4px 0; }
