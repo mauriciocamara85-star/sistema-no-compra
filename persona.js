@@ -36,8 +36,8 @@ var persona = (function () {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
     /* El POS (pos.html): quien tenga «Usa el POS» en Config → Usuarios (SQL 190; ver usaPos). Su Gestión (gestion.html),
-       quien tenga además «Entra a Gestión» (SQL 229; ver usaGestion). La Fábrica (fabrica.html, 6/11): por ahora,
-       sólo Administración con la Gestión (ver usaFabrica). */
+       quien tenga además «Entra a Gestión» (SQL 229; ver usaGestion). La Fábrica (fabrica.html, 6/11): quien tenga
+       «Entra a Fábrica» (SQL 256), aunque no use el POS; al administrador le viene con el POS (ver usaFabrica). */
     vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html', 'gestion.html', 'fabrica.html'],
     /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
        "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
@@ -156,7 +156,7 @@ var persona = (function () {
     /* SQL 229: con «Entra a Gestión», tampoco la Gestión. */
     if (usaGestion()) document.documentElement.setAttribute('data-nc-gestion', '');
     else document.documentElement.removeAttribute('data-nc-gestion');
-    /* 6/11: la Fábrica, por ahora sólo Administración con la Gestión. */
+    /* 6/11: la Fábrica (SQL 256: con «Entra a Fábrica»; al administrador, con el POS). */
     if (usaFabrica()) document.documentElement.setAttribute('data-nc-fabrica', '');
     else document.documentElement.removeAttribute('data-nc-fabrica');
     /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
@@ -179,9 +179,13 @@ var persona = (function () {
   function usaPos() { return vigente(_yo) && _yo.pos === true; }
   /* SQL 229: la oficina le prendió la Gestión del POS (nc_yo trae 'gestion'; pide también el POS). */
   function usaGestion() { return vigente(_yo) && _yo.gestion === true; }
-  /* 6/11/2026: la Fábrica (los remitos de la fábrica a los locales y sus diferencias), por ahora sólo Administración con
-     la Gestión. Cuando entre la gente de la fábrica (Lucas), una casilla propia en Config → Usuarios (con SQL). */
-  function usaFabrica() { return usaGestion() && _yo.rol === 'admin'; }
+  /* 6/11/2026: la Fábrica (los remitos de la fábrica a los locales y sus diferencias). SQL 256: quien tenga «Entra a
+     Fábrica» en Config → Usuarios (la gente de la fábrica, Lucas), aunque no use el POS; nc_yo trae 'fabrica' (al
+     administrador le viene con el POS). Sin el SQL 256 (nc_yo sin 'fabrica'), como antes: Administración con la Gestión. */
+  function usaFabrica() {
+    if (!vigente(_yo)) return false;
+    return _yo.fabrica === true || (_yo.fabrica === undefined && usaGestion() && _yo.rol === 'admin');
+  }
   /* SQL 230 (2/11, de prueba): su local tiene el fichero de prueba (Rivadavia): «Fichero» con su usuario, en
      cualquier compu (nc_yo trae 'fichero'). */
   function fichaPrueba() { return vigente(_yo) && _yo.fichero === true; }
@@ -297,7 +301,9 @@ var persona = (function () {
         /* SQL 229: lo mismo con la Gestión. */
         '|' + !!(_yo && _yo.gestion) +
         /* SQL 230: y con el fichero de prueba. */
-        '|' + !!(_yo && _yo.fichero);
+        '|' + !!(_yo && _yo.fichero) +
+        /* SQL 256: y con la Fábrica. */
+        '|' + !!(_yo && _yo.fabrica);
     };
     var antes = clave();
     _yo = y;

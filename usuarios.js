@@ -89,7 +89,7 @@ var usuarios = (function () {
   /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas (SQL 229: siete, con «Entra a Gestión»); cada rol arranca con las suyas
      (pos_permisos_lista trae las de cada rol y las de cada persona). null = no es Administración o falta el SQL. */
   var posLista = null;
-  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
+  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];
   var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
                       ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
                       ['caja', 'Caja: gastos, movimientos de salida, retiros y cierre de caja', ''],
@@ -105,13 +105,21 @@ var usuarios = (function () {
   function usaPos(p) { return !!posLista && (p.rol !== 'admin' || adminElige()) && !!(posLista.personas[p.id] || {}).usa; }
   function usaGestion(p) { return usaPos(p) && !!(posLista.personas[p.id] || {}).gestion; }
   function textoUsa(adm) { return adm ? 'Usa el POS y la Gestión' : 'Usa el POS'; }
-  function textoAdmin() { return adminElige() ? 'Administrador: con el POS tiene todo, también la Gestión.' : 'Administrador: todo el POS y la Gestión.'; }
+  function textoAdmin() {
+    return adminElige() ? 'Administrador: con el POS tiene todo, también la Gestión y la Fábrica.' : 'Administrador: todo el POS y la Gestión.';
+  }
+  /* SQL 256 (6/11): «Entra a Fábrica», aparte del POS: la gente de la fábrica (Lucas) entra a Fábrica → Remitos y
+     Diferencias sin usar el POS (sin ventas, caja ni plata). Al administrador le viene con el POS. Sin el SQL 256 la lista
+     no la trae y la casilla no sale. */
+  function conFabrica() { return !!posLista && !!posLista.roles && !!posLista.roles.vendedor && 'fabrica' in posLista.roles.vendedor; }
+  function entraFabrica(p) { return conFabrica() && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).fabrica; }
   /** El bloque del editor. Al administrador, sólo «Usa el POS y la Gestión» (SQL 236). */
   function posBloque(p, r) {
     if (!posLista) return '';
     var adm = r === 'admin', e = posLista.personas[p.id] || posLista.roles[r] || {}, usa = !!e.usa && (!adm || adminElige());
-    return '<div class="us-pos" data-ed-pos role="group" aria-label="POS">' +
-      '<span class="us-pos-tit">POS</span>' +
+    var tit = conFabrica() ? 'POS y Fábrica' : 'POS';
+    return '<div class="us-pos" data-ed-pos role="group" aria-label="' + tit + '">' +
+      '<span class="us-pos-tit">' + tit + '</span>' +
       '<label class="us-pos-usa"' + (adm && !adminElige() ? ' hidden' : '') + '><input type="checkbox" data-pos="usa"' + (usa ? ' checked' : '') + '> ' +
         '<span class="us-pos-usa-txt">' + esc(textoUsa(adm)) + '</span></label>' +
       '<div class="us-pos-casillas"' + (usa && !adm ? '' : ' hidden') + '>' +
@@ -120,6 +128,8 @@ var usuarios = (function () {
           return '<label class="us-pos-cas"><input type="checkbox" data-pos="' + c[0] + '"' + (e[c[0]] ? ' checked' : '') + '> <span>' + esc(c[1]) +
             (c[2] ? ' <small>(' + esc(c[2]) + ')</small>' : '') + '</span></label>';
         }).join('') + '</div>' +
+      (conFabrica() ? '<label class="us-pos-fab"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="fabrica"' + (e.fabrica && !adm ? ' checked' : '') + '> ' +
+        '<span>Entra a Fábrica <small>(los remitos a los locales y sus diferencias; sin el POS no ve ventas, caja ni plata)</small></span></label>' : '') +
       '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>' + esc(textoAdmin()) + '</p>' +
     '</div>';
   }
@@ -131,6 +141,9 @@ var usuarios = (function () {
     pb.querySelector('.us-pos-usa-txt').textContent = textoUsa(adm);
     pb.querySelector('.us-pos-admin').hidden = !adm;
     pb.querySelector('.us-pos-casillas').hidden = adm || !pb.querySelector('[data-pos="usa"]').checked;
+    /* SQL 256: «Entra a Fábrica» queda como está (como «Usa el POS»); al administrador le viene con el POS. */
+    var fab = pb.querySelector('.us-pos-fab');
+    if (fab) fab.hidden = adm;
   }
   /** Lo que quedó marcado (null: sin el bloque, o es administrador sin el SQL 236). Al administrador, sólo «usa». */
   function posDelEditor(f, rol) {
@@ -138,7 +151,7 @@ var usuarios = (function () {
     if (!pb || !posLista || (rol === 'admin' && !adminElige())) return null;
     if (rol === 'admin') return { usa: pb.querySelector('[data-pos="usa"]').checked };
     var v = {};
-    POS_K.forEach(function (k) { v[k] = pb.querySelector('[data-pos="' + k + '"]').checked; });
+    POS_K.forEach(function (k) { var x = pb.querySelector('[data-pos="' + k + '"]'); if (x) v[k] = x.checked; });   // sin el SQL 256, sin «fabrica»
     return v;
   }
   /** ¿Lo marcado es distinto de lo que tendría con su rol (el nuevo, si cambió) y lo que ya le cambiaron? */
@@ -333,7 +346,7 @@ var usuarios = (function () {
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
       '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') +
-        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + '</span></div>' +
+        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + (entraFabrica(p) ? ' · Entra a Fábrica' : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -596,8 +609,10 @@ var usuarios = (function () {
               if (!ok || !cambiaPos) return ok;
               /* SQL 236: al administrador, el POS y la Gestión juntos. */
               var yG = rol === 'admin' ? (posVa.usa ? ' y la Gestión' : ' ni la Gestión') : '';
+              /* SQL 256 */
+              var yF = rol !== 'admin' && posVa.fabrica ? ' y entra a Fábrica' : '';
               return hacer('pos_permisos_guardar', { p_persona: p.id, p: posVa },
-                'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS' : ' no usa el POS') + yG + '.');
+                'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS' : ' no usa el POS') + yG + yF + '.');
             })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;

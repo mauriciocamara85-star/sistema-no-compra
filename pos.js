@@ -652,7 +652,8 @@
     var y = persona.yo();
     /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, quien tenga «Entra a Gestión» (SQL 229).
        SQL 236: también el administrador (Mauricio, 3/11: "sólo Anto, Daky y yo"). La base lo vuelve a mirar.
-       La Fábrica (6/11), por ahora sólo Administración con la Gestión (los remitos de la base piden lo mismo que en Gestión). */
+       La Fábrica (6/11): quien tenga «Entra a Fábrica» (SQL 256, aunque no use el POS); al administrador le viene con el POS.
+       Sin el SQL 256 (nc_yo sin 'fabrica'), como antes: Administración con la Gestión. */
     if (!entra(y)) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
     llamarCorto('pos_inicio').then(function (ini) {
@@ -672,11 +673,14 @@
   }
   function entra(y) {
     if (!y) return false;
-    if (MODO === 'fabrica') return y.gestion === true && y.rol === 'admin';
+    if (MODO === 'fabrica') return y.fabrica === true || (y.fabrica === undefined && y.gestion === true && y.rol === 'admin');
     return MODO === 'gestion' ? y.gestion === true : y.pos === true;
   }
   function empezar(ini, sinRed) {
     S.ini = ini;
+    /* SQL 256: en la Fábrica se ven todos los locales y todos los días (la base hace lo mismo con quien la tiene), aunque la
+       persona no tenga «Ver otros locales» ni «Ver otros días» del POS (la gente de la fábrica no usa el POS). */
+    if (MODO === 'fabrica' && ini.puede && ini.puede.fabrica === true) { ini.puede.locales = true; ini.puede.dias = true; }
     if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
     if (sinRed) ini.hoy = hoyAR();   // la copia puede ser de otro día
     S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
@@ -703,12 +707,12 @@
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
         ({ gestion: 'Todavía no tenés la Gestión: la prende la oficina en Config → Usuarios («Entra a Gestión»).',
-           fabrica: 'La Fábrica, por ahora, es sólo de Administración (con «Entra a Gestión» en Config → Usuarios).' }[MODO] ||
+           fabrica: 'Todavía no tenés la Fábrica: la prende la oficina en Config → Usuarios («Entra a Fábrica»).' }[MODO] ||
          'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
       return;
     }
     persona.porton(c, { gestion: 'Entrá con tu usuario: la usa quien tiene la Gestión prendida.',
-                        fabrica: 'Entrá con tu usuario: por ahora la usa Administración.' }[MODO] || 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
+                        fabrica: 'Entrá con tu usuario: la usa quien tiene la Fábrica prendida.' }[MODO] || 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
   }
 
   function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
@@ -9241,7 +9245,7 @@
         (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulad' + (aFabrica ? 'a' : 'o') + ' el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
         '<div id="rmAnular"></div><div class="pos-pie">' +
           /* En el local, la devolución y el envío se anulan mientras nadie recibió nada (si se armaron mal); lo demás, desde Gestión. */
-          ((gestion || (puede('envios') && (aFabrica || envio) && pend && !recibioAlgo)) && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular ' + queEs.trim() + '</button>' : '') +
+          (((gestion && (puede('gestion') || !r.origen_local_id)) || (puede('envios') && (aFabrica || envio) && pend && !recibioAlgo)) && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular ' + queEs.trim() + '</button>' : '') +
           (!gestion && pend && !enPrueba() && !aFabrica && !envio ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
           (gestion && pend && aFabrica ? '<button type="button" class="btn btn-pri btn-chico" id="rmFabrica">Llegó a la fábrica</button>' : '') +
           '<button type="button" class="btn ' + (gestion && pend && aFabrica ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
@@ -9894,6 +9898,7 @@
     var b = leerJSON(claveBorradorRn(), null);
     if (!(b && b.v === 1 && b.clave && Array.isArray(b.lineas))) b = remitoNuevo();
     if (b.origen && !localDe(b.origen)) b.origen = '';
+    if (!RN_DEV && !RN_ENV && !conEnvios()) { b.origen = ''; if (b.destino === A_FABRICA) b.destino = ''; }   // SQL 256
     if ((RN_DEV || RN_ENV) && b.origen && !esMio(b.origen)) b.origen = '';
     if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
     if (!b.razon || typeof b.razon !== 'object') b.razon = {};
@@ -9924,18 +9929,22 @@
             unicos(ls.map(function (l) { return l.color; }).filter(Boolean)).join('|')];
   }
 
+  /** SQL 256: los envíos entre locales y las devoluciones salen de un local: piden el POS y «Hacer envíos internos…». Quien
+      tiene sólo la Fábrica (la gente de la fábrica) arma lo que sale de la fábrica. */
+  function conEnvios() { return puede('usa') && puede('envios'); }
   function verRemitoNuevo() {
     RN_DEV = false; RN_ENV = false; RN_SG = false;
     RN = cargarRemitoNuevo();
-    var c = $('cuerpo');
-    c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local, o lo que un local le devuelve a la fábrica. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
+    var c = $('cuerpo'), env = conEnvios();
+    c.innerHTML = cabeza('Nuevo remito', (env ? 'Lo que manda la fábrica (o un local) a un local, o lo que un local le devuelve a la fábrica.' : 'Lo que manda la fábrica a un local.') +
+        ' Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar el remito</button>') +
       '<div class="tk-datos rn-datos">' +
-        campo('', 'Sale de', '<select id="rnOrigen" class="desplegable"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
+        campo('', 'Sale de', '<select id="rnOrigen" class="desplegable"><option value="">Fábrica</option>' + (env ? opcionesLocales(RN.origen) : '') + '</select>') +
         campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) +
-          '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option></select>') +
+          (env ? '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option>' : '') + '</select>') +
         campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
       '</div>' + htmlProdRn();
