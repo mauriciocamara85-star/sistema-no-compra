@@ -148,9 +148,12 @@
     ],
     /* La fábrica (Mauricio, 6/11: "la parte de remitos que tenemos para crear remitos y que nos llegue acá tiene que estar
        dentro de la fábrica, no en gestión"): lo que sale del depósito de la fábrica a los locales y lo que llegó mal.
-       Después, el depósito de la fábrica con su stock, los clientes, los transportes y la producción. */
+       SQL 258 (Lucas, 6/11: "tenés que tener dos funcionalidades: el depósito donde pongo mercadería y una que sea
+       remito para moverla"): el depósito de la fábrica con su stock, como el «Stock talles en columnas» de BlueSoft.
+       Después, los clientes, los transportes y la producción. */
     fabrica: [
-      ['Depósito', [['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif']]]
+      ['Depósito', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
+      ['Remitos', [['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif']]]
     ]
   };
   var MENU = MENUS[MODO];
@@ -166,6 +169,8 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   /* Los cierres del mostrador son de la caja; los de Gestión, de la oficina (entra quien tiene la Gestión). */
   if (MODO === 'mostrador') REQUIERE.cierres = 'caja';
+  /* SQL 258: los depósitos de la Fábrica son de quien entra a Fábrica (no piden el permiso de los envíos del POS). */
+  if (MODO === 'fabrica') delete REQUIERE.depositos;
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
@@ -414,7 +419,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_fabrica_/.test(m) ? '258 (el depósito de la Fábrica)' : /pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
@@ -537,7 +542,15 @@
      S.dep[local] = lo que devuelve pos_depositos de esa sucursal. Sin el SQL 193 (S.sin193): [] y todo sigue como antes,
      un stock por local. Las funciones viejas no tienen p_deposito: sólo se manda cuando se eligió un depósito. */
   function sinFuncion(e) { return /Could not find the function|schema cache|PGRST202/.test(String((e && e.message) || e || '')); }
+  /* SQL 258: la Fábrica tiene sus depósitos, sin sucursal (S.dep[FAB], de pos_fabrica_depositos). Sin el 258 (S.sin258), ninguno. */
+  var FAB = 'fabrica';
   function traerDepositos(local, forzar) {
+    if (local === FAB) {
+      if (S.sin258) return Promise.resolve([]);
+      if (S.dep[FAB] && !forzar) return Promise.resolve(S.dep[FAB]);
+      return llamar('pos_fabrica_depositos').then(function (d) { return (S.dep[FAB] = d || []); },
+        function (e) { if (sinFuncion(e)) S.sin258 = true; return []; });
+    }
     if (!local || S.sin193) return Promise.resolve([]);
     if (S.dep[local] && !forzar) return Promise.resolve(S.dep[local]);
     return llamar('pos_depositos', { p_local: local }).then(function (d) { return (S.dep[local] = d || []); },
@@ -698,7 +711,7 @@
   function pantallaPorton(y) {
     app.innerHTML = '<section class="pos-porton"><h2>' + NOMBRE + '</h2>' +
       '<p>' + ({ gestion: 'La parte de atrás del POS: precios, promociones, stock y sucursales.',
-                 fabrica: 'La fábrica: los remitos que les manda a los locales y lo que llegó con diferencias.' }[MODO] ||
+                 fabrica: 'La fábrica: el stock de sus depósitos, los remitos que les manda a los locales y lo que llegó con diferencias.' }[MODO] ||
                 'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
       '<div id="posPorton"></div>' +
       /* No hay barra (en Gestión, desde el 31/10): el camino de vuelta va acá. */
@@ -7907,6 +7920,11 @@
       ic = { codigo: busca(esCod), desc: busca(/^(descripcion|producto|nombre)$/), talle: busca(/^(talle|talla|tal\.?)$/),
              color: busca(/^(color|col\.?)$/), cant: busca(/^(cantidad|cant\.?|stock|unidades|existencia|saldo)$/) };
       if (ic.cant < 0) return { error: 'No encontré la columna Cantidad.', items: [], errores: [] };
+      /* SQL 258: el «Stock talles en columnas» de BlueSoft trae los talles como posiciones (00, 01, 02…) y la Cantidad
+         es el total del color: leído así, cada producto entraría entero como un solo talle. */
+      if (ic.talle < 0 && cab.filter(function (x) { return /^\d{1,2}$/.test(x || ''); }).length >= 2) {
+        return { error: 'Este Excel tiene los talles en columnas (00, 01, 02…), como «Stock talles en columnas» de BlueSoft. Para cargarlo hace falta un talle por renglón: las columnas Código, Talle, Color y Cantidad.', items: [], errores: [] };
+      }
     } else {
       var ancho = filas.reduce(function (m, f) { return Math.max(m, (f || []).filter(function (c) { return String(c || '').trim(); }).length); }, 0);
       if (ancho >= 4) ic = { codigo: 0, talle: 1, color: 2, cant: 3, desc: -1 };
@@ -8026,6 +8044,7 @@
   var ST_VISTAS = [['producto', 'Por producto'], ['lista', 'Lista'], ['rubro', 'Por rubro']], ST_TANDA = 40;
 
   function verStock() {
+    if (MODO === 'fabrica') { verStockFabrica(); return; }   // SQL 258: el de la Fábrica, con los talles en columnas
     var c = $('cuerpo'), gestion = OFICINA, l = localStock();
     var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false, dep: '' };
     if (!gestion && !localDe(F.local)) F.local = l.id;
@@ -8331,7 +8350,9 @@
   function abrirVariante(localId, cod, talle, color, alCambiar, dep) {
     var tit = esc(cod) + ' · ' + esc(nombreTalle(talle)) + ' · ' + esc(nombreCol(color, cod));
     var caja = ventana('<h3 id="posVentTit">' + tit + '</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
-    var pv = { p_local: localId, p_codigo: cod, p_talle: talle, p_color: color };
+    /* SQL 258: en la Fábrica (localId FAB) va sin sucursal y siempre con su depósito (sin él sería «Todas» las sucursales). */
+    var fab = localId === FAB, suc = fab ? null : localId;
+    var pv = { p_local: suc, p_codigo: cod, p_talle: talle, p_color: color };
     if (dep) pv.p_deposito = dep;
     Promise.all([llamar('pos_stock_variante', pv), traerDepositos(localId)]).then(function (rs) {
       if (!caja.isConnected) return;
@@ -8350,7 +8371,7 @@
               return '<tr data-dep="' + esc(d.id) + '" tabindex="0"' + (d.id === dep ? ' class="rn-marca"' : '') + ' title="Ver sólo ' + esc(d.nombre) + '"><td>' + esc(d.nombre) + ' ' + pillsDep(d) + '</td>' +
                 '<td class="n"><b class="' + (n < 0 ? 'st-sale' : '') + '">' + num(n) + '</b></td></tr>';
             }).join('') + '</tbody></table></div>' +
-            (dep ? '<p class="pos-ayuda"><button type="button" class="pos-link" id="vaTodos">Ver la suma de los de la consulta</button></p>' : '') : '') +
+            (dep && !fab ? '<p class="pos-ayuda"><button type="button" class="pos-link" id="vaTodos">Ver la suma de los de la consulta</button></p>' : '') : '') +
         (movs.length ? '<div class="pos-marco-tabla st-movs"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Qué</th>' + (varios ? '<th>Depósito</th>' : '') +
             '<th>Detalle</th><th>Quién</th><th class="n">Cant.</th></tr></thead><tbody>' +
             movs.map(function (m) {
@@ -8385,7 +8406,7 @@
           if (!errorEn(z, 'vaError', !/^\d{1,5}$/.test(n) ? 'Escribí cuántas hay (de 0 a 99999).' : Number(n) === base ? 'El sistema ya dice ' + base + ': no hay nada que ajustar.' :
                                      !mot ? 'Elegí el motivo.' : mot === 'Otro' && !det ? 'Escribí el motivo.' : '')) return;
           bt.disabled = true;
-          var pa = { local_id: localId, codigo: cod, talle: talle, color: color, cantidad: Number(n), motivo: mot, detalle: det,
+          var pa = { local_id: suc, codigo: cod, talle: talle, color: color, cantidad: Number(n), motivo: mot, detalle: det,
                      descripcion: PROD[cod] ? PROD[cod][1] : (s.descripcion || ''), clave: clave };
           if (dep) pa.deposito_id = dep;   // SQL 193 (sin elegir, la base usa el predeterminado)
           llamar('pos_stock_ajustar', { p: pa }).then(function (r) {
@@ -8413,6 +8434,7 @@
      encontró (con el tilde, deja de contar para la consulta de stock).
      ════════════════════════════════════════════════════════════════════ */
   function verDepositos() {
+    if (MODO === 'fabrica') { verDepositosFabrica(); return; }   // SQL 258
     var c = $('cuerpo'), gestion = OFICINA, l = localStock();
     var F = S.dpF = S.dpF || { local: gestion && puede('locales') ? '' : l.id, q: '', activos: true };
     if (F.local && !localMio(F.local)) F.local = l.id;
@@ -8492,22 +8514,27 @@
 
   /** La ficha de un depósito, como la de BlueSoft (d null: uno nuevo en la sucursal localId): Guardar, Predeterminar y Eliminar. */
   function abrirDeposito(d, localId, alCambiar) {
-    var nuevo = !d, tn = temporadaNueva(), temp = d ? !!d.temporada : true;
-    var caja = ventana('<h3 id="posVentTit">' + (nuevo ? 'Nuevo depósito' : esc(d.nombre) + ' ' + pillsDep(d)) + '</h3>' +
-      (nuevo ? '<p class="pos-bajada">Para el stock de todo el local, mejor empezarlo en Stock general (crea el de la temporada nueva). Acá, cualquier otro: por ejemplo, uno de fallas.</p>' :
+    /* SQL 258: uno de la Fábrica (sin sucursal; localId FAB para uno nuevo). Arranca con nombre (no de temporada) y no
+       tiene «Considerar para la consulta»: el stock de la Fábrica se mira depósito por depósito. */
+    var fab = d ? !d.local_id : localId === FAB, clave = fab ? FAB : d ? d.local_id : localId;
+    var nuevo = !d, tn = temporadaNueva(), temp = d ? !!d.temporada : !fab;
+    var caja = ventana('<h3 id="posVentTit">' + (nuevo ? 'Nuevo depósito' + (fab ? ' de la Fábrica' : '') : esc(d.nombre) + ' ' + pillsDep(d)) + '</h3>' +
+      (nuevo && fab ? '<p class="pos-bajada">Otro lugar de la fábrica donde se guarda mercadería: por ejemplo, uno de segunda o de fallas.</p>' :
+       nuevo ? '<p class="pos-bajada">Para el stock de todo el local, mejor empezarlo en Stock general (crea el de la temporada nueva). Acá, cualquier otro: por ejemplo, uno de fallas.</p>' :
        '<p class="pos-bajada">' + num(d.unidades) + (Math.abs(d.unidades) === 1 ? ' unidad' : ' unidades') + ' · se creó el ' + esc(fechaHora(d.creado_en)) + (d.creado_nombre ? ' (' + esc(d.creado_nombre) + ')' : '') +
          (d.predeterminado && d.predeterminado_en ? ' · predeterminado desde el ' + esc(fechaHora(d.predeterminado_en)) : '') + '</p>') +
       '<div class="pos-campos dep-campos">' +
         campo('', 'Código', '<input type="text" value="' + (nuevo ? 'Nuevo' : esc(d.numero)) + '" readonly tabindex="-1">') +
-        campo('', 'Sucursal', nuevo ? '<select id="dfLocal" class="desplegable">' + opcionesLocales(localId) + '</select>' : '<input type="text" value="' + esc(bonito(d.local)) + '" readonly tabindex="-1">') +
+        campo('', 'Sucursal', nuevo && !fab ? '<select id="dfLocal" class="desplegable">' + opcionesLocales(localId) + '</select>' :
+                              '<input type="text" value="' + esc(fab ? 'Fábrica' : bonito(d.local)) + '" readonly tabindex="-1">') +
         campo('', 'Tipo', '<select id="dfTipo">' + opciones([['temporada', 'De temporada'], ['otro', 'Otro (fallas…)']], temp ? 'temporada' : 'otro') + '</select>') +
         campo('dep-temp', 'Temporada', '<select id="dfTemp">' + opciones([['Verano', 'Verano'], ['Invierno', 'Invierno']], d && d.temporada || tn[0]) + '</select>') +
         campo('dep-temp', 'Año', '<input type="number" id="dfAnio" min="2000" max="2100" value="' + esc(d && d.anio || tn[1]) + '">') +
-        campo('dep-otro', 'Descripción', '<input type="text" id="dfNombre" maxlength="40" autocomplete="off" placeholder="Ej.: Depósito de fallas" value="' + esc(d && !d.temporada ? d.nombre : '') + '">') +
+        campo('dep-otro ancho', 'Descripción', '<input type="text" id="dfNombre" maxlength="40" autocomplete="off" placeholder="Ej.: ' + (fab ? 'Depósito de Segunda' : 'Depósito de fallas') + '" value="' + esc(d && !d.temporada ? d.nombre : '') + '">') +
       '</div>' +
-      '<div class="dep-checks"><label class="pos-check"><input type="checkbox" id="dfConsulta"' + (!d || d.consulta ? ' checked' : '') + (d && d.predeterminado ? ' disabled' : '') + '> Considerar para la consulta de stock</label>' +
+      '<div class="dep-checks"><label class="pos-check"' + (fab ? ' hidden' : '') + '><input type="checkbox" id="dfConsulta"' + (!d || d.consulta ? ' checked' : '') + (d && d.predeterminado ? ' disabled' : '') + '> Considerar para la consulta de stock</label>' +
       '<label class="pos-check"><input type="checkbox" id="dfActivo"' + (!d || d.activo ? ' checked' : '') + (d && d.predeterminado ? ' disabled' : '') + '> Activo</label></div>' +
-      (d && d.predeterminado ? '<p class="pos-ayuda">Es el predeterminado: cuenta siempre para la consulta y no se desactiva.</p>' : '') +
+      (d && d.predeterminado ? '<p class="pos-ayuda">' + (fab ? 'Es el predeterminado de la Fábrica: no se desactiva.' : 'Es el predeterminado: cuenta siempre para la consulta y no se desactiva.') + '</p>' : '') +
       '<div class="pos-error" id="dfError"></div><div id="dfZona"></div>' +
       '<div class="pos-pie">' +
         (d && !d.predeterminado && !d.usado ? '<button type="button" class="btn btn-sec btn-chico izq" id="dfBorrar">Eliminar</button>' : '') +
@@ -8525,14 +8552,16 @@
     caja.querySelector('#dfGuardar').onclick = function () {
       var bt = this, t = tipo.value === 'temporada', anio = caja.querySelector('#dfAnio').value.trim(), nom = caja.querySelector('#dfNombre').value.trim();
       if (!errorEn(caja, 'dfError', t && !/^\d{4}$/.test(anio) ? 'Escribí el año (por ejemplo, ' + tn[1] + ').' : !t && !nom ? 'Escribí la descripción del depósito.' : '')) return;
-      var loc = nuevo ? caja.querySelector('#dfLocal').value : d.local_id;
+      var loc = fab ? null : nuevo ? caja.querySelector('#dfLocal').value : d.local_id;
       bt.disabled = true;
-      llamar('pos_deposito_guardar', { p: { id: d ? d.id : null, local_id: loc, temporada: t ? caja.querySelector('#dfTemp').value : null, anio: t ? Number(anio) : null,
-                                            nombre: t ? null : nom, consulta: caja.querySelector('#dfConsulta').checked, activo: caja.querySelector('#dfActivo').checked } }).then(function (r) {
-        avisar('ok', r.nuevo ? 'Depósito «' + r.nombre + '» creado (código ' + r.numero + ').' + (t ? ' El stock de todo el local sigue en Mercadería → Stock general.' : '')
+      var dat = { id: d ? d.id : null, local_id: loc, temporada: t ? caja.querySelector('#dfTemp').value : null, anio: t ? Number(anio) : null,
+                 nombre: t ? null : nom, consulta: fab || caja.querySelector('#dfConsulta').checked, activo: caja.querySelector('#dfActivo').checked };
+      if (fab) dat.fabrica = true;   // SQL 258
+      llamar('pos_deposito_guardar', { p: dat }).then(function (r) {
+        avisar('ok', r.nuevo ? 'Depósito «' + r.nombre + '» creado (código ' + r.numero + ').' + (t && !fab ? ' El stock de todo el local sigue en Mercadería → Stock general.' : '')
                              : 'Depósito «' + r.nombre + '» guardado.');
-        delete S.dep[loc];
-        delete S.stock[loc];
+        delete S.dep[fab ? FAB : loc];
+        if (!fab) delete S.stock[loc];
         S.dpMarcar = r.id;
         cerrarVentana();
         if (alCambiar) alCambiar();
@@ -8542,22 +8571,25 @@
     var pd = caja.querySelector('#dfPred');
     if (pd) pd.onclick = function () {
       pd.disabled = true;
-      traerDepositos(d.local_id, true).then(function (ds) {
+      traerDepositos(clave, true).then(function (ds) {
         var v = depPredeterminado(ds), z = caja.querySelector('#dfZona');
         pd.remove();
-        z.innerHTML = '<div class="pos-cartel st-dif dep-pred">Desde ahora las ventas, los cambios y los remitos de ' + esc(bonito(d.local)) + ' van a <b>«' + esc(d.nombre) + '»</b>.' +
+        z.innerHTML = '<div class="pos-cartel st-dif dep-pred">' +
+          (fab ? 'Desde ahora <b>«' + esc(d.nombre) + '»</b> es el depósito predeterminado de la Fábrica: el que se abre primero en Stock y en Inventario.' +
+                 (v ? ' Lo que hay en «' + esc(v.nombre) + '» (' + num(v.unidades) + (Math.abs(v.unidades) === 1 ? ' prenda' : ' prendas') + ') se queda ahí.' : '')
+               : 'Desde ahora las ventas, los cambios y los remitos de ' + esc(bonito(d.local)) + ' van a <b>«' + esc(d.nombre) + '»</b>.' +
           (v ? ' En «' + esc(v.nombre) + '» quedan <b>' + num(v.unidades) + (Math.abs(v.unidades) === 1 ? ' prenda' : ' prendas') + '</b>: si ya pasaste todos los módulos, es lo que no se encontró.' +
-               '<label class="pos-check"><input type="checkbox" id="dfSacar" checked> Que «' + esc(v.nombre) + '» deje de contar para la consulta de stock</label>' : '') +
+               '<label class="pos-check"><input type="checkbox" id="dfSacar" checked> Que «' + esc(v.nombre) + '» deje de contar para la consulta de stock</label>' : '')) +
           '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="dfPredOk">Predeterminar «' + esc(d.nombre) + '»</button></div></div>';
         var ok = z.querySelector('#dfPredOk'), sc = z.querySelector('#dfSacar');
         ok.focus();
         ok.onclick = function () {
           ok.disabled = true;
           llamar('pos_deposito_predeterminar', { p_id: d.id, p_sacar_viejo: !!(sc && sc.checked) }).then(function (r) {
-            avisar('ok', 'Listo: ' + bonito(d.local) + ' vende de «' + r.nombre + '».' +
+            avisar('ok', (fab ? 'Listo: «' + r.nombre + '» es el predeterminado de la Fábrica.' : 'Listo: ' + bonito(d.local) + ' vende de «' + r.nombre + '».') +
                          (r.anterior ? ' En «' + r.anterior + '» quedaron ' + num(r.quedaron) + (Math.abs(r.quedaron) === 1 ? ' prenda.' : ' prendas.') : ''));
-            delete S.dep[d.local_id];
-            delete S.stock[d.local_id];
+            delete S.dep[clave];
+            if (!fab) delete S.stock[d.local_id];
             S.dpMarcar = d.id;
             cerrarVentana();
             if (alCambiar) alCambiar();
@@ -8571,11 +8603,362 @@
       bo.disabled = true;
       llamar('pos_deposito_borrar', { p_id: d.id }).then(function () {
         avisar('ok', 'Depósito «' + d.nombre + '» eliminado.');
-        delete S.dep[d.local_id];
+        delete S.dep[clave];
         cerrarVentana();
         if (alCambiar) alCambiar();
       }).catch(function (e) { bo.disabled = false; errorEn(caja, 'dfError', mensajeDe(e)); });
     };
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     FÁBRICA → DEPÓSITO (SQL 258)
+     Lucas (6/11): "tenés que tener dos funcionalidades: el depósito donde
+     pongo mercadería y una que sea remito para moverla". La Fábrica tiene
+     sus depósitos (sin sucursal), con el stock en las mismas tablas que los
+     locales. Stock es el «Stock talles en columnas» de BlueSoft: un renglón
+     por producto y color, los talles en columnas y la cantidad, con sus
+     filtros (Depósito, Producto, Rubro, Familia, Temporada, Marca, Ocultar
+     sin stock), Por rubro y Por rubro y familia, los totales abajo y el
+     Excel. En BlueSoft las columnas de los talles son posiciones (00 a 06);
+     acá dicen el talle: cada vez que cambia la curva (de 38-48 a S-XXL, por
+     ejemplo) hay un renglón con sus talles, que queda quieto arriba
+     mientras se ven sus productos.
+     ════════════════════════════════════════════════════════════════════ */
+  var SF_VISTAS = [['talles', 'Talles en columnas'], ['rubro', 'Por rubro'], ['familia', 'Por rubro y familia']];
+  var SF_VER = 2500;   // los renglones que se dibujan (el Excel lleva todos)
+  /** Los depósitos de la Fábrica; si no se pueden traer, el error (sin el SQL 258, sin permiso o sin conexión). */
+  function depositosFabrica(forzar) {
+    if (S.dep[FAB] && !forzar) return Promise.resolve(S.dep[FAB]);
+    return llamar('pos_fabrica_depositos').then(function (d) { return (S.dep[FAB] = d || []); },
+      function (e) { if (sinFuncion(e)) S.sin258 = true; throw e; });
+  }
+  /** La curva de un producto: la del catálogo entera si es corta (las bermudas, de 38 a 48: así los del mismo rubro quedan
+      alineados); si es larga, los talles que tiene. Los que no están en el catálogo, al final. */
+  function curvaFab(cod, ts) {
+    var cat = tallesDe(PROD[cod]);
+    return ordenarTalles(unicos((cat.length && cat.length <= 9 ? cat : []).concat(ts)), cod);
+  }
+  function verStockFabrica() {
+    var c = $('cuerpo');
+    var F = S.sfF = S.sfF || { dep: '', q: '', rubro: '', familia: '', temporada: '', marca: '', sin: true, neg: false };
+    var vista = leerJSON('pos_sf_vista', 'talles');
+    if (!SF_VISTAS.some(function (v) { return v[0] === vista; })) vista = 'talles';
+    c.classList.add('lleno');
+    c.innerHTML = cabeza('Stock', 'Lo que hay en cada depósito de la Fábrica: un renglón por producto y color, con los talles en columnas como en BlueSoft. Tocá un número para ver sus movimientos o ajustarlo.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>') +
+      '<div class="pos-filtros">' +
+        campo('', 'Depósito', '<select id="sfDep"><option value="">Cargando…</option></select>') +
+        campo('ancho', 'Producto', '<input type="search" id="sfBuscar" placeholder="Código o nombre" autocomplete="off" spellcheck="false">') +
+        campo('', 'Rubro', '<select id="sfRubro"><option value="">Todos</option></select>') +
+        campo('', 'Familia', '<select id="sfFamilia"><option value="">Todas</option></select>') +
+        campo('', 'Temporada', '<select id="sfTemp"><option value="">Todas</option></select>') +
+        campo('', 'Marca', '<select id="sfMarca"><option value="">Todas</option></select>') +
+        '<label class="pos-check"><input type="checkbox" id="sfSin"' + (F.sin ? ' checked' : '') + '> Ocultar sin stock</label>' +
+        '<label class="pos-check"><input type="checkbox" id="sfNeg"' + (F.neg ? ' checked' : '') + '> Sólo los negativos</label>' +
+      '</div>' +
+      '<nav class="pestanas st-vistas" aria-label="Cómo ver el stock">' + SF_VISTAS.map(function (v) {
+        return '<button type="button" class="pestana" data-vista="' + v[0] + '"' + (v[0] === vista ? ' aria-current="page"' : '') + '>' + v[1] + '</button>';
+      }).join('') + '</nav>' +
+      '<div class="st-zona"><div id="sfLista" class="st-lista"><p class="cargando">Cargando…</p></div><div class="tkl-pie st-pie" id="sfPie"></div></div>';
+    engancharIr(c);
+    $('sfBuscar').value = F.q;
+    var D = null, R = [], pedido = 0, t = null;
+    $('sfDep').onchange = function () { F.dep = this.value; cargar(); };
+    $('sfBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('sfBuscar').value; pintar(); }, 200); };
+    $('sfRubro').onchange = function () { F.rubro = this.value; F.familia = ''; pintarOpciones(); pintar(); };   // la familia es del rubro
+    $('sfFamilia').onchange = function () { F.familia = this.value; pintar(); };
+    $('sfTemp').onchange = function () { F.temporada = this.value; pintar(); };
+    $('sfMarca').onchange = function () { F.marca = this.value; pintar(); };
+    $('sfSin').onchange = function () { F.sin = this.checked; cargar(); };
+    $('sfNeg').onchange = function () { F.neg = this.checked; cargar(); };
+    c.querySelectorAll('.st-vistas .pestana').forEach(function (b) { b.onclick = function () { ponerVista(b.getAttribute('data-vista')); }; });
+    /* Un solo oyente para toda la lista: un número abre la variante; un renglón de Por rubro, sus productos. */
+    $('sfLista').onclick = function (e) {
+      var b = e.target.closest('.sf-n, tr[data-rubro]');
+      if (!b) return;
+      if (b.hasAttribute('data-rubro')) {
+        F.rubro = b.getAttribute('data-rubro');
+        F.familia = b.getAttribute('data-familia') || '';
+        pintarOpciones();
+        ponerVista('talles');
+        return;
+      }
+      var tr = b.closest('tr');
+      abrirVariante(FAB, tr.getAttribute('data-cod'), b.getAttribute('data-t'), tr.getAttribute('data-c'), recargar, F.dep);
+    };
+    $('sfLista').onkeydown = function (e) {
+      var tr = e.key === 'Enter' && e.target.closest('tr[data-rubro]');
+      if (tr) { e.preventDefault(); tr.click(); }
+    };
+    function ponerVista(v) {
+      vista = v;
+      guardarJSON('pos_sf_vista', v);
+      c.querySelectorAll('.st-vistas .pestana').forEach(function (b) {
+        if (b.getAttribute('data-vista') === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      });
+      pintar();
+    }
+    function cartel(html, mal) { $('sfPie').innerHTML = ''; $('sfLista').innerHTML = '<div class="pos-cartel' + (mal ? ' mal' : '') + '">' + html + '</div>'; engancharIr($('sfLista')); }
+    /* Los depósitos: arranca en el predeterminado (o en el que se eligió la última vez). */
+    function traerDeps(forzar) {
+      return depositosFabrica(forzar).then(function (ds) {
+        if (!$('sfDep')) return false;
+        if (!ds.length) { $('sfDep').innerHTML = '<option value="">Ninguno</option>'; cartel('La Fábrica todavía no tiene depósitos. Se crean en <button type="button" class="pos-link" data-ir="depositos">Depósitos</button>.'); return false; }
+        if (!depDe(ds, F.dep)) F.dep = (depPredeterminado(ds) || ds[0]).id;
+        $('sfDep').innerHTML = opciones(ds.map(function (d) { return [d.id, nombreDep(d)]; }), F.dep);
+        return true;
+      }, function (e) { if ($('sfDep')) { $('sfDep').innerHTML = '<option value="">—</option>'; cartel(esc(mensajeDe(e)), true); } return false; });
+    }
+    /* mantener: después de un ajuste (o de actualizar) deja la lista donde estaba. */
+    function cargar(mantener) {
+      var n = ++pedido, z = $('sfLista'), donde = [z.scrollTop, window.scrollY];
+      if (!F.dep) return Promise.resolve();
+      if (!mantener) { z.innerHTML = '<p class="cargando">Cargando…</p>'; z.scrollTop = 0; }
+      return llamar('pos_stock_consulta', { p_local: null, p_deposito: F.dep, p_ocultar_sin: F.sin, p_negativos: F.neg }).then(function (d) {
+        if (n !== pedido || !z.isConnected) return;
+        D = d;
+        R = agrupar(d);
+        pintarOpciones();
+        pintar();
+        if (mantener) { z.scrollTop = donde[0]; window.scrollTo(0, donde[1]); }
+      }).catch(function (e) {
+        if (n !== pedido || !z.isConnected) return;
+        cartel(esc(mensajeDe(e)), true);
+      });
+    }
+    function recargar() { cargar(true); }
+    /* Los renglones de la base (uno por talle) → uno por producto y color, con lo de cada talle y la curva del producto. */
+    function agrupar(d) {
+      var m = {}, filas = [], ts = {};
+      (d.filas || []).forEach(function (f) {   // [local, código, talle, color, cantidad, entradas, salidas, descripción]
+        var k = f[1] + '|' + f[3], r = m[k];
+        if (!r) { r = m[k] = { cod: f[1], col: f[3], desc: f[7], n: {}, total: 0, vars: [] }; filas.push(r); }
+        r.n[f[2]] = (r.n[f[2]] || 0) + f[4];
+        r.total += f[4];
+        r.vars.push(f);
+        if (!r.desc && f[7]) r.desc = f[7];
+        var x = ts[f[1]] || (ts[f[1]] = []);
+        if (x.indexOf(f[2]) < 0) x.push(f[2]);
+      });
+      var pos = {}, cols = {};
+      filas.forEach(function (r, i) { if (!(r.cod in pos)) pos[r.cod] = i; r.curva = curvaFab(r.cod, ts[r.cod]); });
+      Object.keys(ts).forEach(function (cod) { cols[cod] = ordenarColores(filas.filter(function (r) { return r.cod === cod; }).map(function (r) { return r.col; }), cod); });
+      return filas.sort(function (a, b) { return pos[a.cod] - pos[b.cod] || cols[a.cod].indexOf(a.col) - cols[a.cod].indexOf(b.col); });
+    }
+    /* Las opciones de los filtros salen de lo que hay en el depósito (así ninguna da vacío); la familia, la del rubro. */
+    function pintarOpciones() {
+      if (!$('sfRubro')) return;
+      var rub = {}, fam = {}, tem = {}, mar = {};
+      R.forEach(function (r) {
+        var p = PROD[r.cod];
+        if (!p) return;
+        if (p[2]) rub[p[2]] = 1;
+        if (p[7] && (!F.rubro || p[2] === F.rubro)) fam[p[7]] = 1;
+        if (p[8]) tem[p[8]] = 1;
+        if (p[9]) mar[p[9]] = 1;
+      });
+      [[rub, 'rubro'], [fam, 'familia'], [tem, 'temporada'], [mar, 'marca']].forEach(function (x) { if (F[x[1]] && !x[0][F[x[1]]]) x[0][F[x[1]]] = 1; });
+      function op(id, m, actual, todas, orden) {
+        var ks = Object.keys(m).sort(orden || function (a, b) { return a.localeCompare(b, 'es'); });
+        $(id).innerHTML = '<option value="">' + todas + '</option>' + opciones(ks.map(function (k) { return [k, k]; }), actual);
+      }
+      op('sfRubro', rub, F.rubro, 'Todos');
+      op('sfFamilia', fam, F.familia, 'Todas');
+      $('sfFamilia').disabled = !F.rubro;   // como en BlueSoft: sin rubro, la familia no se elige
+      op('sfTemp', tem, F.temporada, 'Todas', function (a, b) { return ordenTemporada(b) - ordenTemporada(a) || a.localeCompare(b, 'es'); });
+      op('sfMarca', mar, F.marca, 'Todas');
+    }
+    function filtrados() {
+      var pal = normal(F.q).split(' ').filter(Boolean), todo = pal.join(' ');
+      return R.filter(function (r) {
+        var p = PROD[r.cod];
+        if ((F.rubro && (!p || p[2] !== F.rubro)) || (F.familia && (!p || p[7] !== F.familia)) ||
+            (F.temporada && (!p || p[8] !== F.temporada)) || (F.marca && (!p || p[9] !== F.marca))) return false;
+        if (!pal.length) return true;
+        var cod = r.cod.toLowerCase(), nom = normal(nombreProd(r.cod, r.desc));
+        return cod.indexOf(todo) === 0 || pal.every(function (w) { return nom.indexOf(w) >= 0 || cod.indexOf(w) === 0; });
+      });
+    }
+    function pintar() {
+      var z = $('sfLista'), dp = depDe(S.dep[FAB], F.dep);
+      if (!z || !D) return;
+      if (!D.cargado) {
+        cartel('<b>Todavía no hay stock en «' + esc(dp ? dp.nombre : 'este depósito') + '».</b> Se carga con un inventario: el Excel del stock de ese depósito en BlueSoft, ' +
+               'con un talle por renglón. <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>');
+        return;
+      }
+      var fs = filtrados();
+      pintarPie(fs);
+      if (!fs.length) {
+        z.innerHTML = '<div class="pos-cartel">' + (F.neg ? 'No hay nada en negativo' : 'No hay stock') + (F.q.trim() ? ' de «' + esc(F.q.trim()) + '»' : '') +
+          ' con esos filtros.' + (F.sin && !F.neg ? ' Para ver también los que están en 0, sacale el tilde a «Ocultar sin stock».' : '') + '</div>';
+        return;
+      }
+      if (vista === 'talles') pintarTalles(fs); else pintarResumen(fs, vista === 'familia');
+    }
+    function pintarTalles(fs) {
+      var z = $('sfLista'), ver = fs.slice(0, SF_VER), ancho = ver.reduce(function (m, r) { return Math.max(m, r.curva.length); }, 1), antes = null, html = '';
+      function vacias(k) { return k > 0 ? '<td class="sf-nada" colspan="' + k + '"></td>' : ''; }
+      ver.forEach(function (r) {
+        var k = r.curva.join(',');
+        if (k !== antes) {   // la curva cambió: un bloque nuevo, con sus talles arriba
+          html += (antes === null ? '' : '</tbody>') + '<tbody><tr class="sf-curva"><td colspan="4"></td>' +
+            r.curva.map(function (tl) { return '<th class="c" scope="col">' + esc(nombreTalle(tl)) + '</th>'; }).join('') + vacias(ancho - r.curva.length) + '<td colspan="4"></td></tr>';
+          antes = k;
+        }
+        var p = PROD[r.cod];
+        html += '<tr data-cod="' + esc(r.cod) + '" data-c="' + esc(r.col) + '"><td><b>' + esc(r.cod) + '</b></td><td class="sf-nom">' + esc(nombreProd(r.cod, r.desc)) + '</td>' +
+          '<td>' + esc(r.col || '—') + '</td><td>' + esc(nombreCol(r.col, r.cod)) + '</td>' +
+          r.curva.map(function (tl) {
+            var n = r.n[tl];
+            if (n == null) return '<td class="c sf-nada"></td>';
+            return '<td class="c"><button type="button" class="sf-n' + (n < 0 ? ' neg' : n === 0 ? ' cero' : '') + '" data-t="' + esc(tl) + '"' +
+              ' aria-label="' + esc(r.cod + ' ' + nombreTalle(tl) + ' ' + nombreCol(r.col, r.cod) + ': ' + n) + '">' + num(n) + '</button></td>';
+          }).join('') + vacias(ancho - r.curva.length) +
+          '<td class="n"><b class="' + (r.total < 0 ? 'st-sale' : '') + '">' + num(r.total) + '</b></td>' +
+          '<td>' + esc(p ? p[2] : '') + '</td><td>' + esc(p ? p[7] : '') + '</td><td>' + esc(p ? p[9] : '') + '</td></tr>';
+      });
+      z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla sf-tabla"><thead><tr><th>Código</th><th>Nombre</th><th>Color</th><th>Descripción color</th>' +
+          '<th class="c" colspan="' + ancho + '">Talles</th><th class="n">Cantidad</th><th>Rubro</th><th>Familia</th><th>Marca</th></tr></thead>' + html + '</tbody></table></div>' +
+        (fs.length > SF_VER ? '<p class="pos-mas">Se ven ' + num(SF_VER) + ' de ' + num(fs.length) + ' renglones: elegí un rubro o una temporada, o bajalo para Excel.</p>' : '') +
+        (D.mas ? '<p class="pos-mas">El depósito tiene más de 60.000 renglones: se ven los primeros.</p>' : '');
+      /* El renglón de los talles queda quieto debajo de los títulos: tan abajo como alto es el título. */
+      var tb = z.querySelector('.sf-tabla'), th = tb && tb.querySelector('thead');
+      if (th) tb.style.setProperty('--sf-cab', th.offsetHeight + 'px');
+    }
+    /* Por rubro (o por rubro y familia): lo de cada uno; tocar uno muestra sus productos con los talles. */
+    function pintarResumen(fs, conFam) {
+      var z = $('sfLista'), G = {}, lista = [], todo = 0;
+      fs.forEach(function (r) {
+        var p = PROD[r.cod], ru = p && p[2] || '', fa = conFam ? (p && p[7] || '') : '', k = ru + '|' + fa;
+        var g = G[k];
+        if (!g) { g = G[k] = { ru: ru, fa: fa, prods: {}, lineas: 0, n: 0, neg: 0 }; lista.push(g); }
+        g.prods[r.cod] = 1;
+        g.lineas++;
+        g.n += r.total;
+        r.vars.forEach(function (f) { if (f[4] < 0) g.neg++; });
+      });
+      lista.forEach(function (g) { todo += Math.max(0, g.n); });
+      lista.sort(function (a, b) {
+        return (a.ru ? 0 : 1) - (b.ru ? 0 : 1) || (conFam ? a.ru.localeCompare(b.ru, 'es') : 0) || b.n - a.n || a.fa.localeCompare(b.fa, 'es');
+      });
+      z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla st-tabla st-rubros"><thead><tr><th>Rubro</th>' + (conFam ? '<th>Familia</th>' : '') +
+          '<th class="n">Productos</th><th class="n">Líneas</th><th class="n">Cantidad</th><th>Del total</th><th class="n">En negativo</th></tr></thead><tbody>' +
+        lista.map(function (g) {
+          var parte = todo ? Math.max(0, g.n) / todo : 0;
+          return '<tr' + (g.ru ? ' data-rubro="' + esc(g.ru) + '"' + (conFam ? ' data-familia="' + esc(g.fa) + '"' : '') + ' tabindex="0" title="Ver los productos"'
+                               : ' class="st-fuera" title="Los códigos que no están en el catálogo no tienen rubro: se buscan por código."') + '>' +
+            '<td><b>' + esc(g.ru || 'Fuera del catálogo') + '</b></td>' + (conFam ? '<td>' + esc(g.fa || '—') + '</td>' : '') +
+            '<td class="n">' + num(Object.keys(g.prods).length) + '</td><td class="n">' + num(g.lineas) + '</td>' +
+            '<td class="n"><b class="' + (g.n < 0 ? 'st-sale' : '') + '">' + num(g.n) + '</b></td>' +
+            '<td class="st-parte"><span class="st-barra"><i style="width:' + Math.round(parte * 1000) / 10 + '%"></i></span>' + porcentaje(parte) + '</td>' +
+            '<td class="n">' + (g.neg ? '<b class="st-sale">' + num(g.neg) + '</b>' : '0') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    /* Abajo, como en BlueSoft: la cantidad total y las líneas de lo filtrado, y el Excel. */
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    function pintarPie(fs) {
+      var n = 0, prods = {}, neg = 0;
+      fs.forEach(function (r) { n += r.total; prods[r.cod] = 1; r.vars.forEach(function (f) { if (f[4] < 0) neg++; }); });
+      $('sfPie').innerHTML = caja('Cantidad total', num(n), 'fuerte') + caja('Líneas', num(fs.length)) + caja('Productos', num(Object.keys(prods).length)) +
+        '<button type="button" class="tk-caja' + (neg ? ' mal' : '') + '" id="sfVerNeg" aria-pressed="' + (F.neg ? 'true' : 'false') + '" title="' +
+          (F.neg ? 'Volver a ver todo' : 'Ver sólo los negativos') + '"><span>En negativo</span><b>' + num(neg) + '</b></button>' +
+        '<button type="button" class="btn btn-sec btn-chico st-excel" id="sfExcel">Bajar para Excel</button>';
+      $('sfVerNeg').onclick = function () { F.neg = !F.neg; $('sfNeg').checked = F.neg; cargar(); };
+      $('sfExcel').onclick = function () { bajar(fs); };
+    }
+    /* El Excel: todo lo filtrado (no sólo lo que se ve), un renglón por talle, como lo lee Inventario para cargarlo. */
+    function bajar(fs) {
+      var dp = depDe(S.dep[FAB], F.dep), filas = [];
+      fs.forEach(function (r) {
+        var p = PROD[r.cod], por = {};
+        r.vars.forEach(function (f) { por[f[2]] = f; });
+        r.curva.forEach(function (tl) {
+          var f = por[tl];
+          if (f) filas.push([dp ? dp.nombre : '', r.cod, nombreProd(r.cod, r.desc), r.col, nombreCol(r.col, r.cod), tl,
+                             f[4], f[5], f[6], p ? p[2] : '', p ? p[7] : '', p ? p[8] : '', p ? p[9] : '']);
+        });
+      });
+      if (!filas.length) { avisar('err', 'No hay nada para bajar con esos filtros.'); return; }
+      bajarCsv('stock-fabrica-' + (dp ? normal(dp.nombre).split(/[^a-z0-9]+/).filter(Boolean).join('-') : 'deposito') + '-' + Interfaz.fecha.hoy() + '.csv',
+               ['Depósito', 'Código', 'Nombre', 'Color', 'Descripción color', 'Talle', 'Cantidad', 'Entraron', 'Salieron', 'Rubro', 'Familia', 'Temporada', 'Marca'], filas);
+    }
+    traerDeps().then(function (ok) { if (ok) cargar(); });
+    /* Cuando llegan los productos del catálogo (los rubros, las familias, las curvas), se vuelve a dibujar. */
+    (S.artPromesa || Promise.resolve()).then(function () { if (D && $('sfLista')) { R = agrupar(D); pintarOpciones(); pintar(); } }, function () {});
+    actualizable(function () { return traerDeps(true).then(function (ok) { if (ok) return cargar(true); }); });
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var b = $('sfBuscar'); if (b) b.focus(); }, 0);
+  }
+
+  /** Los depósitos de la Fábrica, como los de cada sucursal (los mismos campos y la misma ficha). */
+  function verDepositosFabrica() {
+    var c = $('cuerpo'), F = S.dfF = S.dfF || { q: '', activos: true };
+    c.innerHTML = cabeza('Depósitos', 'Dónde se guarda la mercadería en la Fábrica. El predeterminado es el que se abre primero en Stock y en Inventario. Tocá uno para verlo o cambiarlo.',
+        '<button type="button" class="btn btn-sec btn-chico" id="depBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="depNuevo">Nuevo depósito</button>') +
+      '<div class="pos-filtros">' +
+        campo('ancho', 'Filtrar', '<input type="search" id="depBuscar" placeholder="Nombre o código" autocomplete="off" spellcheck="false">') +
+        '<label class="pos-check"><input type="checkbox" id="depActivos"' + (F.activos ? ' checked' : '') + '> Activos</label>' +
+      '</div>' +
+      '<div id="depLista"><p class="cargando">Cargando…</p></div>';
+    $('depBuscar').value = F.q;
+    var todos = [], filas = [], pedido = 0, t = null;
+    $('depBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('depBuscar').value; pintar(); }, 150); };
+    $('depActivos').onchange = function () { F.activos = this.checked; pintar(); };
+    $('depNuevo').onclick = function () { abrirDeposito(null, FAB, cargar); };
+    function cargar() {
+      var n = ++pedido;
+      $('depLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('depBajar').disabled = true;
+      return depositosFabrica(true).then(function (d) {
+        if (n !== pedido || !$('depLista')) return;
+        todos = d;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('depLista')) return;
+        $('depNuevo').disabled = !!S.sin258;
+        $('depLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+      });
+    }
+    function pintar() {
+      var q = normal(F.q);
+      filas = todos.filter(function (d) { return (!F.activos || d.activo) && (!q || normal(d.nombre).indexOf(q) >= 0 || String(d.numero) === q); });
+      $('depBajar').disabled = !filas.length;
+      if (!filas.length) {
+        $('depLista').innerHTML = '<div class="pos-cartel">' + (todos.length ? 'Ningún depósito con ese filtro.' : 'La Fábrica todavía no tiene depósitos.') + '</div>';
+        return;
+      }
+      $('depLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla dep-tabla"><thead><tr><th>Código</th><th>Descripción</th>' +
+          '<th class="n">Unidades</th><th>Estado</th><th>Se creó</th><th><span class="sr">Stock</span></th></tr></thead><tbody>' +
+        filas.map(function (d, i) {
+          var cl = [d.activo ? '' : 'dep-inactivo', d.id === S.dpMarcar ? 'recien' : ''].filter(Boolean).join(' ');
+          return '<tr data-dep="' + i + '" tabindex="0"' + (cl ? ' class="' + cl + '"' : '') + '><td><b>' + esc(d.numero) + '</b></td><td><b>' + esc(d.nombre) + '</b></td>' +
+            '<td class="n">' + num(d.unidades) + (d.negativos ? '<small class="st-chico st-sale">' + num(d.negativos) + (d.negativos === 1 ? ' renglón' : ' renglones') + ' en negativo</small>' : '') + '</td>' +
+            '<td class="dep-est">' + pillsDep(d) + '</td><td>' + esc(fechaHora(d.creado_en)) + (d.creado_nombre ? '<small class="st-chico">' + esc(d.creado_nombre) + '</small>' : '') + '</td>' +
+            '<td class="pos-acc"><button type="button" class="pos-link" data-stock="' + i + '">Ver el stock</button></td></tr>';
+        }).join('') + '</tbody></table></div>';
+      $('depLista').querySelectorAll('tr[data-dep]').forEach(function (tr) {
+        var d = filas[Number(tr.getAttribute('data-dep'))];
+        tr.onclick = function (e) {
+          if (e.target.closest('[data-stock]')) { S.sfF = Object.assign(S.sfF || { q: '', rubro: '', familia: '', temporada: '', marca: '', sin: true, neg: false }, { dep: d.id }); ir('stock'); return; }
+          abrirDeposito(d, FAB, cargar);
+        };
+        tr.onkeydown = function (e) { if (e.key === 'Enter' && e.target === tr) { e.preventDefault(); abrirDeposito(d, FAB, cargar); } };
+      });
+      var m = $('depLista').querySelector('tr.recien');
+      if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
+      S.dpMarcar = null;
+    }
+    $('depBajar').onclick = function () {
+      bajarCsv('Depósitos de la Fábrica ' + Interfaz.fecha.hoy() + '.csv',
+        ['Código', 'Descripción', 'Unidades', 'Renglones', 'En negativo', 'Predeterminado', 'Activo', 'Se creó', 'Lo creó'],
+        filas.map(function (d) {
+          return [d.numero, d.nombre, Number(d.unidades) || 0, Number(d.renglones) || 0, Number(d.negativos) || 0,
+                  d.predeterminado ? 'Sí' : 'No', d.activo ? 'Sí' : 'No', fechaHora(d.creado_en), d.creado_nombre || ''];
+        }));
+    };
+    cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -10656,35 +11039,53 @@
      lista reemplaza lo que dice el sistema y queda anotado.
      ════════════════════════════════════════════════════════════════════ */
   function verInventario() {
-    var c = $('cuerpo'), l = localMio(S.invLocal) || localInicial();
-    S.invLocal = l.id;
-    c.innerHTML = cabeza('Inventario', 'Lo que hay en una sucursal, contado. La primera vez, el Excel de «Consulta de stock» de BlueSoft; después, el inventario de cada seis meses. Lo de la lista reemplaza lo que dice el sistema.',
+    /* SQL 258: en la Fábrica, en uno de sus depósitos (la sucursal es «Fábrica», fija, y el depósito está siempre a la vista). */
+    var fab = MODO === 'fabrica';
+    var c = $('cuerpo'), l = fab ? null : localMio(S.invLocal) || localInicial();
+    if (!fab) S.invLocal = l.id;
+    c.innerHTML = cabeza('Inventario', fab ? 'Lo que hay en un depósito de la Fábrica, contado. La primera vez, el Excel del stock de ese depósito en BlueSoft; después, cada vez que se cuenta. Lo de la lista reemplaza lo que dice el sistema.'
+                                           : 'Lo que hay en una sucursal, contado. La primera vez, el Excel de «Consulta de stock» de BlueSoft; después, el inventario de cada seis meses. Lo de la lista reemplaza lo que dice el sistema.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
-      '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 1</b><span>La sucursal y la lista</span></div>' +
-        '<div class="cj-fila">' + campo('', 'Sucursal', '<select id="invLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
+      '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 1</b><span>' + (fab ? 'El depósito y la lista' : 'La sucursal y la lista') + '</span></div>' +
+        '<div class="cj-fila">' + campo('', 'Sucursal', fab ? '<select id="invLocal" disabled><option value="' + FAB + '">Fábrica</option></select>'
+                                                            : '<select id="invLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
           '<div id="invDepZona" class="st-dep-zona"></div>' +
           '<label class="btn btn-sec btn-chico">Elegir el Excel…<input type="file" id="invArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
           '<button type="button" class="btn btn-sec btn-chico" id="invPegar">Pegar las columnas…</button>' +
           '<span class="pos-ayuda" id="invNombre"></span></div>' +
-        '<p class="pos-ayuda">Con las columnas Código, Talle, Color y Cantidad, como «Consulta de stock» de BlueSoft exportada de una sola sucursal. Los colores, con la sigla (NE) o el nombre (Negro).</p></div>' +
+        '<p class="pos-ayuda">' + (fab ? 'Con las columnas Código, Talle, Color y Cantidad: un talle por renglón, de un solo depósito.'
+                                      : 'Con las columnas Código, Talle, Color y Cantidad, como «Consulta de stock» de BlueSoft exportada de una sola sucursal.') +
+          ' Los colores, con la sigla (NE) o el nombre (Negro).</p></div>' +
       '<div id="invPrevia"></div>' +
       '<h3 class="st-tit">Cargas anteriores</h3><div id="invHist"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
     $('invLocal').onchange = function () { S.invLocal = this.value; S.invDep = ''; depInv().then(function () { if (S.inv) previa(); }); };
     /* SQL 193: el depósito donde va el inventario (sin elegir, el predeterminado). Con uno solo, no se pregunta. */
     function depInv() {
-      var loc = $('invLocal').value;
-      return traerDepositos(loc).then(function (ds) {
+      var loc = $('invLocal').value, porque = '';
+      return (fab ? depositosFabrica().catch(function (e) { porque = mensajeDe(e); return []; }) : traerDepositos(loc)).then(function (ds) {
         var z = $('invDepZona');
         if (!z || $('invLocal').value !== loc) return;
         var act = ds.filter(function (d) { return d.activo; });
-        if (act.length < 2) { z.innerHTML = ''; S.invDep = ''; return; }
+        if (fab && !act.length) {   // SQL 258: sin depósito no hay dónde cargarlo
+          S.invDep = '';
+          z.innerHTML = campo('', 'Depósito', '<select disabled><option>Ninguno</option></select>');
+          $('invPrevia').innerHTML = '<div class="pos-cartel mal">' + esc(porque || 'La Fábrica no tiene depósitos activos: se crean en Depósitos.') + '</div>';
+          return;
+        }
+        if (act.length < 2 && !fab) { z.innerHTML = ''; S.invDep = ''; return; }
         if (!depDe(act, S.invDep)) S.invDep = (depPredeterminado(act) || act[0]).id;
         z.innerHTML = campo('', 'Depósito', '<select id="invDep">' + opciones(act.map(function (d) { return [d.id, nombreDep(d)]; }), S.invDep) + '</select>');
         $('invDep').onchange = function () { S.invDep = this.value; if (S.inv) previa(); };
       });
     }
     function nombreDepInv() { var d = S.invDep && depDe(S.dep[$('invLocal').value], S.invDep); return d ? ' · «' + d.nombre + '»' : ''; }
+    /** Adónde va: «Rivadavia · «Verano 2027»» o, en la Fábrica, «el depósito X». */
+    function dondeInv(loc) {
+      if (!fab) return nombreLocal(localDe(loc)) + nombreDepInv();
+      var d = S.invDep && depDe(S.dep[FAB], S.invDep);
+      return d ? '«' + d.nombre + '»' : 'el depósito';
+    }
     $('invArchivo').onchange = function () {
       var f = this.files && this.files[0];
       this.value = '';
@@ -10708,8 +11109,10 @@
     }
     function previa() {
       var I = S.inv, loc = $('invLocal').value, z = $('invPrevia');
+      /* SQL 258: en la Fábrica, siempre con su depósito (sin sucursal ni depósito sería «Todas» las sucursales). */
+      if (fab && !S.invDep) { z.innerHTML = '<div class="pos-cartel mal">Elegí el depósito de la Fábrica.</div>'; return; }
       z.innerHTML = '<p class="cargando">Comparando con lo que dice el sistema…</p>';
-      llamar('pos_stock_consulta', Object.assign({ p_local: loc, p_ocultar_sin: false }, S.invDep ? { p_deposito: S.invDep } : {})).then(function (d) {
+      llamar('pos_stock_consulta', Object.assign({ p_local: fab ? null : loc, p_ocultar_sin: false }, S.invDep ? { p_deposito: S.invDep } : {})).then(function (d) {
         if (S.inv !== I || !$('invPrevia')) return;
         var ahora = {}, nuevo = {}, desc = {}, filas = [];
         (d.filas || []).forEach(function (f) { ahora[claveVar(f[1], f[2], f[3])] = f[4]; desc[f[1]] = desc[f[1]] || f[7]; });
@@ -10727,8 +11130,8 @@
             '<div class="pos-kpi"><span>Cambian</span><b>' + num(filas.length) + '</b></div>' +
             '<div class="pos-kpi"><span>Fuera del catálogo</span><b>' + num(fuera.length) + '</b></div></div>' +
           (I.errores.length ? '<div class="pos-cartel mal">' + (I.errores.length === 1 ? 'No se carga 1 renglón' : 'No se cargan ' + num(I.errores.length) + ' renglones') + ': ' + esc(I.errores.slice(0, 6).join(' ')) + (I.errores.length > 6 ? '…' : '') + '</div>' : '') +
-          (!d.cargado ? '<div class="pos-cartel">' + esc(nombreLocal(localDe(loc))) + ' todavía no tiene stock: ésta es la carga inicial.</div>' : '') +
-          (aCero.length ? '<label class="pos-check"><input type="checkbox" id="invResto"' + (I.resto ? ' checked' : '') + '> Es el inventario completo de la sucursal: lo que no está en la lista queda en 0 (' +
+          (!d.cargado ? '<div class="pos-cartel">' + esc(fab ? dondeInv(loc).replace(/^el/, 'El') : nombreLocal(localDe(loc))) + ' todavía no tiene stock: ésta es la carga inicial.</div>' : '') +
+          (aCero.length ? '<label class="pos-check"><input type="checkbox" id="invResto"' + (I.resto ? ' checked' : '') + '> Es el inventario completo ' + (fab ? 'del depósito' : 'de la sucursal') + ': lo que no está en la lista queda en 0 (' +
             num(aCero.length) + (aCero.length === 1 ? ' variante' : ' variantes') + ')</label>' : '') +
           (filas.length ? '<div class="pos-marco-tabla inv-tabla"><table class="pos-tabla"><thead><tr><th>Código</th><th>Producto</th><th class="c">Talle</th><th>Color</th>' +
               '<th class="n">Dice el sistema</th><th class="n">Inventario</th><th class="n">Diferencia</th></tr></thead><tbody>' +
@@ -10739,9 +11142,9 @@
                 '<td class="n"><b class="' + (dif < 0 ? 'st-sale' : 'st-entra') + '">' + (dif > 0 ? '+' : '−') + miles(Math.abs(dif)) + '</b></td></tr>';
             }).join('') + '</tbody></table></div>' + (filas.length > 200 ? '<p class="pos-mas">Se ven 200 de ' + num(filas.length) + ' cambios.</p>' : '')
             : '<div class="pos-cartel">Todo coincide con lo que dice el sistema: no cambia nada.</div>') +
-          (d.mas ? '<p class="pos-mas">La sucursal tiene más de 60.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
+          (d.mas ? '<p class="pos-mas">' + (fab ? 'El depósito' : 'La sucursal') + ' tiene más de 60.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
           '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="invOtro">Elegir otro</button>' +
-            '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(nombreLocal(localDe(loc)) + nombreDepInv()) + '</button></div></div>';
+            '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(dondeInv(loc)) + '</button></div></div>';
         var rs = $('invResto');
         if (rs) rs.onchange = function () { I.resto = rs.checked; previa(); };
         $('invOtro').onclick = function () { S.inv = null; $('invPrevia').innerHTML = ''; $('invNombre').textContent = ''; };
@@ -10749,8 +11152,8 @@
       }).catch(function (e) { if ($('invPrevia')) $('invPrevia').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     function cargarInv(loc, nuevo, bt) {
-      var I = S.inv, ln = localDe(loc);
-      if (!confirm('¿Cargar el inventario en ' + nombreLocal(ln) + nombreDepInv() + '? Lo de la lista reemplaza lo que dice el sistema' + (I.resto ? ' y lo que no está queda en 0' : '') +
+      var I = S.inv, donde = dondeInv(loc);
+      if (!confirm('¿Cargar el inventario en ' + donde + '? Lo de la lista reemplaza lo que dice el sistema' + (I.resto ? ' y lo que no está queda en 0' : '') +
                    '. Queda anotado quién lo cargó; no se deshace solo.')) return;
       var desc = {};
       I.items.forEach(function (x) { if (x.descripcion) desc[x.codigo] = x.descripcion; });
@@ -10758,13 +11161,14 @@
       var txt = bt.textContent;
       bt.disabled = true;
       bt.textContent = 'Cargando…';
-      var pi = { local_id: loc, items: items, resto_a_cero: I.resto, origen: I.origen, clave: I.clave };
+      var pi = { local_id: fab ? null : loc, items: items, resto_a_cero: I.resto, origen: I.origen, clave: I.clave };   // SQL 258: la Fábrica, sin sucursal
       if (S.invDep) pi.deposito_id = S.invDep;   // SQL 193 (sin elegir, la base usa el predeterminado)
       llamar('pos_inventario_cargar', { p: pi }).then(function (r) {
         delete S.stock[loc];
         delete S.dep[loc];
+        if (fab && S.sfF && S.invDep) S.sfF.dep = S.invDep;   // el Stock de la Fábrica se abre en el depósito que se acaba de cargar
         S.inv = null;
-        avisar('ok', 'Inventario cargado en ' + nombreLocal(ln) + ': ' + num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
+        avisar('ok', 'Inventario cargado en ' + donde + ': ' + num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
                      (r.cambiaron === 1 ? ' cambió.' : ' cambiaron.') + (r.ya ? ' (Ya estaba cargado: no se duplicó.)' : ''));
         if (!$('invPrevia')) return;
         $('invPrevia').innerHTML = '';
@@ -10773,14 +11177,14 @@
       }).catch(function (e) { bt.disabled = false; bt.textContent = txt; avisar('err', esDeRed(e) ? 'No se pudo cargar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e)); });
     }
     function historial() {
-      llamar('pos_inventarios', { p_local: null }).then(function (h) {
+      llamar(fab ? 'pos_fabrica_inventarios' : 'pos_inventarios', fab ? {} : { p_local: null }).then(function (h) {   // SQL 258: los de la Fábrica, aparte
         if (!$('invHist')) return;
         var conDep = h.some(function (x) { return x.deposito; });   // SQL 193
-        $('invHist').innerHTML = !h.length ? '<div class="pos-cartel">Todavía no se cargó ningún inventario.</div>' :
-          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th>' + (conDep ? '<th>Depósito</th>' : '') + '<th>Quién</th><th>De dónde</th><th class="n">Renglones</th>' +
+        $('invHist').innerHTML = !h.length ? '<div class="pos-cartel">Todavía no se cargó ningún inventario' + (fab ? ' en la Fábrica' : '') + '.</div>' :
+          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th>' + (fab ? '' : '<th>Sucursal</th>') + (conDep ? '<th>Depósito</th>' : '') + '<th>Quién</th><th>De dónde</th><th class="n">Renglones</th>' +
             '<th class="n">Unidades</th><th class="n">Cambiaron</th><th>Completo</th></tr></thead><tbody>' +
           h.map(function (x) {
-            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(bonito(x.local)) + '</td>' + (conDep ? '<td>' + esc(x.deposito || '—') + '</td>' : '') + '<td>' + esc(x.persona || '—') + '</td><td>' + esc(x.origen || '—') + '</td>' +
+            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td>' + (fab ? '' : '<td>' + esc(bonito(x.local)) + '</td>') + (conDep ? '<td>' + esc(x.deposito || '—') + '</td>' : '') + '<td>' + esc(x.persona || '—') + '</td><td>' + esc(x.origen || '—') + '</td>' +
               '<td class="n">' + num(x.lineas) + '</td><td class="n">' + num(x.unidades) + '</td><td class="n">' + num(x.cambiaron) + '</td><td>' + (x.resto_a_cero ? 'Sí (el resto a 0)' : '—') + '</td></tr>';
           }).join('') + '</tbody></table></div>';
       }).catch(function (e) { if ($('invHist')) $('invHist').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });

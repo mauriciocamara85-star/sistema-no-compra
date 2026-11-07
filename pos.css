@@ -846,6 +846,28 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .st-pie .tk-caja[aria-pressed="true"] { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 .st-pie .st-excel { flex: none; align-self: center; }
 
+/* El stock de la Fábrica (SQL 258): el «Stock talles en columnas» de BlueSoft, denso como el suyo (un renglón por
+   producto y color). Cada curva arranca con el renglón de sus talles; en la compu queda quieto debajo de los títulos
+   mientras se ven sus productos, y el de la curva que sigue lo tapa al llegar. */
+.sf-tabla { font-size: 13px; }
+.sf-tabla th, .sf-tabla td { padding: 4px 8px; white-space: nowrap; }
+.sf-tabla .sf-nom { white-space: normal; min-width: 130px; }
+.sf-tabla td.c, .sf-tabla th.c { min-width: 40px; padding-left: 3px; padding-right: 3px; text-align: center; }
+.sf-tabla tr.sf-curva > * { padding-top: 5px; padding-bottom: 5px; background: var(--surface-2); font: 700 11.5px var(--sans); color: var(--txt-2); border-bottom: 1px solid var(--line); }
+.sf-tabla tbody + tbody tr.sf-curva > * { border-top: 2px solid var(--line-alta); }
+.sf-tabla tbody tr:not(.sf-curva):hover td { background: var(--surface-2); }
+.sf-n {
+  min-width: 34px; padding: 2px 5px; border: 1px solid transparent; border-radius: 6px; background: none;
+  font: 700 13px var(--sans); font-variant-numeric: tabular-nums; color: var(--txt); cursor: pointer;
+}
+.sf-n:hover { border-color: var(--line-alta); background: var(--surface); }
+.sf-n.cero { color: var(--txt-3); font-weight: 600; }
+.sf-n.neg { background: var(--bad-soft); color: var(--bad-txt); }
+@media (min-width: 1000px) {
+  .st-lista .sf-tabla thead th { z-index: 3; }
+  .st-lista .sf-tabla tr.sf-curva > * { position: sticky; top: var(--sf-cab, 31px); z-index: 2; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--line); }
+}
+
 /* La grilla para escribir cantidades (la recepción y el remito nuevo). */
 .pos .st-grilla input.rc-in {
   width: 56px; min-height: 0; padding: 5px 4px; text-align: center;
