@@ -1086,6 +1086,9 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 /* En el celular, los dos botones grandes arriba de la lista, y sin «Por vendedor» (está en Ventas por vendedor). */
 @media (max-width: 999px) { .tkl-panel { order: -1; } .tkl-vend-caja { display: none; } }
 .tkl .pos-tabla td, .tkl .pos-tabla th { padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+/* Dos formas de pago y la nota de crédito: en dos renglones sólo si no entran (en 1366), así se ven el Total y ARCA. */
+.tkl .pos-tabla td.tk-dos { white-space: normal; line-height: 1.25; }
+.tk-nw { white-space: nowrap; }
 /* Los números centrados (Referencia, Cant.) con las cifras del mismo ancho. */
 .tk-lista td.c { font-variant-numeric: tabular-nums; }
 /* El cliente, cortado con "…" si es largo (en una celda, max-width no corta: va en un span). */
@@ -1492,6 +1495,8 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 /* La nota de crédito resta: los importes en rojo, como el negativo que es. */
 .pos-tabla.iv-tabla tr.iv-nc td.n { color: var(--bad-txt); }
 .iv-anula { font-size: 11.5px; font-weight: 500; color: var(--txt-3); }
+/* SQL 260: igual en el detalle de un renglón del cierre (la nota o la anulación de la X) y en Tickets (la nota, con su número). */
+.pos-tabla tr.cj-anula td.n, .pos-tabla tr.tk-nc td.n, .pos-tabla tr.tk-nc td:nth-child(2) b { color: var(--bad-txt); }
 
 /* ── SQL 259: los remitos de la fábrica («Pendiente de envío», Enviar, imprimir) y Transportes ── */
 /* La lista: la casilla para elegir, y abajo del local, el transporte y los bultos. */

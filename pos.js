@@ -2883,7 +2883,7 @@
       var vv = dentro.querySelector('#tkVolver');
       if (vv) vv.onclick = volver;
       var vn = dentro.querySelector('#tkVerNota');
-      if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar); };
+      if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar, false, volver); };   // SQL 260: desde el cierre, vuelve a la lista
       var nb = dentro.querySelector('#tkNotaBtn');
       if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
       var du = dentro.querySelector('#tkDuplicar');
@@ -3124,8 +3124,9 @@
     };
   }
 
-  /* Una nota de crédito guardada (id: el de la venta que anula). recien: la que se acaba de hacer (lo que sigue es rehacer la venta). */
-  function abrirNota(id, alCambiar, recien) {
+  /* Una nota de crédito guardada (id: el de la venta que anula). recien: la que se acaba de hacer (lo que sigue es rehacer la venta).
+     volver (SQL 260): abierta desde el detalle de un renglón del cierre, «‹ Volver» a esa lista. */
+  function abrirNota(id, alCambiar, recien, volver) {
     var caja = ventana('<h3 id="posVentTit">Nota de crédito</h3><p class="cargando">Cargando…</p>', true);
     var dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_venta', { p_id: id }).then(function (t) {
@@ -3140,8 +3141,12 @@
         '<p style="font-size:14px;margin:10px 0 0"><b>Motivo:</b> ' + esc(n.motivo) + '</p>' +
         '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="ncTicket">Ver el ticket ' + esc(ref(t)) + '</button>' +
           (dup ? '<button type="button" class="btn ' + (recien ? 'btn-pri' : 'btn-sec') + ' btn-chico" id="ncDuplicar">Hacer la venta de nuevo</button>' : '') +
+          (volver ? '<button type="button" class="btn btn-sec btn-chico" id="ncAtras">‹ Volver</button>' : '') +
           '<button type="button" class="btn ' + (recien && dup ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
-      dentro.querySelector('#ncTicket').onclick = function () { abrirTicket(t.id, alCambiar); };
+      /* Desde el cierre, el ticket también vuelve a la lista. */
+      dentro.querySelector('#ncTicket').onclick = function () { abrirTicket(t.id, alCambiar, volver); };
+      var at = dentro.querySelector('#ncAtras');
+      if (at) at.onclick = volver;
       var d = dentro.querySelector('#ncDuplicar');
       if (d) d.onclick = function () { duplicarVenta(t); };
     }).catch(function (e) {
@@ -3331,7 +3336,8 @@
         : 'Hay ' + nc + ' ventas hechas sin internet que todavía no llegaron a la base: no están en esta lista.') +
         ' Se mandan solas cuando vuelve internet.</span> <button type="button" class="pos-link" id="tkVerCola">Ver</button></div>';
       function verCola() { var b = $('tkVerCola'); if (b) b.onclick = abrirCola; }
-      if (!d.filas || !d.filas.length) {
+      var notas = d.notas || [];   // SQL 260: las notas de crédito del período, como renglones propios
+      if ((!d.filas || !d.filas.length) && !notas.length) {
         $('tkLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
         verCola();
         return;
@@ -3341,30 +3347,56 @@
          largo (Fecha, Sucursal, Vendedor, Cliente) a la izquierda, y el Total a la derecha (la plata, por la última cifra). */
       $('tkLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla tk-lista"><thead><tr><th>Fecha</th><th class="c">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
         '<th>Cliente</th><th class="c">Comprobante</th><th class="c">Forma de pago</th><th class="c">Estado</th><th class="c">Cant.</th><th class="n">Total</th><th class="c">ARCA</th></tr></thead><tbody>' +
-        d.filas.map(function (f) {
+        (d.filas || []).map(function (f) {
           var an = f.estado === 'anulada', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
-          return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="c">' + esc(refCorta(f)) + '</td>' +
+          return { fecha: f.fecha, h: '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="c">' + esc(refCorta(f)) + '</td>' +
             '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
               '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
             '<td class="c">' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
-            '<td class="c">' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
+            '<td class="c tk-dos">' + mediosTk(f.medios) + '</td>' +
             /* SQL 205: la anulada con una nota de crédito dice cuál. */
             '<td class="c">' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
                 esc(refNota({ numero: f.nc, prueba: f.prueba })) + '</span>' : an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="c">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
             (f.letra === 'X' || f.prueba ? '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
-              : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
-        }).join('') + '</tbody></table></div>' +
+              : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>' };
+        }).concat(notas.map(function (n) { return { fecha: n.fecha, h: filaNotaTk(n) }; }))
+          .sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); })
+          .map(function (x) { return x.h; }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
       verCola();
-      $('tkLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
-        tr.onclick = function () { abrirTicket(tr.getAttribute('data-ticket'), cargar); };
+      $('tkLista').querySelectorAll('tr[data-ticket], tr[data-nota]').forEach(function (tr) {
+        tr.onclick = function () {
+          var nota = tr.getAttribute('data-nota');
+          if (nota) abrirNota(nota, cargar); else abrirTicket(tr.getAttribute('data-ticket'), cargar);
+        };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
       /* La venta que se acaba de guardar con "Guardar": marcada, para encontrarla de un vistazo. */
       var nueva = S.marcar && $('tkLista').querySelector('tr[data-ticket="' + S.marcar + '"]');
       S.marcar = null;
       if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
+    }
+    /* SQL 260 (Mauricio, 7/11, como BlueSoft): la nota de crédito es un renglón propio, a su hora, en rojo y restando, con el
+       ticket que anula. No suma en los totales de abajo: la venta anulada ya no cuenta. Tocarla abre la nota. */
+    /* Mauricio (6/11): "prefiero tenerlo fijo que entre todo". En 1366 no entraba la venta con dos formas de pago (se
+       cortaba ARCA) y menos la nota de crédito (se cortaba el Total): esas dos celdas, sólo si hace falta, van en dos
+       renglones («Efectivo +» / «Mercado Pago», «Nota de» / «crédito B»); en una pantalla grande, en uno. */
+    function mediosTk(ms) {
+      ms = (ms || []).map(function (m) { return MEDIOS_VENTA[m] || m; });
+      return ms.length ? ms.map(function (x, i) { return '<span class="tk-nw">' + esc(x) + (i < ms.length - 1 ? ' +' : '') + '</span>'; }).join(' ') : '—';
+    }
+    function filaNotaTk(n) {
+      var anula = refEnCaja({ serie: n.venta_serie, letra: n.letra, numero: n.venta_numero });
+      return '<tr data-nota="' + esc(n.venta_id) + '" tabindex="0" class="tk-nc' + (n.prueba ? ' prueba' : '') + '"><td>' + esc(fechaHora(n.fecha)) + '</td>' +
+        '<td class="c"><b>' + esc(refNota(n)) + '</b></td><td>' + esc(bonito(n.local)) + '</td><td>' + esc(n.vendedor) + '</td>' +
+        '<td class="tk-cli">' + (n.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') + '<span class="tk-cli-n">' + esc(n.cliente) + '</span></td>' +
+        '<td class="c tk-dos"><span class="tk-nw">Nota de</span> <span class="tk-nw">crédito ' + esc(n.letra) + '</span></td>' +
+        '<td class="c tk-dos">' + mediosTk(n.medios) + '</td>' +
+        '<td class="c"><span class="pill pill-bad" title="La nota de crédito ' + esc(refNota(n)) + ' anula el ticket ' + esc(anula) + '">Anula ' + esc(anula) + '</span></td>' +
+        '<td class="c">' + n.cantidad + '</td><td class="n"><b>' + plata(-cent(n.total)) + '</b></td>' +
+        (n.prueba ? '<td class="apagado c" title="Es una prueba">No va</td>'
+          : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (n.cae ? 'Con CAE' : '—') + '</td>') + '</tr>';
     }
     /* SQL 212: cuando llegan las ventas hechas sin internet, la lista se vuelve a traer. */
     S.recargar = function () { if (S.vista === 'tickets' && $('tkLista')) cargar(); };
@@ -5399,8 +5431,8 @@
           (ni ? ' (' + ni + ')' : '') + '</span><b>' + p(x.otros_ingresos) + '</b></button>' +
         filaRes('Saldo final en efectivo', k ? p(k.esperado) : vista ? plata(esperadoHoy()) : OCULTO, 'barra') +
         /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
-        '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
-          (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
+        '<p class="cj-res-pie">' + enLista([x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets')].concat(anuladasCaja(d.detalle),   // SQL 260: «y 1 nota de crédito»
+          [nc ? nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : ''])) +
           (cent((d.ventas || {}).giftcard || 0) ? '. Pagado con gift card: ' + p(d.ventas.giftcard) + ', ya sumado en las ventas' : '') +   // SQL 200: no es efectivo
           (conRet ? '. Descuentos: ' + p(x.descuentos) + ', ya restados de las ventas.</p>' : '. Los descuentos ya están restados de las ventas.</p>');
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
@@ -6119,6 +6151,13 @@
     modo: ['Ventas MODO', 'con MODO'], go_cuotas: ['Ventas Go Cuotas', 'con Go Cuotas'], giftcard: ['Ventas Gift card', 'con gift card'],
     total: ['Ventas totales del día', ''], descuentos: ['Descuentos', 'con descuento'], cambios: ['Cobrado en cambios', '']
   };
+  /** «a», «a y b», «a, b y c» (lo vacío no cuenta). */
+  function enLista(xs) { xs = xs.filter(Boolean); return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1] : xs[0] || ''; }
+  /** SQL 260: las anuladas que entran en una caja o en un cierre, para el pie: «1 nota de crédito», «2 ventas anuladas» (la X). */
+  function anuladasCaja(det) {
+    var an = (det && det.anuladas) || [], n = an.filter(function (a) { return a.nc; }).length, x = an.length - n;
+    return [n ? n + (n === 1 ? ' nota de crédito' : ' notas de crédito') : '', x ? x + (x === 1 ? ' venta anulada' : ' ventas anuladas') : ''];
+  }
   /** El renglón de los resultados: con el detalle (SQL 246), un botón que lo abre; sin él, el renglón fijo de siempre. */
   function filaDetCaja(con, que, lbl, valor, cls) {
     if (!con) return filaRes(lbl, valor, cls);
@@ -6161,39 +6200,70 @@
         if (g.medio === que) f.push(con(base, { det: ['diferencia de un cambio', detPagoCaja(g)].filter(Boolean).join(' · '), monto: g.monto }));
       });
     });
+    /* SQL 260: las anuladas antes del cierre, como en BlueSoft (Mauricio, 7/11): la venta (+) y su nota de crédito (la X,
+       su anulación) (−), cada una a su hora. Suman $0: el renglón no cambia, pero la anulación se ve. */
+    (det.anuladas || []).forEach(function (a) {
+      var n = a.nc || null, r = refEnCaja(a), quien = n ? n.hizo : a.anulada_por, por = n ? n.motivo : a.motivo;
+      var venta = { tipo: 'v', id: a.id, ref: r, tit: (LETRAS[a.letra] || a.letra) + ' ' + ref(a), fecha: a.fecha, vendedor: a.vendedor, cliente: a.cliente,
+                    par: 'venta', pill: n ? 'Anulada · ' + refNota(n) : 'Anulada' };
+      var anula = { tipo: n ? 'n' : 'v', id: a.id, ref: n ? refNota(n) : r, fecha: n ? n.fecha : a.anulada_en, vendedor: a.vendedor, cliente: a.cliente, par: 'anula',
+                    tit: n ? 'Nota de crédito ' + refNota(n) + ': anula el ticket ' + ref(a) : 'La anulación de ' + ref(a),
+                    det: [(n ? 'Nota de crédito · anula ' : 'Anulación de ') + r, quien ? (n ? 'la hizo ' : 'la anuló ') + quien : '', por ? '«' + por + '»' : ''].filter(Boolean).join(' · ') };
+      function par(dt, monto) { f.push(con(venta, { det: dt, monto: monto })); f.push(con(anula, { monto: -Number(monto) })); }
+      if (que === 'total') par(mediosDeCaja(a.pagos), a.total);
+      else if (que === 'descuentos') { if (cent(a.descuentos || 0)) par('ticket de ' + plata(cent(a.total)), a.descuentos); }
+      else if (que !== 'cambios') (a.pagos || []).forEach(function (g) {
+        if (g.medio !== que) return;
+        var parte = cent(g.monto) !== cent(a.total);
+        par([detPagoCaja(g), parte ? 'de un ticket de ' + plata(cent(a.total)) : ''].filter(Boolean).join(' · '), g.monto);
+      });
+    });
     return f.sort(function (a, b) { return new Date(a.fecha) - new Date(b.fecha); });
   }
   /** La ventana del detalle de un renglón, adentro de «dentro». o: { donde ('en esta caja'), bajada, renglon (lo que dice el
       renglón, en centavos), desfase (por qué la lista no daría lo mismo), volver (al cierre), reabrir (esta lista), alCambiar }. */
   function pintarDetalleCaja(dentro, que, det, o) {
-    var d = DET_CAJA[que], fs = filasDetCaja(que, det), tot = 0, ids = {}, nv = 0, nc = 0, an = 0;
+    var d = DET_CAJA[que], fs = filasDetCaja(que, det), tot = 0, ids = {}, nv = 0, nc = 0, an = 0, nn = 0, nx = 0;
     fs.forEach(function (x) {
       tot += cent(x.monto);
       if (x.anulada) an++;
-      if (!ids[x.tipo + x.id]) { ids[x.tipo + x.id] = 1; if (x.tipo === 'v') nv++; else nc++; }
+      /* SQL 260: la venta anulada no cuenta como venta; su nota de crédito (o la anulación de la X) se cuenta aparte. */
+      var k = (x.par || '') + x.tipo + x.id;
+      if (ids[k] || x.par === 'venta') return;
+      ids[k] = 1;
+      if (x.par === 'anula') { if (x.tipo === 'n') nn++; else nx++; }
+      else if (x.tipo === 'v') nv++; else nc++;
     });
     var nada = que === 'total' ? 'Todavía no hay ventas ' + o.donde + '.' : que === 'descuentos' ? 'Ninguna venta ' + o.donde + ' tuvo descuento.' :
       que === 'cambios' ? 'No hubo cambios ' + o.donde + '.' : 'No hubo ventas ' + d[1] + ' ' + o.donde + '.';
-    var cuenta = [nv ? nv + (nv === 1 ? ' venta' : ' ventas') : '', nc ? nc + (nc === 1 ? ' cambio' : ' cambios') : ''].filter(Boolean).join(' y ');
+    var cuenta = enLista([nv ? nv + (nv === 1 ? ' venta' : ' ventas') : '', nc ? nc + (nc === 1 ? ' cambio' : ' cambios') : '',
+      nn ? nn + (nn === 1 ? ' nota de crédito' : ' notas de crédito') : '', nx ? nx + (nx === 1 ? ' anulación' : ' anulaciones') : '']);
+    var pares = nn || nx ? ' ' + (nn + nx === 1 ? 'La venta anulada y su ' : 'Cada venta anulada y su ') +
+      (nn && nx ? 'nota de crédito (o su anulación)' : nn ? 'nota de crédito' : 'anulación') + ' suman $0: no cambian el total.' : '';
     var avisos = (o.renglon != null && o.renglon !== tot ? '<div class="pos-cartel">Esta lista suma ' + plata(tot) + ' y el renglón dice ' + plata(o.renglon) + ': ' + esc(o.desfase || 'algo cambió') + '.</div>' : '') +
       (an ? '<div class="pos-cartel">' + (an === 1 ? 'La anulada después del cierre sigue sumando: ' : 'Las anuladas después del cierre siguen sumando: ') + 'el cierre ya la' + (an === 1 ? '' : 's') + ' había contado.</div>' : '');
-    dentro.innerHTML = '<h3 id="posVentTit">' + esc(d[0]) + '</h3><p class="pos-bajada">' + o.bajada + (fs.length ? ' Tocá una para ver el ticket.' : '') + '</p>' + avisos +
+    dentro.innerHTML = '<h3 id="posVentTit">' + esc(d[0]) + '</h3><p class="pos-bajada">' + o.bajada + (fs.length ? ' Tocá una para ver el ticket.' : '') + esc(pares) + '</p>' + avisos +
       (fs.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ticket</th><th>Hora</th><th>Vendedor</th><th>Cliente</th><th>Detalle</th>' +
           '<th class="n">' + (que === 'descuentos' ? 'Descuento' : 'Monto') + '</th></tr></thead><tbody>' +
         fs.map(function (x) {
-          return '<tr data-' + (x.tipo === 'v' ? 'ticket' : 'cambio') + '="' + esc(x.id) + '" tabindex="0"' + (x.anulada ? ' class="anulada"' : '') + '>' +
+          /* SQL 260: la nota de crédito (o la anulación de la X) va en rojo, restando; la venta que anula, con su cartelito. */
+          var cls = x.anulada ? 'anulada' : x.par === 'anula' ? 'cj-anula' : '';
+          return '<tr data-' + (x.tipo === 'n' ? 'nota' : x.tipo === 'v' ? 'ticket' : 'cambio') + '="' + esc(x.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : '') + '>' +
             '<td class="nw" title="' + esc(x.tit) + '"><b>' + esc(x.ref) + '</b></td><td class="nw">' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(x.vendedor || '') + '</td>' +
-            '<td>' + esc(x.cliente || '') + '</td><td>' + esc(x.det) + (x.anulada ? ' <span class="pill pill-bad">Anulada después del cierre</span>' : '') + '</td>' +
+            '<td>' + esc(x.cliente || '') + '</td><td>' + esc(x.det) + (x.anulada ? ' <span class="pill pill-bad">Anulada después del cierre</span>' : '') +
+              (x.pill ? ' <span class="pill pill-bad">' + esc(x.pill) + '</span>' : '') + '</td>' +
             '<td class="n"><b>' + plata(cent(x.monto)) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
         '<div class="pos-ticket-tot"><span>' + esc(cuenta) + '</span><b>Total ' + plata(tot) + '</b></div>'
       : '<div class="pos-cartel">' + esc(nada) + '</div>') +
       '<div class="pos-pie">' + (o.volver ? '<button type="button" class="btn btn-sec btn-chico izq" id="cdVolver">‹ Volver al cierre</button>' : '') +
         '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>';
-    dentro.querySelectorAll('tr[data-ticket], tr[data-cambio]').forEach(function (tr) {
+    dentro.querySelectorAll('tr[data-ticket], tr[data-cambio], tr[data-nota]').forEach(function (tr) {
       tr.onclick = function () {
-        var id = tr.getAttribute('data-ticket');
-        if (id) abrirTicket(id, o.alCambiar, o.reabrir); else abrirCambio(tr.getAttribute('data-cambio'), o.alCambiar, o.reabrir);
+        var id = tr.getAttribute('data-ticket'), nota = tr.getAttribute('data-nota');
+        if (id) abrirTicket(id, o.alCambiar, o.reabrir);
+        else if (nota) abrirNota(nota, o.alCambiar, false, o.reabrir);   // SQL 260
+        else abrirCambio(tr.getAttribute('data-cambio'), o.alCambiar, o.reabrir);
       };
       tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
     });
@@ -6240,7 +6310,8 @@
           /* Cerrado tarde, «Desde» (el cierre anterior) confunde: va cuándo se contó. */
           (tarde ? '<div><span>Se contó</span>' + esc(sin ? 'Sin contar' : c.contado_en ? fechaHora(c.contado_en) : '—') + '</div>'
                  : '<div><span>Desde</span>' + esc(fechaHora(c.desde)) + '</div>') +
-          '<div><span>Tickets</span>' + c.tickets + (c.cambios ? ' y ' + c.cambios + (c.cambios === 1 ? ' cambio' : ' cambios') : '') + '</div>' +
+          '<div><span>Tickets</span>' + enLista([String(c.tickets)].concat(anuladasCaja(c.detalle),   // SQL 260
+            [c.cambios ? c.cambios + (c.cambios === 1 ? ' cambio' : ' cambios') : ''])) + '</div>' +
         '</div>' +
         '<div class="cj-det">' +
           '<div class="cj-res"><h3 class="cj-res-tit">Resultados del día</h3>' +
