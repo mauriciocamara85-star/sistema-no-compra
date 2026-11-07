@@ -1228,7 +1228,7 @@
     var f = _alCerrar; _alCerrar = null;
     if (f) f();
     var p = S.vista === 'venta' ? $('vProd') : S.vista === 'cambio' ? $(S.cbFoco || 'cbVuelve') : null;
-    if (p) p.focus();
+    if (p && !_velo) p.focus();   // si lo de después abrió otra ventana (la de «listo» vuelve al ticket), el foco es de ésa
   }
   function errorEn(caja, id, txt) { var e = caja.querySelector('#' + id); if (e) e.textContent = txt || ''; return !txt; }
 
@@ -2638,8 +2638,8 @@
       pintarRed();
       if (S.vista !== 'venta') { avisar('ok', 'Sin internet: la venta quedó guardada en esta compu y se manda sola cuando vuelva.' + (pts ? ' ' + pts : '')); return; }
       verVenta();
-      ventanaGuardada('Venta guardada en esta compu', [S.ultimo.local, plata(c.total)],
-        ['Sin internet: se manda sola cuando vuelva y ahí toma su número.', pts], null, '', 'cola');
+      ventanaHecho({ titulo: 'Venta guardada en esta compu', datos: [S.ultimo.local, plata(c.total)], tono: 'cola',
+        notas: ['Sin internet: se manda sola cuando vuelva y ahí toma su número.', pts] });
     }
     if (!conGc && redCaida()) { aLaFila(); return; }
     S.guardando = true;
@@ -2673,8 +2673,8 @@
         guardarJSON('pos_tickets_periodo', { atajo: 'hoy' });
         ir('tickets');
       }
-      ventanaGuardada(nombreVenta(S.ultimo) + ' guardada', [S.ultimo.local, plata(c.total)],
-        [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], r.factura, r.factura_error, S.ultimo.serie === 'prueba' ? 'prueba' : '');
+      ventanaHecho({ titulo: nombreVenta(S.ultimo) + ' guardada', datos: [S.ultimo.local, plata(c.total)], tono: S.ultimo.serie === 'prueba' ? 'prueba' : '',
+        notas: [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], factura: r.factura, facturaError: r.factura_error });
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -2685,19 +2685,29 @@
       avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : faltaInteres(e, c) || mensajeDe(e));
     });
   }
-  /* ── La venta guardada: UNA ventana (7/11/2026) ──
-     BlueSoft, al guardar, abre tres seguidas: «Factura Electrónica» (el CAE y su vencimiento), «¿Desea enviar el ticket por mail
-     al cliente?» y «El Ticket de Venta se guardó satisfactoriamente». Él eligió una sola con todo: un Enter por venta en vez de
-     tres. «Aceptar» queda elegido y, al cerrar, el foco vuelve a «Producto» para seguir con la venta nueva (mientras la ventana
-     está abierta la pistola y el F9 no hacen nada: ver el keydown de la venta).
-     ARCA (todavía no está conectado): cuando lo esté, pos_venta_guardar devuelve en `factura` lo mismo que guarda en
-     pos_ventas.factura —{ cae, cae_vence ('2026-11-17' o el '20261117' que da ARCA), tipo ('A' | 'B'), punto_venta, numero }— y,
-     si ARCA no la autorizó, `factura_error` con el porqué. Con eso esta ventana ya muestra el recuadro de la factura.
-     El ticket por mail va acá también, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, sólo si el cliente
+  /* ── «Listo»: la ventana de lo que se hizo (7/11/2026) ──
+     BlueSoft, al guardar una venta, abre tres seguidas: «Factura Electrónica» (el CAE y su vencimiento), «¿Desea enviar el ticket
+     por mail al cliente?» y «El Ticket de Venta se guardó satisfactoriamente». Él eligió UNA con todo (v413: un Enter por venta en
+     vez de tres) y después «para todos los sectores que requieran avisar con una ventana» (v419): lo que crea, anula o termina un
+     documento —la venta, el cambio, la nota de crédito, la venta fallida, corregir el pago, los movimientos y ajustes de la caja,
+     los cierres anulados, los remitos, envíos y devoluciones, el inventario, los cambios de precios en bloque— avisa con esta.
+     Siguen con el cartelito lo que se hace de a uno muchas veces seguidas (un precio, un producto contado, fichar, prender una
+     promo, el tilde de «Controlado») y la configuración (sucursales, listas, depósitos, transportes, las fichas de clientes y
+     productos): ahí una ventana sería un Enter de más cada vez.
+     «Aceptar» queda elegido. Al cerrar (Aceptar, Enter, Escape o tocando afuera) corre o.despues —volver al ticket, al remito,
+     cargar otra venta fallida— y, si eso no abre otra ventana, el foco vuelve a «Producto» en la venta. Mientras está abierta, la
+     pistola y el F9 de la venta no hacen nada (el keydown de la venta mira _velo). Como toda ventana, cierra la que estaba (el
+     formulario), así que va EN LUGAR del cerrarVentana() de antes, y lo que abra otra ventana va en o.despues.
+     ARCA (todavía no está conectado): cuando lo esté, pos_venta_guardar (y pos_nc_hacer) devuelve en `factura` lo mismo que guarda
+     —{ cae, cae_vence ('2026-11-17' o el '20261117' que da ARCA), tipo ('A' | 'B'), punto_venta, numero }— y, si ARCA no la
+     autorizó, `factura_error` con el porqué. Con eso esta ventana ya muestra el recuadro de la factura.
+     El ticket por mail va en la de la venta, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, sólo si el cliente
      tiene mail, y con Enter sigue siendo Aceptar (BlueSoft deja elegido el «No»). Hasta que exista el envío, no hay botón.
-     datos: lo que va con el título (la sucursal, el total); notas: los renglones de abajo (los vacíos no salen); tono: 'cola'
-     (sin internet, con la nube) o 'prueba', en el amarillo del cartel de arriba; si no, el tilde verde. */
-  function ventanaGuardada(titulo, datos, notas, f, fError, tono) {
+     o: titulo; datos (al lado del título: la sucursal, el total); notas (los renglones de abajo; los vacíos no salen); factura y
+     facturaError; tono: 'cola' (sin internet, con la nube) o 'prueba', en el amarillo del cartel de la venta (si no, el tilde
+     verde); despues. */
+  function ventanaHecho(o) {
+    var f = o.factura, fError = o.facturaError;
     var vence = fechaCae(f && f.cae_vence), comp = f && f.numero ? compArca(f) : '';
     var fac = f && f.cae ?
       '<div class="vg-fac"><b>Factura electrónica</b><span>Se creó correctamente la factura electrónica.</span><dl>' +
@@ -2706,12 +2716,14 @@
         (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
       fError ? '<div class="pos-cartel mal"><b>No se pudo crear la factura electrónica.</b> ' + esc(conPunto(fError)) +
         ' La venta quedó guardada, todavía sin CAE.</div>' : '';
-    var caja = ventana('<div class="vg-cab">' + icono(tono === 'cola' ? 'nube' : 'ok') + '<div><h3 id="posVentTit">' + esc(titulo) + '</h3>' +
-        '<p class="vg-datos">' + datos.filter(Boolean).map(esc).join(' · ') + '</p></div></div>' +
-      notas.filter(Boolean).map(function (t) { return '<p class="pos-bajada">' + esc(t) + '</p>'; }).join('') + fac +
+    var datos = (o.datos || []).filter(Boolean), notas = (o.notas || []).filter(Boolean);
+    var caja = ventana('<div class="vg-cab">' + icono(o.tono === 'cola' ? 'nube' : 'ok') + '<div><h3 id="posVentTit">' + esc(o.titulo) + '</h3>' +
+        (datos.length ? '<p class="vg-datos">' + datos.map(esc).join(' · ') + '</p>' : '') + '</div></div>' +
+      notas.map(function (t) { return '<p class="pos-bajada">' + esc(t) + '</p>'; }).join('') + fac +
       '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Aceptar</button></div>');
     caja.classList.add('vg');
-    if (tono) caja.classList.add('vg-aviso');
+    if (o.tono) caja.classList.add('vg-aviso');
+    if (o.despues) _alCerrar = o.despues;
     return caja;
   }
   /** El vencimiento del CAE: '2026-11-17' o '20261117' (como lo da ARCA) → '17/11/2026'. */
@@ -3043,9 +3055,11 @@
           bt.disabled = true;
           llamar('pos_venta_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
             S.stock = {};
-            avisar('ok', 'La venta ' + ref(t) + ' quedó anulada.');
             if (alCambiar) alCambiar();
-            abrirTicket(t.id, alCambiar, volver);
+            ventanaHecho({ titulo: nombreVenta(t) + ' anulada', datos: [bonito(t.local), plata(cent(t.total))],
+              notas: [t.serie === 'prueba' ? '' : 'Lo vendido volvió al stock de la sucursal.',
+                      t.puntos_sumados ? 'Al socio se le descontaron los ' + miles(Number(t.socio_puntos) || 0) + ' puntos.' : ''],
+              despues: function () { abrirTicket(t.id, alCambiar, volver); } });
           }).catch(function (e) { bt.disabled = false; errorEn(dentro, 'tkError', mensajeDe(e)); });
         };
       };
@@ -3184,9 +3198,9 @@
       if (!errorEn(caja, 'cpError', mal)) { if (/por qué/.test(mal)) m.focus(); return; }
       bt.disabled = true;
       llamar('pos_venta_pagos_corregir', { p: { venta_id: t.id, clave: clave, motivo: motivo, pagos: filas.map(aPago) } }).then(function () {
-        avisar('ok', 'Listo: el pago del ticket ' + ref(t) + ' quedó corregido.');
         if (alCambiar) alCambiar();
-        abrirTicket(t.id, alCambiar, volver);
+        ventanaHecho({ titulo: 'Pago corregido', datos: [nombreVenta(t), plata(tot)], notas: ['El ticket quedó con los pagos nuevos.'],
+          despues: function () { abrirTicket(t.id, alCambiar, volver); } });
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'cpError', mensajeDe(e)); });
     };
   }
@@ -3249,9 +3263,10 @@
       bt.disabled = true;
       llamar('pos_nc_hacer', { p_venta: t.id, p_motivo: motivo }).then(function (r) {
         S.stock = {};
-        avisar('ok', 'Listo: la nota de crédito ' + refNota(r) + ' anuló la venta ' + ref(t) + '.');
         if (alCambiar) alCambiar();
-        abrirNota(t.id, alCambiar, true);
+        ventanaHecho({ titulo: 'Nota de crédito ' + refNota(r) + ' guardada', datos: [bonito(t.local), plata(cent(t.total))],
+          notas: ['Anuló la venta ' + ref(t) + '.'], factura: r && r.factura, facturaError: r && r.factura_error,
+          despues: function () { abrirNota(t.id, alCambiar, true); } });
       }).catch(function (e) {
         bt.disabled = false;
         if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
@@ -3335,7 +3350,8 @@
     bt.disabled = true;
     llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
       bt.disabled = false;
-      avisar('ok', n ? 'Listo: se ' + (n === 1 ? 'borró 1 prueba.' : 'borraron ' + n + ' pruebas.') : 'No había pruebas para borrar.');
+      ventanaHecho(n ? { titulo: n === 1 ? 'Se borró 1 prueba' : 'Se borraron ' + n + ' pruebas', notas: ['Las de verdad no se tocaron.'] } :
+        { titulo: 'No había pruebas para borrar' });
       if (S.ultimo && S.ultimo.serie === 'prueba') S.ultimo = null;
       if (S.cambioHecho && S.cambioHecho.prueba) S.cambioHecho = null;
       despues();
@@ -4698,8 +4714,10 @@
         rc.vendedor = rc.vendedor || {};
         rc.vendedor[F.local] = F.vendedor;
         guardarJSON(K_RECUERDO, rc);
-        avisar('ok', (prueba ? 'Venta fallida de prueba guardada' : 'Venta fallida guardada') + (r && r.ya ? ' (ya estaba guardada: no se duplicó).' : '.'));
-        if (otra) abrirFallida({ local: F.local, vendedor: F.vendedor, alGuardar: o.alGuardar }); else cerrarVentana();
+        /* Con «Guardar y otra», al aceptar se abre la siguiente (la ventana de «listo» cierra el formulario). */
+        ventanaHecho({ titulo: prueba ? 'Venta fallida de prueba guardada' : 'Venta fallida guardada', tono: prueba ? 'prueba' : '',
+          datos: [nombreLocal(localDe(F.local)), F.vendedor, nombreMotivo(F.motivo)], notas: [r && r.ya ? 'Ya estaba guardada: no se duplicó.' : ''],
+          despues: otra ? function () { abrirFallida({ local: F.local, vendedor: F.vendedor, alGuardar: o.alGuardar }); } : null });
         if (o.alGuardar) o.alGuardar();
       }).catch(function (e) {
         if (!caja.isConnected) return;
@@ -4769,7 +4787,7 @@
           var f = d.filas.filter(function (x) { return x.id === b.getAttribute('data-borrar'); })[0];
           if (!confirm('¿Borrar la venta fallida de ' + f.vendedor + ' (' + fechaHora(f.fecha) + ', ' + nombreMotivo(f.motivo) + ')? Es para una que se cargó por error. No se puede deshacer.')) return;
           b.disabled = true;
-          llamar('pos_fallida_borrar', { p_id: f.id }).then(function () { avisar('ok', 'Listo: se borró la venta fallida.'); cargar(); })
+          llamar('pos_fallida_borrar', { p_id: f.id }).then(function () { ventanaHecho({ titulo: 'Venta fallida borrada', datos: [f.vendedor, fechaHora(f.fecha)] }); cargar(); })
             .catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
         };
       });
@@ -5112,12 +5130,16 @@
     if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
     llamar('pos_cambio_guardar', { p: p }).then(function (r) {
       S.cambioHecho = { id: r.id, numero: r.numero, prueba: !!r.prueba, diferencia: cent(r.diferencia), ya: !!r.ya };
+      var u = S.cambioHecho, dondeCb = nombreLocal(localDe(CB.local_id));
       S.stock = {};
       CB = cambioNuevo(CB);
       guardarBorradorCb();
       S.guardando = false;
-      avisar('ok', 'Cambio ' + refCambio(S.cambioHecho) + ' guardado.');
-      if (S.vista === 'cambio') verCambio();
+      /* Si se fue a otra pantalla mientras se guardaba, el cartelito de siempre (como la venta). */
+      if (S.vista !== 'cambio') { avisar('ok', 'Cambio ' + refCambio(u) + ' guardado.'); return; }
+      verCambio();
+      ventanaHecho({ titulo: 'Cambio ' + refCambio(u) + ' guardado', datos: [dondeCb, u.diferencia ? 'se cobró ' + plata(u.diferencia) : 'sin diferencia'],
+        notas: [u.ya ? 'Ya estaba guardado: no se duplicó.' : ''], tono: u.prueba ? 'prueba' : '' });
     }).catch(function (e) {
       S.guardando = false;
       if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardarCb(); }
@@ -5244,9 +5266,10 @@
             (t.prueba ? '' : ' El stock vuelve a como estaba: lo que volvió sale y lo que se llevó vuelve.') + ' No se puede deshacer.', 'Anular el cambio ' + refCambio(t), function (motivo) {
           return llamar('pos_cambio_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
             S.stock = {};
-            avisar('ok', 'El cambio ' + refCambio(t) + ' quedó anulado.');
             if (alCambiar) alCambiar();
-            abrirCambio(t.id, alCambiar, volver);
+            ventanaHecho({ titulo: 'Cambio ' + refCambio(t) + ' anulado', datos: [bonito(t.local)],
+              notas: [t.prueba ? '' : 'El stock quedó como antes del cambio.'],
+              despues: function () { abrirCambio(t.id, alCambiar, volver); } });
           });
         });
       };
@@ -6053,8 +6076,8 @@
       bt.disabled = true;
       llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: tipo, rubro: tipo === 'gasto' ? rubro : '', descripcion: desc, monto: aPesos(monto) } }).then(function (r) {
         var num = refGasto(r, !!prueba);
-        avisar('ok', 'Anotado: ' + TIPOS_MOV[tipo].toLowerCase() + (num ? ' ' + num : '') + ', ' + plata(monto) + '.' + (num ? ' Escribile el ' + num + ' al ticket.' : ''));
-        cerrarVentana();
+        ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [TIPOS_MOV[tipo], plata(monto)], tono: prueba ? 'prueba' : '',
+          notas: [num ? 'Escribile el ' + num + ' al ticket.' : ''] });
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'gmError', mensajeDe(e)); });
     }
@@ -6176,8 +6199,8 @@
       bt.disabled = true;
       llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: 'caja_fuerte', rubro: '', descripcion: obs, monto: aPesos(monto) } }).then(function (r) {
         var num = refGasto({ tipo: 'caja_fuerte', numero: r.numero }, !!prueba);
-        avisar('ok', 'Anotado' + (num ? ': ' + num : '') + ', ' + plata(monto) + ' a la caja fuerte.');
-        cerrarVentana();
+        ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [TIPOS_MOV.caja_fuerte, plata(monto)], tono: prueba ? 'prueba' : '',
+          notas: ['Salió de la caja chica.'] });
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'tfError', mensajeDe(e)); });
     }
@@ -6354,8 +6377,8 @@
       llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: 'retiro', caja: deCaja, retira: quien, rubro: '', descripcion: obs,
                                             monto: aPesos(monto) } }).then(function (r) {
         var num = refGasto({ tipo: 'retiro', numero: r.numero }, !!prueba);
-        avisar('ok', 'Anotado' + (num ? ': ' + num : '') + ', ' + plata(monto) + ' de la ' + CAJAS[deCaja].toLowerCase() + '. Lo retiró ' + quien + '.');
-        cerrarVentana();
+        ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [TIPOS_MOV.retiro, plata(monto)], tono: prueba ? 'prueba' : '',
+          notas: [conPunto('De la ' + CAJAS[deCaja].toLowerCase() + '. Lo retiró ' + quien)] });   // «Lautaro R.» no lleva otro punto
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'rtError', sin191(e)); });
     }
@@ -6577,9 +6600,10 @@
         pedirMotivo(dentro.querySelector('#ciAnular'), 'El cierre queda en la lista, tachado. Sus ventas, sus cambios, sus gastos y lo que pasó a la caja fuerte vuelven a la caja abierta, para cerrarla de nuevo.',
           'Anular el cierre ' + refCierre(c), function (motivo) {
             return llamar('pos_cierre_anular', { p_id: c.id, p_motivo: motivo }).then(function () {
-              avisar('ok', 'El cierre ' + refCierre(c) + ' quedó anulado.');
               if (alCambiar) alCambiar();
-              abrirCierre(c.id, alCambiar);
+              ventanaHecho({ titulo: 'Cierre ' + refCierre(c) + ' anulado',
+                notas: ['Sus ventas, sus cambios, sus gastos y lo que pasó a la caja fuerte volvieron a la caja abierta.'],
+                despues: function () { abrirCierre(c.id, alCambiar); } });
             });
           });
       };
@@ -6795,8 +6819,8 @@
       ab.remove();
       pedirMotivo(caja.querySelector('#mdAnular'), 'Queda en la lista, tachado, con quién lo anuló y por qué.', 'Anular', function (motivo) {
         return llamar('pos_caja_mov_anular', { p_id: f.id, p_motivo: motivo }).then(function () {
-          avisar('ok', 'Listo: quedó anulado.');
-          cerrarVentana();
+          ventanaHecho({ titulo: num ? num + ' anulado' : 'Anulado', datos: [TIPOS_MOV[f.tipo] || f.tipo, bonito(f.local), plata(cent(f.monto))],
+            notas: ['Queda en la lista, tachado, con quién lo anuló y por qué.'] });
           if (alCambiar) alCambiar();
         });
       });
@@ -7089,8 +7113,7 @@
       if (!errorEn(caja, 'ajError', isNaN(v) || v < 0 ? 'Escribí cuánta plata hay en la caja fuerte.' : '') || bt.disabled) return;
       bt.disabled = true;
       llamar('pos_caja_ajustar', { p: { clave: clave, local_id: localId, contado: aPesos(v), observaciones: caja.querySelector('#ajObs').value.trim() } }).then(function (r) {
-        avisar('ok', 'Listo: Ajuste Nº ' + r.numero + '. La caja fuerte de ' + bonito(d.local) + ' quedó en ' + plata(cent(r.contado)) + '.');
-        cerrarVentana();
+        ventanaHecho({ titulo: 'Ajuste Nº ' + r.numero + ' guardado', datos: [bonito(d.local)], notas: ['La caja fuerte quedó en ' + plata(cent(r.contado)) + '.'] });
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'ajError', sin195(e)); });
     }
@@ -7118,8 +7141,7 @@
       ab.remove();
       pedirMotivo(caja.querySelector('#ahAnular'), 'El saldo vuelve a contarse desde el ajuste anterior (o desde $0, si no hubo otro).', 'Anular', function (motivo) {
         return llamar('pos_caja_ajuste_anular', { p_id: f.id, p_motivo: motivo }).then(function () {
-          avisar('ok', 'Listo: el ' + f.ref + ' quedó anulado.');
-          cerrarVentana();
+          ventanaHecho({ titulo: f.ref + ' anulado', datos: [bonito(d.local)], notas: ['El saldo vuelve a contarse desde el ajuste anterior (o desde $0, si no hubo otro).'] });
           if (alCambiar) alCambiar();
         });
       });
@@ -7821,9 +7843,10 @@
     }) }).then(function (r) {
       if (S.subida === U) S.subida = null;
       olvidarPrecios(li.id);
-      avisar('ok', r.ya ? 'Esa lista ya estaba aplicada: no se repitió.' : 'Listo: ' + (r.cambiaron === 1 ? 'cambió 1 precio' : 'cambiaron ' + num(r.cambiaron) + ' precios') +
-                   (r.nuevos ? ' (' + num(r.nuevos) + (r.nuevos === 1 ? ' nuevo)' : ' nuevos)') : '') + '. Valen desde la próxima venta.');
       if ($('lsTabla') && S.listaSel === li.id) verListas();
+      ventanaHecho(r.ya ? { titulo: 'Esa lista ya estaba aplicada', datos: [li.nombre], notas: ['No se repitió.'] } :
+        { titulo: 'Precios cargados', datos: [li.nombre], notas: [(r.cambiaron === 1 ? 'Cambió 1 precio' : 'Cambiaron ' + num(r.cambiaron) + ' precios') +
+          (r.nuevos ? ' (' + num(r.nuevos) + (r.nuevos === 1 ? ' nuevo).' : ' nuevos).') : '.'), 'Valen desde la próxima venta.'] });
     }).catch(function (e) {
       bt.disabled = false;
       bt.textContent = txt;
@@ -7919,8 +7942,10 @@
       llamar('pos_lista_aumentar', Object.assign({ p_aplicar: true, p_clave: P.clave }, P.p)).then(function (r) {
         cerrarVentana();
         olvidarPrecios(li.id);
-        avisar('ok', r.ya ? 'Ese cambio ya estaba aplicado: no se repitió.' : 'Listo: ' + (r.cambiaron === 1 ? 'cambió 1 precio' : 'cambiaron ' + num(r.cambiaron) + ' precios') + '. Valen desde la próxima venta.');
         if ($('lsTabla') && S.listaSel === li.id) verListas();
+        ventanaHecho(r.ya ? { titulo: 'Ese cambio ya estaba aplicado', datos: [li.nombre], notas: ['No se repitió.'] } :
+          { titulo: P.p.p_porcentaje > 0 ? 'Precios aumentados' : 'Precios bajados', datos: [li.nombre],
+            notas: [r.cambiaron === 1 ? 'Cambió 1 precio.' : 'Cambiaron ' + num(r.cambiaron) + ' precios.', 'Valen desde la próxima venta.'] });
       }).catch(function (e) {
         bt.disabled = false;
         bt.textContent = (P.p.p_porcentaje > 0 ? 'Aumentar ' : 'Bajar ') + (P.n === 1 ? '1 precio' : num(P.n) + ' precios');
@@ -7954,9 +7979,9 @@
           b.disabled = true;
           llamar('pos_lista_deshacer', { p_id: x.id }).then(function (r) {
             olvidarPrecios(li.id);
-            avisar('ok', 'Listo: ' + (r.volvieron === 1 ? 'volvió 1 precio' : 'volvieron ' + num(r.volvieron) + ' precios') + '.' +
-                         (r.quedaron ? ' ' + (r.quedaron === 1 ? '1 quedó como estaba porque se cambió' : num(r.quedaron) + ' quedaron como estaban porque se cambiaron') + ' a mano después.' : ''));
             if ($('lsTabla') && S.listaSel === li.id) verListas();
+            ventanaHecho({ titulo: 'Cambio deshecho', datos: [li.nombre], notas: [(r.volvieron === 1 ? 'Volvió 1 precio' : 'Volvieron ' + num(r.volvieron) + ' precios') + ' a como estaban.',
+              r.quedaron ? (r.quedaron === 1 ? '1 quedó como estaba porque se cambió' : num(r.quedaron) + ' quedaron como estaban porque se cambiaron') + ' a mano después.' : ''] });
           }).catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
         };
       });
@@ -9904,13 +9929,12 @@
             (unid === 1 ? 'La prenda vuelve' : 'Las ' + num(unid) + ' prendas vuelven') + ' a «' + deDonde + '». Para rehacer el módulo, después hacé un envío nuevo. No se puede deshacer.',
           op.general ? 'Rehacer el módulo' : 'Anular el envío ' + refRemito(r), function (motivo) {
           return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
-            avisar('ok', op.general ? 'Listo: «' + (r.modulo || 'el módulo') + '» queda para pasarlo de nuevo; las prendas volvieron a «' + (r.origen_deposito || '') + '».'
-                                    : 'El envío ' + refRemito(r) + ' quedó anulado: las prendas volvieron a «' + (r.origen_deposito || '') + '».');
             S.stock = {};
             S.dep = {};
-            if (op.general) { cerrarVentana(); if (alCambiar) alCambiar(); return; }
             if (alCambiar) alCambiar();
-            abrirPase(r.id, alCambiar);
+            var vuelven = 'Las prendas volvieron a «' + (r.origen_deposito || '') + '».';
+            if (op.general) { ventanaHecho({ titulo: '«' + (r.modulo || 'El módulo') + '» queda para pasarlo de nuevo', notas: [vuelven] }); return; }
+            ventanaHecho({ titulo: 'Envío ' + refRemito(r) + ' anulado', notas: [vuelven], despues: function () { abrirPase(r.id, alCambiar); } });
           });
         });
       };
@@ -10108,9 +10132,9 @@
                      (S.sin259 ? '' : ' Entra al depósito predeterminado de la fábrica.'))) return;   // SQL 259
         rf.disabled = true;
         llamar('pos_remito_fabrica_recibir', { p_id: r.id }).then(function () {
-          avisar('ok', 'La devolución ' + refRemito(r) + ' quedó recibida en la fábrica.');
           if (alCambiar) alCambiar();
-          abrirRemito(r.id, alCambiar, op);
+          ventanaHecho({ titulo: 'Devolución ' + refRemito(r) + ' recibida', datos: [bonito(r.origen)], notas: ['Quedó recibida en la fábrica.'],
+            despues: function () { abrirRemito(r.id, alCambiar, op); } });
         }).catch(function (e) { rf.disabled = false; avisar('err', mensajeDe(e)); });
       };
       var ab = dentro.querySelector('#rmAnularBtn');
@@ -10118,11 +10142,13 @@
         ab.remove();
         /* Lo que se deshace: lo que entró al local que lo recibió, y lo que salió del que lo mandó. */
         var entro = (r.productos || []).some(function (p) { return p.estado; });
-        var vuelve = [r.destino_local_id && entro ? 'lo que ya entró al stock de ' + esc(bonito(r.destino)) + ' vuelve a salir' : '',
-                      r.origen_local_id ? 'a ' + esc(bonito(r.origen)) + ' le vuelve lo que ' + (aFabrica ? 'devolvió' : 'mandó') : '',
+        /* En texto llano (para la ventana de «listo», que escapa sola); el aviso de abajo es HTML y lleva esc(). */
+        var vuelveTxt = [r.destino_local_id && entro ? 'lo que ya entró al stock de ' + bonito(r.destino) + ' vuelve a salir' : '',
+                      r.origen_local_id ? 'a ' + bonito(r.origen) + ' le vuelve lo que ' + (aFabrica ? 'devolvió' : 'mandó') : '',
                       /* SQL 259: lo de la fábrica también vuelve (o sale lo que había entrado de la devolución). */
-                      deFab && r.origen_deposito ? 'la mercadería vuelve al depósito «' + esc(r.origen_deposito) + '» de la fábrica' : '',
-                      aFabrica && r.destino_deposito && r.estado === 'recibido' ? 'sale del depósito «' + esc(r.destino_deposito) + '» de la fábrica lo que había entrado' : ''].filter(Boolean).join(', y ');
+                      deFab && r.origen_deposito ? 'la mercadería vuelve al depósito «' + r.origen_deposito + '» de la fábrica' : '',
+                      aFabrica && r.destino_deposito && r.estado === 'recibido' ? 'sale del depósito «' + r.destino_deposito + '» de la fábrica lo que había entrado' : ''].filter(Boolean).join(', y ');
+        var vuelve = esc(vuelveTxt);
         pedirMotivo(dentro.querySelector('#rmAnular'), (aFabrica ? 'La devolución queda en la lista, tachada, con quién la anuló y por qué. ' :
                                                                    envio ? 'El envío queda en la lista, tachado, con quién lo anuló y por qué. ' :
                                                                    'El remito queda en la lista, tachado, con quién lo anuló y por qué. ') +
@@ -10130,11 +10156,11 @@
           (/^Lo que (faltó|sobró) en R-/.test(r.observaciones || '') ? 'Las diferencias que resolvía vuelven a quedar sin resolver. ' : '') + 'No se puede deshacer.',
           'Anular ' + queEs + refRemito(r), function (motivo) {
           return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
-            avisar('ok', (aFabrica ? 'La devolución ' + refRemito(r) + ' quedó anulada.' : (envio ? 'El envío ' : 'El remito ') + refRemito(r) + ' quedó anulado.'));
             S.stock = {};
             avisoAlDia();
             if (alCambiar) alCambiar();
-            abrirRemito(r.id, alCambiar, op);
+            ventanaHecho({ titulo: aFabrica ? 'Devolución ' + refRemito(r) + ' anulada' : (envio ? 'Envío ' : 'Remito ') + refRemito(r) + ' anulado',
+              notas: [vuelveTxt ? vuelveTxt.charAt(0).toUpperCase() + vuelveTxt.slice(1) + '.' : ''], despues: function () { abrirRemito(r.id, alCambiar, op); } });
           });
         });
       };
@@ -10370,8 +10396,9 @@
     if (!confirm('¿Enviar ' + van.map(refRemito).join(', ') + ' a ' + locs.join(', ') + '? Pasan a «Por recibir»: ' +
                  (locs.length === 1 ? locs[0] + ' lo ve' : 'cada local los ve') + ' para recibirlo contándolo en POS → Remitos.')) return Promise.resolve();
     return llamar('pos_remito_enviar', { p: { ids: van.map(function (r) { return r.id; }) } }).then(function (x) {
-      avisar('ok', (x.enviados === 1 ? 'Enviado: ' : 'Enviados: ') + van.map(refRemito).join(', ') + '. ' + (locs.length === 1 ? locs[0] + ' ya lo ve para recibirlo.' : 'Cada local ya los ve.'));
-      if (alListo) alListo();
+      /* Desde el remito, alListo lo vuelve a abrir: va después de Aceptar (si no, taparía la ventana). */
+      ventanaHecho({ titulo: x.enviados === 1 ? 'Remito enviado' : 'Remitos enviados', datos: [van.map(refRemito).join(', ')],
+        notas: [locs.length === 1 ? locs[0] + ' ya lo ve para recibirlo.' : 'Cada local ya los ve.'], despues: alListo || null });
     }).catch(function (e) { avisar('err', mensajeDe(e)); });
   }
 
@@ -10715,11 +10742,10 @@
       if (!errorEn(caja, 'dfError', !op ? 'Elegí cómo se resuelve.' : op === 'otra' && !nota ? 'Escribí en la nota cómo se resolvió.' : '')) return;
       bt.disabled = true;
       llamar('pos_diferencia_resolver', { p: { resolucion: op, ids: fs.map(function (f) { return f.id; }), nota: nota, clave: clave } }).then(function (res) {
-        cerrarVentana();
-        avisar('ok', res.ya ? 'Ya estaban resueltas.' :
-                     res.remito ? 'Listo: se armó el remito R-' + res.remito.numero + (op === 'mandar' ? ' de la fábrica a ' + loc + (res.remito.por_enviar ? ': queda pendiente de envío.' : '.') :
-                                                                                         ' de ' + loc + ' a la fábrica.') :
-                     res.resueltas === 1 ? 'Listo: quedó resuelta.' : 'Listo: quedaron resueltas.');
+        ventanaHecho(res.ya ? { titulo: 'Ya estaban resueltas' } :
+          res.remito ? { titulo: 'Remito R-' + res.remito.numero + ' armado',
+            notas: [op === 'mandar' ? 'De la fábrica a ' + loc + (res.remito.por_enviar ? ': queda pendiente de envío.' : '.') : 'De ' + loc + ' a la fábrica.'] } :
+          { titulo: res.resueltas === 1 ? 'Diferencia resuelta' : 'Diferencias resueltas' });
         if (op === 'devolver') S.stock = {};
         avisoAlDia();
         alListo();
@@ -11059,7 +11085,9 @@
       if (res.coincide) {
         delete R.conteo[cod];
         guardarConteo();
-        avisar('ok', cod + ': coincide con el remito. Entró al stock.' + (res.estado !== 'pendiente' ? ' Remito ' + refRemito(R.r) + ' recibido.' : ''));
+        /* Producto por producto, el cartelito; cuando con éste queda recibido el remito entero, la ventana. */
+        if (res.estado !== 'pendiente') ventanaHecho({ titulo: 'Remito ' + refRemito(R.r) + ' recibido', notas: [cod + ': coincide con el remito. Entró al stock.', 'Ya está contado todo el remito.'] });
+        else avisar('ok', cod + ': coincide con el remito. Entró al stock.');
         R.sel = null;
         cargarRecepcion();
       } else {
@@ -11084,7 +11112,8 @@
       delete R.mot[cod];
       delete S.stock[R.r.destino_local_id];
       guardarConteo();
-      avisar('ok', cod + ': recibido con lo que contaste.' + (res.estado !== 'pendiente' ? ' Remito ' + refRemito(R.r) + ' recibido.' : ''));
+      if (res.estado !== 'pendiente') ventanaHecho({ titulo: 'Remito ' + refRemito(R.r) + ' recibido', notas: [cod + ': recibido con lo que contaste.', 'Ya está contado todo el remito.'] });
+      else avisar('ok', cod + ': recibido con lo que contaste.');
       R.sel = null;
       cargarRecepcion();
     }).catch(function (e) { bt.disabled = false; avisar('err', mensajeDe(e)); });
@@ -11618,11 +11647,14 @@
         S.guardando = false;
         delete S.stock[lo.id];
         delete S.dep[lo.id];
-        avisar('ok', 'Envío R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': el módulo ' + mod + ' pasó de «' + o.nombre + '» a «' + d.nombre + '».');
         S.paseHecho = { id: r.id, numero: r.numero, modulo: mod, unidades: unidades, destino: d.nombre };
         RN = remitoNuevo(RN);
         guardarBorradorRn();
-        if (S.vista === 'envio_nuevo') verEnvioNuevo();
+        var pasoMod = 'el módulo ' + mod + ' pasó de «' + o.nombre + '» a «' + d.nombre + '».';
+        if (S.vista !== 'envio_nuevo') { avisar('ok', 'Envío R-' + r.numero + ' guardado: ' + pasoMod); return; }
+        verEnvioNuevo();
+        ventanaHecho({ titulo: 'Envío R-' + r.numero + ' guardado', datos: [nombreLocal(lo)],
+          notas: [pasoMod.charAt(0).toUpperCase() + pasoMod.slice(1), r.ya ? 'Ya estaba guardado: no se duplicó.' : ''] });
       }).catch(function (e) {
         S.guardando = false;
         if (b && b.isConnected) { b.disabled = false; b.textContent = 'Guardar el envío'; }
@@ -11695,18 +11727,23 @@
       llamar('pos_remito_guardar', { p: pl }).then(function (r) {
         S.guardando = false;
         if (lo) delete S.stock[lo.id];
-        if (env) avisar('ok', 'Envío R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': salió del stock de ' + nombreLocal(lo) +
-                              (r.total != null ? ', ' + plata(cent(r.total)) : '') + '. ' + nombreLocal(ld) + ' ya lo ve para recibirlo.');
-        else if (dev) avisar('ok', 'Devolución R-' + r.numero + ' guardada' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': salió del stock de ' + nombreLocal(lo) +
-                              (r.total != null ? ', ' + plata(cent(r.total)) : '') + '.');
-        else avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' +
-                     (fab ? 'cuando llegue a la fábrica, abrilo y tocá «Llegó a la fábrica».' :
-                      r.por_enviar ? 'queda pendiente de envío. Imprimilo y, cuando salga, tocá «Enviar».' : nombreLocal(ld) + ' ya lo ve para recibirlo.'));
+        var ya = r.ya ? (dev ? 'Ya estaba guardada: no se duplicó.' : 'Ya estaba guardado: no se duplicó.') : '', tot = r.total != null ? plata(cent(r.total)) : '';
+        var hecho = env ? { titulo: 'Envío R-' + r.numero + ' guardado', datos: [nombreLocal(lo) + ' → ' + nombreLocal(ld), tot],
+                            notas: ['Salió del stock de ' + nombreLocal(lo) + '. ' + nombreLocal(ld) + ' ya lo ve para recibirlo.', ya] } :
+          dev ? { titulo: 'Devolución R-' + r.numero + ' guardada', datos: [nombreLocal(lo), tot], notas: ['Salió del stock de ' + nombreLocal(lo) + '.', ya] } :
+          { titulo: 'Remito R-' + r.numero + ' guardado', datos: [fab ? 'A la fábrica' : nombreLocal(ld)],
+            notas: [fab ? 'Cuando llegue a la fábrica, abrilo y tocá «Llegó a la fábrica».' :
+                    r.por_enviar ? 'Queda pendiente de envío. Imprimilo y, cuando salga, tocá «Enviar».' : nombreLocal(ld) + ' ya lo ve para recibirlo.', ya] };
+        var aca = S.vista;
         RN = remitoNuevo(RN);
         guardarBorradorRn();
-        if (S.vista === 'remito_nuevo') { if (r.por_enviar) S.rgAbrir = r.id; ir('remitos'); }   // SQL 259: se abre, para imprimirlo
-        if (S.vista === 'devolucion_nueva') { S.dvMarcar = r.id; ir('devoluciones'); }
-        if (S.vista === 'envio_nuevo') { S.evMarcar = r.id; S.evVer = ''; ir('envios'); }
+        /* El pendiente de envío se abre solo para imprimirlo (SQL 259): esa ventana ya dice lo que es; la de «listo» la taparía. */
+        if (aca === 'remito_nuevo' && r.por_enviar) { avisar('ok', hecho.titulo + '. ' + hecho.notas[0]); S.rgAbrir = r.id; ir('remitos'); return; }
+        if (aca === 'remito_nuevo') ir('remitos');
+        if (aca === 'devolucion_nueva') { S.dvMarcar = r.id; ir('devoluciones'); }
+        if (aca === 'envio_nuevo') { S.evMarcar = r.id; S.evVer = ''; ir('envios'); }
+        if (aca === 'remito_nuevo' || aca === 'devolucion_nueva' || aca === 'envio_nuevo') ventanaHecho(hecho);
+        else avisar('ok', hecho.titulo + '.');
       }).catch(function (e) {
         S.guardando = false;
         if (b && b.isConnected) { b.disabled = false; b.textContent = txt; }
@@ -11861,7 +11898,7 @@
           if (!confirm('¿Empezar el stock general de ' + nom + ' con «' + temp + ' ' + anio + '»? Se crea ese depósito; las ventas siguen en «' + d.viejo.nombre + '» hasta terminar.')) return;
           bt.disabled = true;
           llamar('pos_deposito_guardar', { p: { local_id: d.local_id, temporada: temp, anio: Number(anio), nombre: null, consulta: true, activo: true } }).then(function (r) {
-            avisar('ok', 'Empezó el stock general de ' + nom + ': cada módulo va a «' + r.nombre + '».');
+            ventanaHecho({ titulo: 'Empezó el stock general', datos: [nom], notas: ['Cada módulo va a «' + r.nombre + '».'] });
             delete S.dep[d.local_id];
             cargar();
           }).catch(function (e) { bt.disabled = false; errorEn(z, 'sgError', mensajeDe(e)); });
@@ -12195,8 +12232,8 @@
         delete S.dep[loc];
         if (fab && S.sfF && S.invDep) S.sfF.dep = S.invDep;   // el Stock de la Fábrica se abre en el depósito que se acaba de cargar
         S.inv = null;
-        avisar('ok', 'Inventario cargado en ' + donde + ': ' + num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
-                     (r.cambiaron === 1 ? ' cambió.' : ' cambiaron.') + (r.ya ? ' (Ya estaba cargado: no se duplicó.)' : ''));
+        ventanaHecho({ titulo: 'Inventario cargado', datos: [donde], notas: [num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
+          (r.cambiaron === 1 ? ' cambió.' : ' cambiaron.'), r.ya ? 'Ya estaba cargado: no se duplicó.' : ''] });
         if (!$('invPrevia')) return;
         $('invPrevia').innerHTML = '';
         $('invNombre').textContent = '';
@@ -12606,9 +12643,9 @@
         ab.remove();
         pedirMotivo(dentro.querySelector('#tiAnular'), 'El registro queda en la lista, tachado, y deja de contar en las horas.', 'Anular el registro', function (motivo) {
           return llamar('pos_tiempo_anular', { p_id: id, p_motivo: motivo }).then(function () {
-            avisar('ok', 'El registro ' + id + ' quedó anulado.');
             if (alCambiar) alCambiar();
-            abrirTiempo(id, alCambiar);
+            ventanaHecho({ titulo: 'Registro ' + id + ' anulado', notas: ['Queda en la lista, tachado, y deja de contar en las horas.'],
+              despues: function () { abrirTiempo(id, alCambiar); } });
           });
         });
       };
@@ -12883,8 +12920,7 @@
           if (!confirm('¿Borrar los ' + miles(r.subidos) + ' registros que se acaban de subir?')) return;
           dz.disabled = true;
           llamar('pos_tiempos_deshacer', { p_lote: r.lote }).then(function (x) {
-            avisar('ok', 'Listo: se borraron los ' + miles(x.borrados) + ' registros de esa subida.');
-            cerrarVentana();
+            ventanaHecho({ titulo: 'Subida deshecha', notas: ['Se borraron los ' + miles(x.borrados) + ' registros de esa subida.'] });
             if (alListo) alListo();
           }).catch(function (e) { dz.disabled = false; avisar('err', mensajeDe(e)); });
         };

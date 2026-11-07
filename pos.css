@@ -494,9 +494,10 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 @media (max-width: 460px) { .pos-campos { grid-template-columns: 1fr; } }
 .pos-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .pos-pie .izq { margin-right: auto; }
-/* La venta guardada (v413): una sola ventana en vez de las tres de BlueSoft; con ARCA, el recuadro de la factura con el CAE. */
+/* «Listo» (v413 la venta, v419 todo lo que crea, anula o termina un documento): una sola ventana en vez de las tres de BlueSoft;
+   con ARCA, el recuadro de la factura con el CAE. */
 .pos-caja.vg { width: min(460px, 100%); }
-.pos-caja .vg-cab { display: flex; align-items: flex-start; gap: 12px; margin: 0 40px 12px 0; }
+.pos-caja .vg-cab { display: flex; align-items: center; gap: 12px; min-height: 34px; margin: 0 40px 12px 0; }
 .pos-caja .vg-cab > svg {
   width: 34px; height: 34px; flex: none; padding: 7px; border-radius: 50%;
   background: var(--ok-soft); color: var(--ok-txt); stroke-width: 2.6;
