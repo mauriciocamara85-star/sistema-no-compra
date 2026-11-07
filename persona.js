@@ -814,19 +814,25 @@ var persona = (function () {
     _gente = funcion('nc_login_locales', {}).then(function (locales) {
       /* Sólo los locales: "E-commerce" y "Administración" no tienen id. */
       var deVerdad = (locales || []).filter(function (l) { return l.id && l.codigo; });
+      /* Y la de Administración, sólo para saber quién es de la oficina (7/11): los supervisores van en «Oficina». */
+      var hayOficina = (locales || []).some(function (l) { return !l.id && l.grupo === 'oficina'; });
       return Promise.all(deVerdad.map(function (l) {
         return funcion('nc_login_personas', { p_local: l.id }).then(function (g) { return { l: l, g: g || [] }; });
-      }));
+      }).concat(hayOficina ? [funcion('nc_login_personas', { p_local: null, p_grupo: 'oficina' })
+        .then(function (g) { return { oficina: true, g: g || [] }; }, function () { return { oficina: true, g: [] }; })] : []));
     }).then(function (por) {
       /* Uno por persona: el supervisor de varios locales sale con todos los suyos. */
-      var porId = {}, lista = [];
+      var porId = {}, lista = [], deOficina = [];
       por.forEach(function (x) {
+        if (x.oficina) { deOficina = x.g; return; }
         x.g.forEach(function (p) {
           var y = porId[p.id];
           if (!y) { y = porId[p.id] = { p: p, nombre: p.nombre, locales: [] }; lista.push(y); }
           y.locales.push({ id: x.l.id, codigo: x.l.codigo, nombre: x.l.nombre });
         });
       });
+      /* Acá no se suman los de la oficina sin local (los administradores): sólo se marca al que ya está. */
+      deOficina.forEach(function (p) { if (porId[p.id]) porId[p.id].oficina = true; });
       guardarLS(K_GENTE, lista);
       return lista;
     }, function (e) {
@@ -868,7 +874,7 @@ var persona = (function () {
      Copia las filas: la lista de todos queda guardada y la Carga la sigue usando sin los grupos. */
   function genteConGrupos() {
     return Promise.all([genteDeTodos(), funcion('nc_login_locales', {}).catch(function () { return []; })]).then(function (r) {
-      var lista = (r[0] || []).map(function (y) { return { p: y.p, nombre: y.nombre, locales: y.locales.slice() }; });
+      var lista = (r[0] || []).map(function (y) { return { p: y.p, nombre: y.nombre, locales: y.locales.slice(), oficina: y.oficina }; });
       var porId = {};
       lista.forEach(function (y) { porId[y.p.id] = y; });
       var grupos = (r[1] || []).filter(function (l) { return !l.id && l.grupo; });
@@ -882,6 +888,7 @@ var persona = (function () {
             var y = porId[p.id];
             if (!y) { y = porId[p.id] = { p: p, nombre: p.nombre, locales: [] }; lista.push(y); }
             y.locales.push(loc);
+            if (x.l.grupo === 'oficina') y.oficina = true;
           });
         });
         return lista;
@@ -898,17 +905,24 @@ var persona = (function () {
     (o.conGrupos ? genteConGrupos() : genteDeTodos()).then(function (gente) {
       if (!c.isConnected) return;
       var ya = (o.yaEstan || []).map(llano);
-      /* Los de este local no salen: ya están en su lista. Salvo el supervisor de varios locales (sale en
-         la de entrar de cada uno, pero no en la de la Carga ni en la de Cobrar): sin esto, Franco, en la
-         compu de Pacheco, no estaba en ninguna lista ni en el buscador (7/11). Se lo reconoce porque está
-         en más de un local de verdad (los grupos, E-commerce y Administración, no tienen id). */
+      /* Los de este local no salen: ya están en su lista. Salvo los de la oficina (supervisores y, en el
+         inicio, administradores), que salen siempre, arriba de todo, en «Oficina» (él, 7/11: «una parte
+         que diga oficina, y ahí todos los supervisores y administradores… también si se abre desde otro
+         local»). Sin esto, Franco, en la compu de Pacheco, no estaba en ninguna lista ni en el buscador.
+         deVarios (más de un local de verdad) es por si la lista guardada es de antes de la marca. */
       var lista = gente.filter(function (x) {
         var deAca = x.locales.some(function (l) { return l.codigo === o.local; });
         var deVarios = x.locales.filter(function (l) { return l.id; }).length > 1;
-        return (!deAca || deVarios) && ya.indexOf(llano(x.nombre)) < 0;
+        return (!deAca || x.oficina || deVarios) && ya.indexOf(llano(x.nombre)) < 0;
       }).sort(function (a, b) {
-        return a.locales[0].nombre.localeCompare(b.locales[0].nombre, 'es') || a.nombre.localeCompare(b.nombre, 'es');
+        return (a.oficina ? 0 : 1) - (b.oficina ? 0 : 1) || seccion(a).localeCompare(seccion(b), 'es') || a.nombre.localeCompare(b.nombre, 'es');
       });
+      /* La sección y lo de abajo del nombre: el supervisor, con sus locales; el administrador, «Administración». */
+      function seccion(x) { return x.oficina ? 'Oficina' : x.locales[0].nombre; }
+      function detalle(x) {
+        var ls = x.locales.filter(function (l) { return !(x.oficina && l.grupo === 'oficina'); }).map(function (l) { return l.nombre; });
+        return ls.length ? ls.join(' · ') : 'Administración';
+      }
       c.innerHTML = (o.volver ? '<button type="button" class="ncp-volver" data-volver>‹ Volver</button>' : '') +
         '<h2 id="ncpTit">' + txt(o.titulo) + '</h2><p class="ncp-bajada">' + txt(o.bajada) + '</p>' +
         '<label class="ncp-buscar">' + LUPA +
@@ -923,7 +937,7 @@ var persona = (function () {
       function pintar() {
         var palabras = llano(buscar.value).split(/\s+/).filter(Boolean);
         vis = lista.filter(function (x) {
-          var donde = llano(x.nombre + ' ' + x.locales.map(function (l) { return l.nombre; }).join(' '));
+          var donde = llano(x.nombre + ' ' + x.locales.map(function (l) { return l.nombre; }).join(' ') + (x.oficina ? ' oficina' : ''));
           return palabras.every(function (w) { return donde.indexOf(w) > -1; });
         });
         if (!vis.length) {
@@ -935,12 +949,12 @@ var persona = (function () {
         }
         var grupo = '', html = '';
         vis.forEach(function (x, i) {
-          var g = x.locales[0].nombre;
+          var g = seccion(x);
           if (g !== grupo) { grupo = g; html += '<p class="ncp-grupo">' + txt(g) + '</p>'; }
           html += '<button type="button" class="ncp-persona" data-i="' + i + '">' +
             '<span class="ncp-ini" aria-hidden="true">' + txt(iniciales(x.nombre)) + '</span>' +
             '<span class="ncp-quien"><b>' + resaltar(x.nombre, palabras) + '</b>' +
-              '<small>' + resaltar(x.locales.map(function (l) { return l.nombre; }).join(' · '), palabras) + '</small></span>' +
+              '<small>' + resaltar(detalle(x), palabras) + '</small></span>' +
           '</button>';
         });
         caja.innerHTML = html;
