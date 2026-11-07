@@ -575,6 +575,8 @@
   var ESCANEO_PRENDA = /^([A-Za-z]{1,4}\d[A-Za-z0-9]*)\s+(\S+)\s+(\S+)$/;
   function digitos(t) { return String(t || '').replace(/[^0-9]/g, ''); }
   function esCodigoGC(t) { return /^99\d{12}$/.test(digitos(t)); }
+  /* SQL 264 (Mauricio, 7/11): en Rivadavia la Gift Card se vende y se cobra en el POS; el Club y los cupones, acá como siempre. */
+  function enElPos() { return !!(window.persona && persona.mostradorEnPos && persona.mostradorEnPos()); }
   function lindoGC(t) {
     var d = digitos(t);
     return d.length === 14 ? d.slice(0, 2) + ' ' + d.slice(2).replace(/(\d{4})(?=\d)/g, '$1 ') : String(t || '');
@@ -637,8 +639,10 @@
         '<div class="ficha muerto"><div class="ficha-top"><span class="pill pill-neutra">sin vender</span></div>' +
         '<div class="ficha-pct">' + esc(gc.color) + ' <span>Nº ' + esc(gc.nro) + '</span></div>' +
         '<div class="ficha-que">Todavía no se vendió: no tiene valor cargado. No se puede pagar con ella.</div>' +
+        /* SQL 264: en Rivadavia se vende en el POS (sale del stock del POS). */
+        (enElPos() ? '<p class="nada">¿La está comprando? En este local se vende en el POS: en «Nueva venta», pasá la tarjeta por la pistola en «Producto» y escribí el valor.</p></div>' :
         '<p class="nada">¿La está comprando? Se vende en Gift Cards, con la tarjeta ya cargada.<br>' +
-        '<button type="button" class="btn btn-pri" id="btnVenderEsta">Sí, venderla</button></p></div>';
+        '<button type="button" class="btn btn-pri" id="btnVenderEsta">Sí, venderla</button></p></div>');
     }
     if (!html) {
       var partes = [];
@@ -971,6 +975,8 @@
     var noEmpezo = vivo && b.multiuso && b.desde && String(b.desde) > isoHoy(0);
     var enFecha = vivo;
     if (noEmpezo) { vivo = false; }
+    /* SQL 264: en Rivadavia la Gift Card se cobra en el POS (así la venta y la caja quedan en el POS): acá se ve, sin canjear. */
+    var enPos = esGC && vivo && enElPos();
     var insignia = '<span class="pill ' + (vivo ? 'pill-ok' : b.estado === 'usado' ? 'pill-neutra' : 'pill-warn') + '">' +
       esc(noEmpezo ? 'empieza el ' + fechaCorta(b.desde) : b.estado) + '</span>';
     /* El cupón es del que lo trae: no se anuncia con el nombre de otro. */
@@ -1002,7 +1008,7 @@
       '<div class="ficha-quien">' + quien + '</div>' +
       (detalle.length ? '<div class="ficha-que">' + detalle.join(' · ') + '</div>' : '') +
       (vivo && condiciones.length ? '<ul class="ficha-cond">' + condiciones.map(function (c) { return '<li>' + c + '</li>'; }).join('') + '</ul>' : '') +
-      (vivo
+      (vivo && !enPos
         ? '<div class="ficha-campos">' +
             (b.multiuso && b.por_cliente
               ? '<div class="campo"><label for="tel' + b.id + '">WhatsApp del cliente</label>' +
@@ -1020,6 +1026,7 @@
             '</div>' +
           '</div>'
         : '<p class="nada">' + (
+            enPos ? 'En este local la Gift Card se cobra en el POS: en la venta, pasala por la pistola en «Producto» (queda en Forma de pago).' :
             noEmpezo ? 'Todavía no empezó: vale desde el ' + esc(fechaCorta(b.desde)) + '.' :
             b.multiuso && b.estado === 'usado' ? 'Ya se usó todas las veces que permitía.' :
             b.estado === 'usado' ? 'Ya se usó. Es de un solo uso.' :

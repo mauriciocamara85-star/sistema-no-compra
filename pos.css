@@ -1703,3 +1703,21 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .cj-tabla.tr-tabla td { white-space: normal; }
 .cj-tabla.tr-tabla td.n { white-space: nowrap; }
 .tk-datos.tr-rem > .tr-rem-pie { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+
+/* ── Las gift cards (SQL 264): la lista, el estado de cada una y su ventana ── */
+.pos-tabla.gc-lista td { white-space: nowrap; }
+.pos-tabla tr[data-gc] { cursor: pointer; }
+.pos-tabla tr[data-gc]:hover td { background: var(--surface-2); }
+.pos-filtros .gc-buscar { flex: 0 1 170px; min-width: 140px; }
+.gc-est { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 700 11.5px var(--sans); letter-spacing: .2px; vertical-align: middle; }
+.gc-est.disponible { background: var(--ok-soft); color: var(--ok-txt); }
+.gc-est.usado { background: var(--info-soft); color: var(--info-txt); }
+.gc-est.vencido { background: var(--warn-soft); color: var(--warn-txt); }
+.gc-est.anulado { background: var(--bad-soft); color: var(--bad-txt); }
+#posVentTit .gc-est { margin-left: 8px; font-size: 12px; }
+.gc-datos { margin: 4px 0 12px; display: grid; gap: 8px; }
+.gc-datos > div { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: baseline; }
+.gc-datos dt { color: var(--txt-3); font-size: 12.5px; }
+.gc-datos dd { margin: 0; color: var(--txt); font-size: 14px; }
+.gc-extender { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 8px; }
+.gc-extender .pos-f { flex: 0 1 180px; }

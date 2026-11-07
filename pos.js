@@ -117,6 +117,8 @@
       /* Las notas de crédito (SQL 205), después de los cambios, como en el menú de BlueSoft. */
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
                   ['cambios', 'Cambios', 'cambio'], ['notas', 'Notas de crédito', 'nc'], ['fallida', 'Venta fallida', 'fallida'],
+                  /* SQL 264 (Mauricio, 7/11: "si vendemos una gift card, lo hacemos desde el POS"): las vendidas, si se usaron y cuándo vencen. */
+                  ['giftcards', 'Gift cards', 'gift'],
                   /* Los clientes (SQL 197), con los socios del Club: como la «Administración de clientes» de la PC del local. */
                   ['clientes', 'Clientes', 'clientes'],
                   /* Las ventas por vendedor (SQL 192) y por productos (SQL 196, el "resumen de ventas"), como en la PC del local de BlueSoft. */
@@ -188,7 +190,7 @@
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).',
                       retiros: 'No tenés permiso para los retiros de fondos.' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, giftcards: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -246,6 +248,7 @@
     cambio: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
     nc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/>',
     fallida: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>',
+    gift: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M14 10v9"/><path d="M14 10c-1.2-2.6-3.6-3-4.4-2.1-.8.9.3 2.1 4.4 2.1zM14 10c1.2-2.6 3.6-3 4.4-2.1.8.9-.3 2.1-4.4 2.1z"/>',   // SQL 264: una tarjeta con su moño
     caja: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     movs: '<path d="M7 3v18M3 7l4-4 4 4"/><path d="M17 21V3M13 17l4 4 4-4"/>',
     disp: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
@@ -842,7 +845,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, giftcards: verGiftcards, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, transportes: verTransportes, diferencias: verDiferencias, inventario: verInventario,
@@ -1607,33 +1610,41 @@
     inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); leer(); } };
     return leer;
   }
-  /** «Vender una Gift Card»: la tarjeta (cod, si vino de la pistola en Producto) y su valor; entra a la venta como un renglón. */
+  /* SQL 264: cuándo vence la que se vende (los de Gift Cards); sin el 264 corrido, a los 30 días (la base no lo recibe). */
+  var VENCE_GC = [[30, '30 días'], [60, '60 días'], [90, '90 días'], [365, '1 año']];
+  /** «Vender una Gift Card»: la tarjeta (cod, si vino de la pistola en Producto) y su valor; entra a la venta como un renglón.
+      SQL 264: si la tarjeta ya se vendió y está para usar, no se vende: paga esta venta (pagarConGc). */
   function abrirGiftcard(cod) {
     var caja = ventana('<h3 id="posVentTit">Vender una Gift Card</h3><p class="pos-bajada">Pasá la tarjeta por la pistola y escribí el valor. ' +
-        'Al guardar la venta queda vendida, igual que desde Gift Cards, y vence a los 30 días.</p>' +
+        'Al guardar la venta queda vendida y sale del stock. Si la tarjeta ya está vendida, paga esta venta.</p>' +
       '<div class="pos-campos">' +
         campo('ancho', 'Tarjeta', '<input type="text" id="gcCod" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Los 14 números de la tarjeta">') +
         '<p class="tk-gc ancho" id="gcInfo" role="status"></p>' +
         campo('', 'Valor', '<input type="text" inputmode="decimal" id="gcValor" data-plata placeholder="$0">') +
+        campo('', 'Vence en', '<select id="gcVence">' + opciones(VENCE_GC, 30) + '</select>', ' id="gcVenceF"' + (S.gcVence ? '' : ' hidden')) +
       '</div><div class="pos-error" id="gcError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Agregar</button></div>');
     var leida = null, inp = caja.querySelector('#gcCod');
     var leer = engancharGc(inp, 'vender', function (r) {
       leida = r;
-      caja.querySelector('#gcInfo').innerHTML = textoGc(r, 'vender');
+      if (r && r.vence_dias) { S.gcVence = true; caja.querySelector('#gcVenceF').hidden = false; }   // SQL 264 corrido
+      /* SQL 264 (Mauricio, 7/11: "cuando vuelve a canjearla"): la que ya está vendida y para usar, paga la venta. */
+      if (r && r.vendida && r.estado === 'disponible' && !r.error) { cerrarVentana(); pagarConGc(r); return; }
+      caja.querySelector('#gcInfo').innerHTML = textoGc(r, r && r.vendida ? 'pagar' : 'vender');
       errorEn(caja, 'gcError', '');
       if (r && r.ok) caja.querySelector('#gcValor').focus();
     });
     function listo() {
       var v = leerPlata(caja.querySelector('#gcValor').value);
-      var mal = !leida || !leida.ok ? motivoGc(leida, 'vender') :
+      var mal = !leida || !leida.ok ? motivoGc(leida, leida && leida.vendida ? 'pagar' : 'vender') :
         V.lineas.some(function (l) { return l.giftcard === leida.codigo; }) ? 'Esa Gift Card ya está en la venta.' :
         !(v > 0) ? 'Escribí el valor de la Gift Card.' :
         v >= 1000000000 ? 'Ese valor no parece de una Gift Card: revisalo (tiene que ser menos de $ 10.000.000).' : '';
       if (!errorEn(caja, 'gcError', mal)) return;
+      var dias = S.gcVence ? Number(caja.querySelector('#gcVence').value) || 30 : 0;
       cerrarVentana();
       V.lineas.push({ giftcard: leida.codigo, codigo: 'GIFTCARD', descripcion: nombreGc(leida), rubro: '', talle: '', color: '', color_nom: '',
-                      cantidad: 1, precio: v, propio: true, libre: true });
+                      cantidad: 1, precio: v, propio: true, libre: true, vence_dias: dias || undefined });
       pintar();
       var p = $('vProd');
       if (p) { if (p.limpiar) p.limpiar(); p.focus(); }
@@ -1643,6 +1654,23 @@
     caja.querySelector('#gcValor').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo(); } };
     if (cod) { inp.value = cod; leer(); }
     else setTimeout(function () { inp.focus(); }, 0);
+  }
+  /** SQL 264: la tarjeta ya vendida que pasaron por la pistola en Producto queda como la Forma de pago de la venta (lo
+      mismo que elegir «Gift card» y pasarla ahí). Si no alcanza, el aviso de abajo lleva a «Múltiple», que arranca con ella. */
+  function pagarConGc(r) {
+    if (!V) return;
+    if (V.lineas.some(function (l) { return l.giftcard; })) { avisar('err', 'Una Gift Card no se compra con otra Gift Card: sacá la que se vende o cobrá esta venta con otro medio.'); return; }
+    if (V.letra === 'X') { avisar('err', 'La X va sólo con efectivo: para cobrar con la ' + nombreGc(r) + ', elegí factura B.'); return; }
+    V.forma = 'giftcard';
+    V.multiples = null;
+    V.pago = { gc: Object.assign({}, r, { ok: !motivoGc(r, 'pagar') }) };
+    pintarPago();
+    pintar();
+    var tot = cuenta(V).total, val = cent(r.valor);
+    avisar('ok', 'La ' + nombreGc(r) + ' (vale ' + plata(val) + ') quedó en Forma de pago.' +
+      (!tot ? ' Ahora pasá las prendas.' : val < tot ? ' No alcanza: lo que falta, en «Múltiple».' : ''));
+    var p = $('vProd');
+    if (p) { if (p.limpiar) p.limpiar(); p.focus(); }
   }
   /** El aviso abajo de «Gift card» en Forma de pago: si no alcanza, o si sobra (se usa entera: lo que sobra se pierde).
       Corto, en un renglón: lo que vale ya está al lado del campo y a 1366×657 dos renglones sacan el total de la pantalla. */
@@ -2003,9 +2031,14 @@
   /** El campo de producto de la venta. El cambio tiene dos: lo que vuelve y lo que se lleva. */
   /* SQL 200: la venta además vende gift cards (los 14 números de la tarjeta, o escribiendo "gift"). */
   function prodVenta() {
+    /* SQL 264: la Gift Card también es un artículo («GIFTCARD», para el stock): en la venta no va como una prenda, la
+       sugerencia es la de siempre (que pide pasar la tarjeta). */
     return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar, giftcard: abrirGiftcard,
-             buscar: function (q) { var r = buscarProductos(q); return /^gif/i.test(String(q || '').trim()) ? [SUG_GC].concat(r).slice(0, 8) : r; },
-             elegir: function (p) { if (p === SUG_GC) { $('vProd').limpiar(); abrirGiftcard(); } else abrirDetalle(p); } };
+             buscar: function (q) {
+               var r = buscarProductos(q).filter(function (p) { return p[0] !== 'GIFTCARD'; });
+               return /^gif/i.test(String(q || '').trim()) ? [SUG_GC].concat(r).slice(0, 8) : r;
+             },
+             elegir: function (p) { if (p === SUG_GC || p[0] === 'GIFTCARD') { $('vProd').limpiar(); abrirGiftcard(); } else abrirDetalle(p); } };
   }
 
   /* o: { campo, sug (los id), lista() y agregar(p, talle, color, cantidad) }. Cada campo con sus sugerencias.
@@ -2082,8 +2115,17 @@
     campoP.onfocus = function () { if (!sug.length && !leerEscaneo(campoP.value)) { sug = buscar(campoP.value); mira = 0; pintarSug(); } };
   }
 
+  /** SQL 264: la Gift Card (el artículo del stock) no entra a un cambio: se vende en «Nueva venta», con su tarjeta. */
+  function gcEnCambio(p, o) {
+    if (!p || p[0] !== 'GIFTCARD' || !/^cb/.test(String(o && o.campo || ''))) return false;
+    avisar('err', 'La Gift Card no va en un cambio: se vende en «Nueva venta», pasando la tarjeta por la pistola.');
+    var c = $(o.campo);
+    if (c && c.limpiar) c.limpiar();
+    return true;
+  }
   function agregarEscaneo(d, o) {
     var p = o.prod ? o.prod(d.codigo) : PROD[d.codigo];
+    if (gcEnCambio(p, o)) return;
     if (!p && o.escaneoLibre) p = [d.codigo, d.codigo, '', d.talle, d.color];
     if (!p) {
       avisar('err', 'El código ' + d.codigo + ' no está en el catálogo.' + (o.sinLinea ? '' : ' Si es un artículo suelto, cargalo con «Nueva línea».'));
@@ -2111,6 +2153,7 @@
   /* "Agregar detalle…" de BlueSoft: el talle y el color, con chips en vez de desplegables. */
   function abrirDetalle(p, o) {
     o = o || prodVenta();
+    if (gcEnCambio(p, o)) return;   // SQL 264
     var talles = tallesDe(p), colores = coloresDe(p), pr = precioDe(p[0], o.lista());
     var sel = { talle: talles.length === 1 ? talles[0] : '', color: colores.length === 1 ? colores[0].cod : '' };
     var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(p[0]) + ' · ' + esc(p[2] || 'Sin rubro') + ' · ' +
@@ -2606,6 +2649,7 @@
       items: V.lineas.map(function (l) {
         var it = { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
         if (l.giftcard) it.giftcard = l.giftcard;   // SQL 200: la tarjeta que se vende
+        if (l.giftcard && l.vence_dias) it.vence_dias = l.vence_dias;   // SQL 264: cuándo vence
         return it;
       }),
       descuentos: c.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
@@ -3635,6 +3679,133 @@
               (f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + '), f.cantidad, Number(f.neto), Number(f.descuentos), Number(f.total)];
     });
     bajarCsv('notas-de-credito-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     GIFT CARDS (SQL 264)
+     Mauricio (7/11): "si vendemos una gift card, lo hacemos desde el POS, y
+     para cobrar también… por ahora sólo para Rivadavia". La lista de la
+     sección Gift Cards, en el POS: las vendidas en la sucursal (o usadas en
+     ella), lo que valen, cuándo vencen y si ya se usaron, con la venta en que
+     se vendió y la compra en que se usó. Arriba, las que quedan en el stock
+     (sin vender). Con el permiso de anular (el encargado), «Extender». Una
+     vendida por error se anula anulando la venta: vuelve a quedar sin vender
+     y al stock. BlueSoft no tiene gift cards: no hay pantalla que copiar.
+     ════════════════════════════════════════════════════════════════════ */
+  var ESTADO_GC_LISTA = { disponible: 'Sin usar', usado: 'Usada', vencido: 'Vencida', anulado: 'Anulada' };
+  function refVentaGc(v) { return v ? (v.serie === 'x' ? 'X-' : v.serie === 'prueba' ? 'P-' : (v.letra || 'B') + '-') + v.numero : ''; }
+
+  function verGiftcards() {
+    var c = $('cuerpo'), l = localListado(), ultima = null;
+    c.innerHTML = cabeza('Gift cards', 'Las vendidas en ' + esc(lasSucursales()) + ': cuánto valen, cuándo vencen y si ya se usaron. ' +
+        'Se venden en Nueva venta, pasando la tarjeta por la pistola; para cobrar con una, se pasa la tarjeta en la venta.',
+        '<button type="button" class="btn btn-sec btn-chico" id="gcBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="venta">Nueva venta</button>') +
+      '<div class="pos-filtros">' +
+        campo('', 'Sucursal', '<select id="gcLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Estado', '<select id="gcEstado"><option value="">Todas</option>' +
+          opciones(Object.keys(ESTADO_GC_LISTA).map(function (k) { return [k, ESTADO_GC_LISTA[k]]; }), '') + '</select>') +
+        campo('gc-buscar', 'Número', '<input type="search" id="gcBuscar" inputmode="numeric" autocomplete="off" placeholder="Nº de la tarjeta">') +
+      '</div><div id="gcLista"><p class="cargando">Cargando…</p></div>';
+    c.querySelector('[data-ir="venta"]').onclick = function () { ir('venta'); };
+    ['gcLocal', 'gcEstado'].forEach(function (id) { $(id).onchange = cargar; });
+    var tBus = null;
+    $('gcBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 250); };
+    $('gcBajar').onclick = function () { if (ultima) bajarGiftcards(ultima); };
+    var pedido = 0;
+    function cargar() {
+      var n = ++pedido;
+      $('gcBajar').disabled = true;
+      ultima = null;
+      llamar('pos_giftcards', { p_local: $('gcLocal').value || null, p_estado: $('gcEstado').value || null, p_buscar: $('gcBuscar').value.trim() || null }).then(function (d) {
+        if (n !== pedido || !$('gcLista')) return;
+        pintarLista(d);
+      }).catch(function (e) {
+        if (n !== pedido || !$('gcLista')) return;
+        $('gcLista').innerHTML = '<div class="pos-cartel mal">' + (sinFuncion(e) ? 'Para ver las gift cards falta correr el SQL 264 en la base.' : esc(mensajeDe(e))) + '</div>';
+      });
+    }
+    function pintarLista(d) {
+      var t = d.totales || {};
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi" title="Las tarjetas que quedan en el stock, para vender"><span>En el stock</span><b>' + (Number(d.stock) || 0) + '</b></div>' +
+        '<div class="pos-kpi fuerte" title="Vendidas, sin usar y sin vencer: lo que los clientes tienen para gastar"><span>Sin usar</span><b>' + (t.disponible || 0) + ' · ' + plata(cent(t.disponible_valor || 0)) + '</b></div>' +
+        '<div class="pos-kpi"><span>Vencen en 7 días</span><b>' + (t.vencen_7 || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Usadas</span><b>' + (t.usado || 0) + ' · ' + plata(cent(t.usado_valor || 0)) + '</b></div>' +
+        '<div class="pos-kpi"><span>Vencidas</span><b>' + (t.vencido || 0) + ' · ' + plata(cent(t.vencido_valor || 0)) + '</b></div></div>';
+      if (!d.filas || !d.filas.length) {
+        $('gcLista').innerHTML = kpis + '<div class="pos-cartel">' + ($('gcEstado').value || $('gcBuscar').value.trim() ? 'No hay gift cards con esos filtros.' :
+          'Todavía no se vendió ninguna gift card. Se venden en Nueva venta: pasá la tarjeta por la pistola en «Producto» y escribí el valor.') + '</div>';
+        return;
+      }
+      ultima = d;
+      $('gcBajar').disabled = false;
+      $('gcLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla gc-lista"><thead><tr><th>Tarjeta</th><th>Vendida</th><th>Sucursal</th><th>Vendedor</th>' +
+        '<th class="n">Venta</th><th class="n">Valor</th><th class="n">Cobrado</th><th>Vence</th><th>Estado</th><th>Usada</th><th class="n">Compra</th></tr></thead><tbody>' +
+        d.filas.map(function (f, i) {
+          return '<tr data-gc="' + i + '" tabindex="0"><td><b>' + esc(f.color + ' Nº ' + f.nro) + '</b></td><td>' + esc(fechaHora(f.creado)) + '</td>' +
+            '<td>' + esc(localDeCodigo(f.local)) + '</td><td>' + esc(f.vendedor || '—') + '</td>' +
+            '<td class="n">' + (f.venta ? esc(refVentaGc(f.venta)) : '<span class="apagado" title="Vendida desde la sección Gift Cards">—</span>') + '</td>' +
+            '<td class="n"><b>' + plata(cent(f.valor)) + '</b></td><td class="n">' + plata(cent(f.cobrado)) + '</td>' +
+            '<td>' + esc(fechaCorta(f.vence)) + '</td><td><span class="gc-est ' + esc(f.estado) + '">' + esc(ESTADO_GC_LISTA[f.estado] || f.estado) + '</span></td>' +
+            '<td>' + (f.usado ? esc(diaDe(f.usado)) + (f.local_canje && f.local_canje !== f.local ? ' · ' + esc(localDeCodigo(f.local_canje)) : '') : '') + '</td>' +
+            '<td class="n">' + (f.usado && f.monto_compra != null ? plata(cent(f.monto_compra)) : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 1.000. Buscá el número para ver una más vieja.</p>' : '');
+      $('gcLista').querySelectorAll('tr[data-gc]').forEach(function (tr) {
+        tr.onclick = function () { abrirGc(d.filas[Number(tr.getAttribute('data-gc'))], cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+    actualizable(cargar);
+  }
+  /** Una gift card: lo que pasó con ella, la venta y la compra (abren el ticket) y «Extender» si no se usó. */
+  function abrirGc(f, alCambiar) {
+    var extiende = (f.estado === 'disponible' || f.estado === 'vencido') && puede('anular');
+    var dato = function (k, v) { return v ? '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>' : ''; };
+    var caja = ventana('<h3 id="posVentTit">Gift Card ' + esc(f.color + ' Nº ' + f.nro) + ' <span class="gc-est ' + esc(f.estado) + '">' + esc(ESTADO_GC_LISTA[f.estado] || f.estado) + '</span></h3>' +
+      '<dl class="gc-datos">' +
+        dato('Valor', '<b>' + plata(cent(f.valor)) + '</b>') +
+        dato('Se cobró', plata(cent(f.cobrado)) + (f.pago ? ' · ' + esc(f.pago) : '')) +
+        dato('Vendida', esc(fechaHora(f.creado)) + ' · ' + esc(localDeCodigo(f.local)) + (f.vendedor ? ' · ' + esc(f.vendedor) : '') +
+          (f.venta ? ' · <button type="button" class="pos-link" data-ver="venta">' + esc(refVentaGc(f.venta)) + '</button>' : '')) +
+        dato(f.estado === 'vencido' ? 'Venció' : 'Vence', esc(fechaCorta(f.vence))) +
+        dato('Usada', f.usado ? esc(fechaHora(f.usado)) + ' · ' + esc(localDeCodigo(f.local_canje)) + (f.vendedor_canje ? ' · ' + esc(f.vendedor_canje) : '') +
+          (f.monto_compra != null ? ' · compra de ' + plata(cent(f.monto_compra)) : '') +
+          (f.uso ? ' · <button type="button" class="pos-link" data-ver="uso">' + esc(refVentaGc(f.uso)) + '</button>' : '') : '') +
+        dato('Anulada', f.anulado ? esc(fechaHora(f.anulado)) + (f.anulado_por ? ' · ' + esc(f.anulado_por) : '') + (f.motivo_anul ? ' · ' + esc(f.motivo_anul) : '') : '') +
+        dato('Notas', f.obs ? esc(f.obs).replace(/\n/g, '<br>') : '') +
+      '</dl>' +
+      (extiende ? '<div class="pos-campos gc-extender">' + campo('', f.estado === 'vencido' ? 'Volver a darla por' : 'Extender', '<select id="gcDias">' +
+          opciones([[7, '7 días'], [15, '15 días'], [30, '30 días'], [60, '60 días']], 15) + '</select>') +
+        '<button type="button" class="btn btn-sec btn-chico" id="gcExt">' + (f.estado === 'vencido' ? 'Volver a darla' : 'Extender') + '</button></div>' : '') +
+      (f.estado === 'disponible' && f.venta ? '<p class="pos-ayuda">¿Se vendió por error? Anulá la venta ' + esc(refVentaGc(f.venta)) +
+        ' (en el ticket, «Anular» o «Nota de crédito»): la tarjeta vuelve a quedar sin vender y al stock.</p>' : '') +
+      '<div class="pos-error" id="gcExtError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    caja.querySelectorAll('[data-ver]').forEach(function (b) {
+      b.onclick = function () { var v = f[b.getAttribute('data-ver')]; cerrarVentana(); abrirTicket(v.id, alCambiar); };
+    });
+    var bt = caja.querySelector('#gcExt');
+    if (bt) bt.onclick = function () {
+      var dias = Number(caja.querySelector('#gcDias').value);
+      bt.disabled = true;
+      llamar('pos_giftcard_extender', { p_id: f.id, p_dias: dias }).then(function (nueva) {
+        cerrarVentana();
+        avisar('ok', 'Listo: la Gift Card ' + f.color + ' Nº ' + f.nro + ' vence el ' + fechaCorta(nueva) + '.');
+        if (alCambiar) alCambiar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'gcExtError', mensajeDe(e)); });
+    };
+  }
+  function bajarGiftcards(d) {
+    var cab = ['Tarjeta', 'Vendida', 'Sucursal', 'Vendedor', 'Venta', 'Valor', 'Cobrado', 'Forma de pago', 'Vence', 'Estado', 'Usada', 'Sucursal donde se usó', 'Compra', 'Notas'];
+    var filas = (d.filas || []).map(function (f) {
+      return [f.color + ' Nº ' + f.nro, fechaLarga(f.creado), localDeCodigo(f.local), f.vendedor || '', refVentaGc(f.venta), Number(f.valor), Number(f.cobrado), f.pago || '',
+              fechaCorta(f.vence), ESTADO_GC_LISTA[f.estado] || f.estado, f.usado ? fechaLarga(f.usado) : '', f.local_canje ? localDeCodigo(f.local_canje) : '',
+              f.monto_compra != null ? Number(f.monto_compra) : '', f.obs || ''];
+    });
+    bajarCsv('gift-cards-' + Interfaz.fecha.hoy() + '.csv', cab, filas);
   }
 
   /* ════════════════════════════════════════════════════════════════════

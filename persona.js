@@ -171,6 +171,20 @@ var persona = (function () {
        uno: al vendedor que entra en la compu del local la barra no se la muestra (estilos.css). */
     if (compuDelLocal()) document.documentElement.setAttribute('data-nc-compu-habilitada', '');
     else document.documentElement.removeAttribute('data-nc-compu-habilitada');
+    /* SQL 264: en Rivadavia el mostrador ya es el POS (la barra sin Gift Cards, estilos.css). */
+    if (mostradorEnPos()) document.documentElement.setAttribute('data-nc-mostrador-pos', '');
+    else document.documentElement.removeAttribute('data-nc-mostrador-pos');
+  }
+  /* SQL 264 (Mauricio, 7/11: "si vendemos una gift card, lo hacemos desde el POS, y para cobrar también… por ahora sólo
+     para Rivadavia; en los demás locales que no hay POS, lo dejaría igual"): los locales cuyo mostrador ya es el POS. Ahí
+     la gift card se vende, se cobra y se consulta en el POS: la barra no muestra Gift Cards y giftcards.html lo dice. Vale
+     para la gente de ese local (en cualquier compu) y para quien trabaja en su compu (el que cubre); la oficina
+     (Administración, Atención, Gerencia) sigue igual. Códigos de orden_locales (Rivadavia es «MAR DEL PLATA»). */
+  var MOSTRADOR_POS = ['MAR DEL PLATA'];
+  function mostradorEnPos() {
+    if (OFICINA[rol()]) return false;
+    var suyo = vigente(_yo) && _yo.local ? String(_yo.local).toUpperCase() : '';
+    return MOSTRADOR_POS.indexOf(suyo) > -1 || MOSTRADOR_POS.indexOf(String(codDelLocal() || '').toUpperCase()) > -1;
   }
   marcar();
 
@@ -1814,6 +1828,9 @@ var persona = (function () {
     deFabrica: deFabrica,
     /** Quien entró es de la oficina (Administración, Atención o Gerencia, o un vendedor con la casilla de Atención). */
     oficina: oficina,
+    /** SQL 264: el mostrador de este local ya es el POS (Rivadavia): la gift card se vende y se cobra ahí. */
+    mostradorEnPos: mostradorEnPos,
+    usaPos: usaPos,
     /** Lo que va en lugar del PIN: la marca de la sesión, o '' si no es de la oficina. */
     pin: function () {
       if (!oficina()) return '';

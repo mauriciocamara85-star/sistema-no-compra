@@ -224,6 +224,17 @@
 
 <main class="hoja">
 
+  <!-- SQL 264 (7/11): en el local cuyo mostrador ya es el POS (Rivadavia), la gift card se vende, se cobra y se consulta
+       en el POS. Esta pantalla lo dice y no vende (si no, la tarjeta no bajaría del stock del POS). La oficina, igual. -->
+  <section class="bloque" id="gcEnPos" hidden>
+    <h2 class="gc-tit">En este local, la gift card va por el POS</h2>
+    <p class="oficina-txt">Para <b>venderla</b>: en el POS, «Nueva venta», pasá la tarjeta por la pistola en «Producto» y escribí el valor.</p>
+    <p class="oficina-txt">Para <b>cobrar con una</b>: pasala por la pistola en la venta, igual que una prenda (queda en Forma de pago).</p>
+    <p class="oficina-txt">Las vendidas, cuándo vencen y si ya se usaron: en el POS, <b>Ventas → Gift cards</b>.</p>
+    <a class="btn btn-pri" id="gcIrPos" href="pos.html#giftcards">Abrir el POS</a>
+    <p class="oficina-txt" id="gcSinPos" hidden>Si no te aparece el POS en la barra, lo carga quien tiene el POS, o pedile a la oficina que te lo prenda (Config → Usuarios).</p>
+  </section>
+
   <!-- ── Dónde y quién ──
        La venta queda anotada con el local y con quién la vendió. Si falta
        alguno se pregunta acá mismo (la misma bienvenida de Carga y Cobrar).
@@ -1061,6 +1072,18 @@
   /* Entró o salió alguien (en otra pestaña): la lista a la vista se rearma
      con quien está ahora (o vuelve el portón); la venta queda como está. */
   document.addEventListener('persona', function () { if (!$('gcLista').hidden) { GL.lista = null; $('glCuerpo').innerHTML = ''; mostrarLista(false); } });
+  /* SQL 264: en Rivadavia (persona.mostradorEnPos), sólo el cartel que manda al POS; lo demás queda escondido sin tocar
+     su hidden (lo maneja la pantalla). Se vuelve a mirar cuando cambia quién está adentro. */
+  function irAlPos() {
+    var si = !!(persona.mostradorEnPos && persona.mostradorEnPos());
+    $('gcEnPos').hidden = !si;
+    Array.prototype.forEach.call(document.querySelectorAll('main.hoja > :not(#gcEnPos)'), function (e) { e.style.display = si ? 'none' : ''; });
+    var pos = !!(persona.usaPos && persona.usaPos());
+    $('gcIrPos').hidden = !pos;
+    $('gcSinPos').hidden = pos;
+  }
+  irAlPos();
+  document.addEventListener('persona', irAlPos);
   iniciarTema();
   iniciarPWA();
 })();
