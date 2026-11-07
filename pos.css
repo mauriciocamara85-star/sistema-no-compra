@@ -1649,6 +1649,42 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .rg-barra .btn-sec { background: transparent; color: #FFFFFF; border-color: rgba(255, 255, 255, .35); }
 .rg-barra .btn:disabled { opacity: .45; cursor: default; }
 .rg-barra .pos-link { color: #FFFFFF; }
+/* 7/11: la lista como los «Remitos de Venta» de BlueSoft. En la PC, a todo el alto: la tabla se desliza adentro con los
+   títulos fijos, un renglón por remito; abajo los totales (las cajas de Tickets) y, a la derecha, en el mismo renglón
+   (donde BlueSoft tiene «Facturar»), los botones para los marcados. */
+.rg-nw { white-space: nowrap; }
+.pos-filtros .rg-ref { flex: 0 1 190px; min-width: 150px; }
+.rg-tabla td small { display: inline; margin-left: 6px; }
+.rg-tabla td.rg-obs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.rg-pie { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 10px; margin-top: 10px; }
+.rg-pie > .tkl-pie { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+.rg-pie > .tkl-pie .tk-caja { flex: 0 1 112px; min-width: 96px; }
+.rg-pie > .tkl-pie .pos-por-letra { flex: 1 1 200px; }
+/* Los botones no se achican nunca: si no entra, el renglón chico de los totales baja. */
+.rg-pie > #rgBarra { flex: none; display: flex; max-width: 100%; }
+.rg-pie > #rgBarra:empty { display: none; }
+.rg-pie .rg-barra { position: static; margin: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: 8px 10px; }
+.rg-pie .rg-barra > span { flex: none; }
+.rg-pie .rg-barra .btn { flex: none; }
+/* Cuántos y cuáles, uno arriba del otro (como el «$727.542 - 36 prendas» de BlueSoft arriba de Facturar). */
+.rg-cuales { display: flex; flex-direction: column; min-width: 0; max-width: 190px; line-height: 1.25; }
+.rg-cuales b { white-space: nowrap; }
+.rg-pie .rg-barra .rg-cuales span { flex: none; min-width: 0; font-size: 12px; }
+.rg-barra.vacia { background: var(--surface-2); color: var(--txt-2); border: 1px solid var(--line); box-shadow: none; }
+.rg-barra.vacia span { color: var(--txt-2); }
+.rg-barra.vacia .btn-sec { color: var(--txt); border-color: var(--line); }
+.pos-por-letra .mal b { color: var(--bad-txt); }
+@media (min-width: 1000px) {
+  .rg-pie { flex-wrap: nowrap; }
+  .pos-cuerpo.lleno > .rgl { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .rgl > .pos-marco-tabla { flex: 1 1 auto; height: 0; min-height: 150px; overflow: auto; }
+  .rgl .pos-tabla th { position: sticky; top: 0; z-index: 1; }
+}
+@media (max-width: 999px) {
+  .rg-pie > #rgBarra { flex: 1 1 100%; }
+  .rg-pie .rg-barra { flex-wrap: wrap; }
+  .rg-cuales { max-width: none; flex: 1 1 100%; }
+}
 /* El remito abierto: imprimir el remito, el expreso y los rótulos, y cambiar los datos del envío. */
 .rm-imprimir { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; padding: 8px 12px; background: var(--surface-2); border-radius: 10px; font-size: 13px; }
 .rm-imprimir > span:first-child { font-weight: 700; color: var(--txt-2); }

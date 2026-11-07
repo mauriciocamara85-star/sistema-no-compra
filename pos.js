@@ -866,7 +866,7 @@
   /* ── El menú de la izquierda ── */
   /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. Tickets también
      (SQL 171): con el panel de la derecha, la lista entra entera en la PC del local. */
-  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets' || S.vista === 'remito_nuevo'; }   // el remito nuevo (7/11): como la venta
+  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets' || S.vista === 'remito_nuevo' || (S.vista === 'remitos' && OFICINA); }   // el remito nuevo y la lista de la Fábrica (7/11): como la venta y Tickets
   function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : leer(K_FIJO) !== '1'; }
   function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else guardar(K_FIJO, ch ? '0' : '1'); }
 
@@ -9458,64 +9458,130 @@
     }
     S.rgEnviosPedido = false;
     var con259 = !S.sin259;
-    c.innerHTML = cabeza('Remitos', con259 ? 'Lo que la fábrica manda a cada local, los envíos entre locales y lo que vuelve a la fábrica. El de la fábrica queda «Pendiente de envío» hasta que tocás «Enviar»; ' +
-                                             'ahí el local lo ve y lo cuenta a ciegas al recibirlo, en POS → Remitos.'
-                                           : 'Lo que la fábrica manda a cada local, los envíos entre locales y lo que vuelve a la fábrica. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
-        '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>') +
+    /* 7/11 (Mauricio: «hagamos todo como lo tiene BlueSoft»): como los «Remitos de Venta» de BlueSoft. Arriba a la derecha
+       Nuevo remito y Exportar; los filtros en su orden (la fecha, el Cliente, el Estado, el Número de referencia, el
+       Transporte y la Temporada del remito; y Producto, lo nuestro); la lista a todo el alto, con la casilla, Fecha, el
+       remito, Referencia, Estado, Sale de, Cliente, Cantidad, Llegaron, Transporte, Bultos y Observaciones; abajo la
+       cantidad de remitos, de productos y los bultos y, a la derecha (donde BlueSoft tiene «Facturar»), lo que se hace con
+       los marcados: Enviar, Imprimir, Expreso y Rótulos. Número, Transporte y Temporada filtran lo que ya vino. */
+    c.classList.add('lleno');
+    var transps = ((S.envios && S.envios.transportes) || []).slice().sort(function (a, b) { return (b.activo ? 1 : 0) - (a.activo ? 1 : 0) || a.nombre.localeCompare(b.nombre, 'es'); });
+    c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local, lo que vuelve y los envíos entre locales.' + (con259 ? ' El de la fábrica sale con «Enviar».' : ''),
+        '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rgExcel" title="Los remitos que se ven, para abrirlos en Excel">Exportar</button>') +
       '<div class="pos-filtros"><div id="rgPer"></div>' +
-        campo('', 'Sucursal', '<select id="rgLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
+        campo('', 'Cliente', '<select id="rgLocal" class="desplegable" title="El local al que va o del que sale">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Estado', '<select id="rgEstado"><option value="">Todos</option>' + opciones((con259 ? [['por_enviar', 'Pendientes de envío (de cualquier día)']] : []).concat(
                                                                                              [['pendiente', 'Por recibir (de cualquier día)'], ['recibido', 'Recibidos'],
                                                                                               ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']]), '') + '</select>') +
+        campo('rg-ref', 'Número de referencia', '<input type="search" id="rgRef" autocomplete="off" spellcheck="false" placeholder="R-12 o la referencia">') +
+        (con259 ? campo('', 'Transporte', '<select id="rgTransp"><option value="">Todos</option><option value="-">Sin transporte</option>' +
+                                          opciones(transps.map(function (t) { return [t.id, nombreTransp(t)]; }), '') + '</select>') : '') +
+        (con259 ? campo('', 'Temporada del remito', '<select id="rgTemp"><option value="">Todas</option><option value="-">Sin temporada</option>' +
+                                                    opciones(valoresDe(8).map(function (t) { return [t, t]; }), '') + '</select>') : '') +
         campo('rm-buscar', 'Producto', '<input type="search" id="rgBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" ' +
               'title="En qué remitos va un producto y cuántas llegaron. El código o el nombre; o escaneá la etiqueta">') +
-      '</div><div id="rgBarra"></div><div id="rgLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="rgLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
+      '<div class="rg-pie"><div class="tkl-pie" id="rgPie"></div><div id="rgBarra"></div></div>';
     engancharIr(c);
     var per = periodoPos($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
     ['rgLocal', 'rgEstado'].forEach(function (id) { $(id).onchange = cargar; });
-    var tBus = null;
+    ['rgTransp', 'rgTemp'].forEach(function (id) { if ($(id)) $(id).onchange = function () { if (dat) pintar(); }; });
+    var tBus = null, tRef = null;
     $('rgBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
     $('rgBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
+    $('rgRef').oninput = function () { clearTimeout(tRef); tRef = setTimeout(function () { if (dat) pintar(); }, 250); };
+    $('rgExcel').onclick = bajarLista;
     /* SQL 259: los elegidos (remitos de la fábrica), para enviarlos o imprimirlos juntos: id → su fila. */
-    var pedido = 0, sel = {}, filas = [];
+    var pedido = 0, sel = {}, filas = [], todas = [];
+    var dat = null;   // lo último que trajo la base (sin «Producto»)
     function cargar() {
       clearTimeout(tBus);
       var q = productoBuscado($('rgBuscar').value);
-      if (q) { sel = {}; pintarBarra(); buscar(q); return; }
+      if (q) { sel = {}; dat = null; filas = []; $('rgPie').innerHTML = ''; pintarBarra(); buscar(q); return; }
       var r = per.rango(), n = ++pedido;
       $('rgLista').innerHTML = '<p class="cargando">Cargando…</p>';
       return llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('rgLocal').value || null, p_estado: $('rgEstado').value || null }).then(function (d) {
         if (n !== pedido || !$('rgLista')) return;
-        var t = d.totales || {};
-        var kpis = '<div class="pos-totales">' +
-          '<div class="pos-kpi"><span>Remitos</span><b>' + num(t.remitos) + '</b></div>' +
-          (t.por_enviar !== undefined ? '<div class="pos-kpi"><span>Pendientes de envío</span><b>' + num(t.por_enviar) + '</b></div>' : '') +
-          '<div class="pos-kpi"><span>Por recibir</span><b>' + num(t.pendientes) + '</b></div>' +
-          '<div class="pos-kpi"><span>Con diferencias</span><b class="' + (t.con_diferencias ? 'st-sale' : '') + '">' + num(t.con_diferencias) + '</b></div>' +
-          '<div class="pos-kpi fuerte"><span>Unidades mandadas</span><b>' + num(t.unidades) + '</b></div></div>';
-        filas = (d.filas || []).filter(function (f) { return !f.entre_depositos; });   // SQL 193: los pases entre depósitos están en Envíos internos
-        /* Los elegidos que siguen en la lista, con su fila al día (el estado cambia al enviarlos). */
-        var antes = sel; sel = {};
-        filas.forEach(function (f) { if (antes[f.id] && elegible(f)) sel[f.id] = f; });
-        pintarBarra();
-        if (!filas.length) { $('rgLista').innerHTML = kpis + '<div class="pos-cartel">No hay remitos en ese período con esos filtros.</div>'; abrirElGuardado(); return; }
-        var algun = con259 && filas.some(elegible);
-        $('rgLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla rg-tabla"><thead><tr>' +
+        dat = d;
+        todas = (d.filas || []).filter(function (f) { return !f.entre_depositos; });   // SQL 193: los pases entre depósitos están en Envíos internos
+        sumarOpciones();
+        pintar();
+        abrirElGuardado();
+      }).catch(function (e) { if ($('rgLista')) { $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; $('rgPie').innerHTML = ''; } });
+    }
+    /** Un transporte dado de baja o una temporada que ya no está en la lista, pero que algún remito tiene: también se elige. */
+    function sumarOpciones() {
+      [['rgTransp', 'transporte_id', 'transporte'], ['rgTemp', 'temporada', 'temporada']].forEach(function (x) {
+        var s = $(x[0]);
+        if (!s) return;
+        var hay = {};
+        [].forEach.call(s.options, function (o) { hay[o.value] = true; });
+        todas.forEach(function (f) {
+          var v = f[x[1]];
+          if (v && !hay[v]) { hay[v] = true; s.insertAdjacentHTML('beforeend', '<option value="' + esc(v) + '">' + esc(f[x[2]] || v) + '</option>'); }
+        });
+      });
+    }
+    /** Lo que se ve: lo que vino, con el Número, el Transporte y la Temporada (filtran acá, sin volver a pedir). */
+    function filtradas() {
+      var ref = normal($('rgRef').value), tr = $('rgTransp') ? $('rgTransp').value : '', te = $('rgTemp') ? $('rgTemp').value : '';
+      return todas.filter(function (f) {
+        return (!ref || normal(refRemito(f) + ' ' + (f.referencia || '')).indexOf(ref) >= 0 || String(f.numero) === ref.replace(/^r-?/, '')) &&
+               (!tr || (tr === '-' ? !f.transporte_id : f.transporte_id === tr)) &&
+               (!te || (te === '-' ? !f.temporada : f.temporada === te));
+      });
+    }
+    /* Abajo, como BlueSoft: los remitos (sus «líneas»), los productos y los bultos (sin el Monto: el remito no lleva
+       precios), en cajas como las de Tickets; y lo nuestro en un renglón chico, como las letras de Tickets: cuántos esperan
+       salir, llegar o tienen diferencias. Sin los anulados. Con un filtro de acá (o hasta 500 renglones), de lo que se ve;
+       si no, los totales de la base, del período entero. */
+    function pintarPie(fs, d) {
+      var t = d.totales || {}, deAca = fs !== todas || !d.mas;
+      if (deAca) {
+        t = { remitos: 0, unidades: 0, bultos: 0, por_enviar: 0, pendientes: 0, con_diferencias: 0 };
+        fs.forEach(function (f) {
+          if (f.estado === 'anulado') return;
+          t.remitos++; t.unidades += Number(f.unidades) || 0; t.bultos += Number(f.bultos) || 0;
+          if (f.estado === 'por_enviar') t.por_enviar++; else if (f.estado === 'pendiente') t.pendientes++; else if (f.estado === 'con_diferencias') t.con_diferencias++;
+        });
+      }
+      var caja = function (lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; };
+      var letra = function (lbl, v, cls) { return '<span' + (cls ? ' class="' + cls + '"' : '') + '>' + lbl + ' <b>' + num(v) + '</b></span>'; };
+      $('rgPie').innerHTML = caja('Remitos', num(t.remitos)) + caja('Productos', num(t.unidades), 'fuerte') + (con259 ? caja('Bultos', num(t.bultos)) : '') +
+        '<p class="pos-por-letra">' + (con259 ? letra('Pendientes de envío', t.por_enviar) : '') + letra('Por recibir', t.pendientes) +
+        letra('Con diferencias', t.con_diferencias, t.con_diferencias ? 'mal' : '') + '</p>';
+    }
+    function pintar() {
+      var d = dat;
+      if (!d || !$('rgLista')) return;
+      filas = filtradas();
+      /* Los elegidos que siguen en la lista, con su fila al día (el estado cambia al enviarlos). */
+      var antes = sel; sel = {};
+      filas.forEach(function (f) { if (antes[f.id] && elegible(f)) sel[f.id] = f; });
+      pintarPie(filas, d);
+      pintarBarra();
+      if (!filas.length) { S.rgMarcarTodos = null; $('rgLista').innerHTML = '<div class="pos-cartel">No hay remitos en ese período con esos filtros.</div>'; return; }
+      var algun = con259 && filas.some(elegible);
+      $('rgLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla rg-tabla"><thead><tr>' +
             (algun ? '<th class="rg-sel"><input type="checkbox" id="rgTodos" aria-label="Elegir todos los de la fábrica" title="Elegir todos los de la fábrica"></th>' : '') +
-            '<th>Remito</th><th>Referencia</th><th>Sale de</th><th>Llega a</th>' +
-            '<th>Observaciones</th><th>Productos</th><th class="n">Mandaron</th><th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
+            '<th>Fecha</th><th>Remito</th><th>Referencia</th><th>Estado</th><th>Sale de</th><th>Cliente</th>' +
+            '<th class="n">Cantidad</th><th class="n">Llegaron</th>' + (con259 ? '<th>Transporte</th><th class="n">Bultos</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
           filas.map(function (f) {
             var dif = f.contadas != null && f.estado !== 'pendiente' && f.estado !== 'por_enviar' && Number(f.contadas) !== Number(f.unidades);
-            var envio = [f.transporte || '', f.bultos ? num(f.bultos) + (f.bultos === 1 ? ' bulto' : ' bultos') : ''].filter(Boolean).join(' · ');
+            /* Mientras el local lo recibe, cuántos productos ya contó. */
+            var van = f.estado === 'pendiente' && f.recibidos ? '<small>' + f.recibidos + ' de ' + f.productos + ' productos</small>' : '';
             return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '>' +
               (algun ? '<td class="rg-sel">' + (elegible(f) ? '<input type="checkbox" data-sel="' + esc(f.id) + '"' + (sel[f.id] ? ' checked' : '') + ' aria-label="' + esc('Elegir ' + refRemito(f)) + '">' : '') + '</td>' : '') +
-              '<td><b>' + esc(refRemito(f)) + '</b><small>' + esc(fechaHora(f.fecha)) + '</small></td>' +
-              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + (f.origen_deposito && !f.origen_local_id ? '<small>' + esc(f.origen_deposito) + '</small>' : '') + '</td>' +
-              '<td>' + esc(bonito(f.destino)) + (envio ? '<small class="rg-envio">' + esc(envio) + '</small>' : '') + '<small>' + esc(f.creado_nombre || '') + '</small></td>' +
-              '<td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
-              '<td>' + (f.estado === 'pendiente' && f.recibidos ? f.recibidos + ' de ' + f.productos : num(f.productos)) + '</td>' +
+              '<td class="rg-nw">' + esc(fechaHora(f.fecha)) + '</td><td class="rg-nw" title="' + esc(f.creado_nombre ? 'Lo hizo ' + f.creado_nombre : '') + '"><b>' + esc(refRemito(f)) + '</b></td>' +
+              '<td>' + esc(f.referencia || '—') + '</td>' +
+              '<td>' + pillRemito(f.estado) + (f.dif_pendientes > 0 && f.estado !== 'anulado' ? '<small class="df-pend">' + f.dif_pendientes + ' sin resolver</small>' : '') + van + '</td>' +
+              /* Un renglón por remito, como BlueSoft: el depósito y las observaciones largas, al pasar el mouse. */
+              '<td' + (f.origen_deposito && !f.origen_local_id ? ' title="' + esc('Depósito: ' + f.origen_deposito) + '"' : '') + '>' + esc(bonito(f.origen)) + '</td>' +
+              '<td>' + esc(bonito(f.destino)) + '</td>' +
               '<td class="n tachar">' + num(f.unidades) + '</td><td class="n' + (dif ? ' st-sale' : '') + '">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td>' +
-              '<td>' + pillRemito(f.estado) + (f.dif_pendientes > 0 && f.estado !== 'anulado' ? '<small class="df-pend">' + f.dif_pendientes + ' sin resolver</small>' : '') + '</td></tr>';
+              (con259 ? '<td>' + esc(f.transporte || '—') + '</td><td class="n">' + (f.bultos ? num(f.bultos) : '—') + '</td>' : '') +
+              '<td class="cb-que rg-obs" title="' + esc(f.observaciones || '') + '">' + esc(f.observaciones || '') + '</td></tr>';
           }).join('') + '</tbody></table></div>' + (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
         $('rgLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
           tr.onclick = function (e) {
@@ -9549,29 +9615,47 @@
           };
           S.rgMarcarTodos = marcarTodos;
         } else S.rgMarcarTodos = null;
-        abrirElGuardado();
-      }).catch(function (e) { if ($('rgLista')) $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    /** «Exportar»: los remitos que se ven, con sus columnas (y el depósito, la temporada y quién lo hizo). */
+    function bajarLista() {
+      if (!dat) { avisar('info', productoBuscado($('rgBuscar').value) ? 'Exportar baja la lista de remitos: borrá lo de «Producto».' : 'Todavía se está cargando la lista.'); return; }
+      if (!filas.length) { avisar('info', 'No hay remitos para exportar con esos filtros.'); return; }
+      var r = per.rango();
+      bajarCsv('remitos-' + (r.desde || '') + '-' + (r.hasta || '') + '.csv',
+        ['Fecha', 'Remito', 'Referencia', 'Estado', 'Sale de', 'Depósito', 'Cliente', 'Cantidad', 'Llegaron', 'Transporte', 'Bultos', 'Temporada', 'Observaciones', 'Lo hizo'],
+        filas.map(function (f) {
+          return [fechaHora(f.fecha), refRemito(f), f.referencia || '', (ESTADO_REMITO[f.estado] || [f.estado])[0], bonito(f.origen), f.origen_deposito || '', bonito(f.destino),
+                  f.unidades == null ? '' : Number(f.unidades), f.contadas == null ? '' : Number(f.contadas), f.transporte || '', f.bultos || '', f.temporada || '',
+                  f.observaciones || '', f.creado_nombre || ''];
+        }));
     }
     /** Se puede elegir: un remito de la fábrica a un local, no anulado (SQL 259). */
     function elegible(f) { return con259 && deLaFabrica(f) && f.estado !== 'anulado'; }
     /* Recién guardado (Nuevo remito): se abre para imprimirlo. */
     function abrirElGuardado() { var id = S.rgAbrir; S.rgAbrir = null; if (id && S.vista === 'remitos') abrirRemito(id, cargar); }
-    /** La barra de los elegidos: Enviar, Imprimir, Expreso y Rótulos. */
+    /** La barra de los elegidos: Enviar, Imprimir, Expreso y Rótulos. Abajo a la derecha, como el «Facturar» de BlueSoft:
+        sin ninguno marcado, dice cómo se usa y los botones esperan. */
     function pintarBarra() {
       var z = $('rgBarra');
       if (!z) return;
       if (S.rgMarcarTodos) S.rgMarcarTodos();
       var fs = filas.filter(function (f) { return sel[f.id]; });
-      if (!fs.length) { z.innerHTML = ''; return; }
+      if (!fs.length) {
+        z.innerHTML = con259 && filas.some(elegible) ? '<div class="rg-barra vacia" role="region" aria-label="Los remitos elegidos" title="Marcá en la lista los remitos de la fábrica para mandarlos o imprimirlos juntos">' +
+          '<span>Marcá los de la fábrica para:</span>' +
+          ['Enviar', 'Imprimir', 'Expreso', 'Rótulos'].map(function (t, i) { return '<button type="button" class="btn ' + (i ? 'btn-sec' : 'btn-pri') + ' btn-chico" disabled>' + t + '</button>'; }).join('') + '</div>' : '';
+        return;
+      }
       var locs = unicos(fs.map(function (f) { return f.destino_local_id; })), uno = locs.length === 1;
       var van = fs.filter(function (f) { return f.estado === 'por_enviar'; }).length;
-      z.innerHTML = '<div class="rg-barra" role="region" aria-label="Los remitos elegidos"><b>' + (fs.length === 1 ? '1 elegido' : fs.length + ' elegidos') + '</b>' +
-        '<span>' + esc((uno ? 'para ' + bonito(fs[0].destino) : 'de ' + locs.length + ' locales') + ' · ' + fs.map(refRemito).join(', ')) + '</span>' +
+      var cuales = (uno ? 'para ' + bonito(fs[0].destino) : 'de ' + locs.length + ' locales') + ' · ' + fs.map(refRemito).join(', ');
+      z.innerHTML = '<div class="rg-barra" role="region" aria-label="Los remitos elegidos"><div class="rg-cuales" title="' + esc(cuales) + '"><b>' + (fs.length === 1 ? '1 elegido' : fs.length + ' elegidos') + '</b>' +
+        '<span>' + esc(cuales) + '</span></div>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rgEnviar"' + (van ? '' : ' disabled title="Ya salieron todos"') + '>Enviar' + (van && van < fs.length ? ' (' + van + ')' : '') + '</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="rgImpRem">Imprimir ' + (fs.length === 1 ? 'el remito' : 'los remitos') + '</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rgImpRem" title="' + (fs.length === 1 ? 'Imprimir el remito' : 'Imprimir los remitos') + '">Imprimir</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rgImpExp"' + (uno ? '' : ' disabled title="El expreso es de un solo local"') + '>Expreso</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rgImpRot"' + (uno ? '' : ' disabled title="Los rótulos son de un solo local"') + '>Rótulos</button>' +
-        '<button type="button" class="pos-link" id="rgSacar">Sacar la selección</button></div>';
+        '<button type="button" class="pos-link" id="rgSacar" title="Sacar la selección">Sacar</button></div>';
       $('rgEnviar').onclick = function () { var b = this; b.disabled = true; enviarRemitos(fs, cargar).then(function () { if (b.isConnected) b.disabled = false; }); };
       $('rgImpRem').onclick = function () {
         var b = this; b.disabled = true;
