@@ -303,7 +303,8 @@
     var neg = c < 0, a = Math.abs(c), r = a % 100;
     return (neg ? '−' : '') + '$' + miles(Math.floor(a / 100)) + (r ? ',' + ('0' + r).slice(-2) : '');
   }
-  function plataCampo(c) { return c ? plata(c).slice(1) : ''; }
+  /** Lo que va adentro de un campo de plata: "$20.000" (desde el 7/11, con el «$», igual que lo que se escribe; ver plataEnVivo). */
+  function plataCampo(c) { return c ? plata(c) : ''; }
   /** Lo que escriben: "20.000", "20000", "16.333,33", "$ 1500" → centavos (NaN si no es un número). */
   function leerPlata(s) {
     s = String(s == null ? '' : s).replace(/[$\s]/g, '').replace(/,$/, '');   // "$1.500," (a medio escribir los centavos) = 1500
@@ -316,53 +317,62 @@
   function aPesos(c) { return Math.round(c) / 100; }
   /** El importe se ve con su formato mientras se escribe (Mauricio, 7/11, en la Transferencia de fondos: "no hay símbolo
       de peso, no hay punto"; después "ponémoslos en todos": Gastos, Retiros, el ajuste de la caja fuerte y el Cierre de
-      caja): "100000" se ve "$100.000". Engancharlo ANTES del oninput del campo, así lo que viene después ya lee el
-      importe formateado. Los puntos los pone el campo (un punto tipeado no hace nada);
-      la coma es para los centavos, hasta 2. El cursor queda donde estaba, contando sólo los números. Lo escrito se
-      sigue leyendo con leerPlata. Borrar parado detrás de un punto borra el número de antes. Al pegar un importe
-      ("1500.50", "$ 150.000") entra como lo lee leerPlata. */
+      caja; y "sí, habría que hacerlo en todos": la venta, el cambio, la venta fallida, los precios, los remitos):
+      "100000" se ve "$100.000". Los puntos los pone el campo (un punto tipeado no hace nada); la coma es para los
+      centavos, hasta 2. El cursor queda donde estaba, contando sólo los números. Lo escrito se sigue leyendo con
+      leerPlata. Borrar parado detrás de un punto borra el número de antes. Al pegar un importe ("1500.50",
+      "$ 150.000") entra como lo lee leerPlata.
+      Un campo de plata es el que tiene data-plata (en el HTML, o con plataEnVivo(campo)). Lo escucha el documento, en
+      la fase de captura: corre ANTES que el oninput del campo y que los de quien lo contiene (los pagos, los renglones
+      del ticket), así todo lo que sigue lee el importe ya formateado; y un campo que se arma de nuevo con innerHTML ya
+      viene escuchado. Lo que el sistema pone adentro, con plataCampo. */
   function plataEnVivo(inp) {
-    /* Una sola vez por campo: enganchado dos veces, el Backspace detrás de un punto saltaría dos lugares. */
-    if (!inp || inp.plataEnVivo) return inp;
-    inp.plataEnVivo = true;
-    function cuenta(x) { return x === ',' || (x >= '0' && x <= '9'); }
-    function formatear() {
-      var v = inp.value, pos = typeof inp.selectionStart === 'number' ? inp.selectionStart : v.length;
-      var ent = '', dec = null, k = 0, i, x;
-      for (i = 0; i < v.length; i++) {
-        x = v.charAt(i);
-        var toma = false;
-        if (x >= '0' && x <= '9') {
-          if (dec === null) { ent += x; toma = true; } else if (dec.length < 2) { dec += x; toma = true; }
-        } else if (x === ',' && dec === null) { dec = ''; toma = true; }
-        if (toma && i < pos) k++;
-      }
-      var ceros = ent.length - ent.replace(/^0+/, '').length;
-      if (ceros) { ent = ent.slice(ceros) || '0'; if (ent === '0') ceros--; k = Math.max(0, k - ceros); }
-      if (ent === '' && dec !== null) { ent = '0'; if (k) k++; }
-      var s = ent === '' ? '' : '$' + miles(ent) + (dec !== null ? ',' + dec : '');
-      if (s === v) return;
-      var p = k ? s.length : (s ? 1 : 0), c = 0;
-      if (k) for (i = 0; i < s.length; i++) if (cuenta(s.charAt(i)) && ++c === k) { p = i + 1; break; }
-      inp.value = s;
-      if (document.activeElement === inp) try { inp.setSelectionRange(p, p); } catch (e) { /* sin cursor, igual */ }
-    }
-    inp.addEventListener('input', formatear);
-    inp.addEventListener('keydown', function (e) {
-      var a = inp.selectionStart, b = inp.selectionEnd;
-      if (a == null || a !== b) return;
-      if (e.key === 'Backspace' && inp.value.charAt(a - 1) === '.') inp.setSelectionRange(a - 1, a - 1);
-      else if (e.key === 'Delete' && inp.value.charAt(a) === '.') inp.setSelectionRange(a + 1, a + 1);
-    });
-    inp.addEventListener('paste', function (e) {
-      var t = e.clipboardData && e.clipboardData.getData('text'), c = leerPlata(t);
-      if (isNaN(c) || (inp.value && (inp.selectionStart !== 0 || inp.selectionEnd !== inp.value.length))) return;
-      e.preventDefault();
-      inp.value = c ? plata(c) : '';
-      inp.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    if (inp.value) formatear();
+    if (!inp) return inp;
+    inp.setAttribute('data-plata', '');
+    if (inp.value) formatearPlata(inp);
     return inp;
+  }
+  function esCampoPlata(t) { return !!t && t.tagName === 'INPUT' && t.hasAttribute('data-plata'); }
+  document.addEventListener('input', function (e) { if (esCampoPlata(e.target)) formatearPlata(e.target); }, true);
+  document.addEventListener('keydown', function (e) {
+    var inp = e.target;
+    if (!esCampoPlata(inp)) return;
+    var a = inp.selectionStart, b = inp.selectionEnd;
+    if (a == null || a !== b) return;
+    if (e.key === 'Backspace' && inp.value.charAt(a - 1) === '.') inp.setSelectionRange(a - 1, a - 1);
+    else if (e.key === 'Delete' && inp.value.charAt(a) === '.') inp.setSelectionRange(a + 1, a + 1);
+  }, true);
+  document.addEventListener('paste', function (e) {
+    var inp = e.target;
+    if (!esCampoPlata(inp)) return;
+    var t = e.clipboardData && e.clipboardData.getData('text'), c = leerPlata(t);
+    if (isNaN(c) || (inp.value && (inp.selectionStart !== 0 || inp.selectionEnd !== inp.value.length))) return;
+    e.preventDefault();
+    inp.value = c ? plata(c) : '';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  }, true);
+  function formatearPlata(inp) {
+    /* Cuántos números (y la coma) quedan delante del cursor: después del formato, el cursor vuelve detrás de esos. */
+    function cuenta(x) { return x === ',' || (x >= '0' && x <= '9'); }
+    var v = inp.value, pos = typeof inp.selectionStart === 'number' ? inp.selectionStart : v.length;
+    var ent = '', dec = null, k = 0, i, x;
+    for (i = 0; i < v.length; i++) {
+      x = v.charAt(i);
+      var toma = false;
+      if (x >= '0' && x <= '9') {
+        if (dec === null) { ent += x; toma = true; } else if (dec.length < 2) { dec += x; toma = true; }
+      } else if (x === ',' && dec === null) { dec = ''; toma = true; }
+      if (toma && i < pos) k++;
+    }
+    var ceros = ent.length - ent.replace(/^0+/, '').length;
+    if (ceros) { ent = ent.slice(ceros) || '0'; if (ent === '0') ceros--; k = Math.max(0, k - ceros); }
+    if (ent === '' && dec !== null) { ent = '0'; if (k) k++; }
+    var s = ent === '' ? '' : '$' + miles(ent) + (dec !== null ? ',' + dec : '');
+    if (s === v) return;
+    var p = k ? s.length : (s ? 1 : 0), c = 0;
+    if (k) for (i = 0; i < s.length; i++) if (cuenta(s.charAt(i)) && ++c === k) { p = i + 1; break; }
+    inp.value = s;
+    if (document.activeElement === inp) try { inp.setSelectionRange(p, p); } catch (e) { /* sin cursor, igual */ }
   }
   /** 1.8333 → "1,8"; 0.375 (una proporción) → "37,5 %". */
   function decimal(n) { return String(Math.round(Number(n) * 10) / 10).replace('.', ','); }
@@ -1603,7 +1613,7 @@
       '<div class="pos-campos">' +
         campo('ancho', 'Tarjeta', '<input type="text" id="gcCod" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Los 14 números de la tarjeta">') +
         '<p class="tk-gc ancho" id="gcInfo" role="status"></p>' +
-        campo('', 'Valor', '<input type="text" inputmode="decimal" id="gcValor" placeholder="$">') +
+        campo('', 'Valor', '<input type="text" inputmode="decimal" id="gcValor" data-plata placeholder="$0">') +
       '</div><div class="pos-error" id="gcError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Agregar</button></div>');
     var leida = null, inp = caja.querySelector('#gcCod');
@@ -1848,7 +1858,7 @@
         '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
         '<td class="c">' + (l.giftcard ? '<span title="Una Gift Card va de a una">1</span>' :   // SQL 200
           '<input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '">') + '</td>' +
-        '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
+        '<td class="n"><input type="text" inputmode="decimal" data-plata class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
           (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '"></td>' +
         '<td class="n">' + (d ? '<span class="tk-desc-l">−' + plata(d) + '</span>' : '') + '</td>' +
         '<td class="n"><b>' + plata(l.precio * l.cantidad) + '</b></td>' +
@@ -1926,7 +1936,7 @@
     var x = $(pre + 'PagoX'), p = X.pago;
     if (!x) return;
     if (X.forma === 'efectivo') {
-      x.innerHTML = campo('c6', 'Recibido', '<input type="text" inputmode="decimal" id="' + pre + 'Recibido" placeholder="Opcional" value="' + plataCampo(p.recibido) + '">') +
+      x.innerHTML = campo('c6', 'Recibido', '<input type="text" inputmode="decimal" data-plata id="' + pre + 'Recibido" placeholder="Opcional" value="' + plataCampo(p.recibido) + '">') +
         campo('c6 tk-vuelto', 'Vuelto', '<input type="text" id="' + pre + 'Vuelto" readonly>');
     } else if (X.forma === 'tarjeta') {
       x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
@@ -2154,7 +2164,7 @@
         campo('', 'Código <span class="lbl-opc">(si tiene)</span>', '<input type="text" id="llCod" maxlength="30">') +
         campo('', 'Talle <span class="lbl-opc">(si tiene)</span>', '<input type="text" id="llTalle" maxlength="10">') +
         campo('', 'Cantidad', '<input type="number" id="llCant" min="1" max="999" value="1">') +
-        campo('', 'Precio unitario', '<input type="text" inputmode="decimal" id="llPrecio" placeholder="$">') +
+        campo('', 'Precio unitario', '<input type="text" inputmode="decimal" id="llPrecio" data-plata placeholder="$0">') +
       '</div><div class="pos-error" id="llError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="llOk">Agregar</button></div>');
     function listo() {
@@ -2235,7 +2245,7 @@
       '<div class="pos-campos">' +
         campo('ancho', 'Descuento', '<select id="dsTipo"' + (foco ? '' : ' autofocus') + '>' + DESCUENTOS.map(function (d, i) { return '<option value="' + i + '">' + esc(d[0]) + '</option>'; }).join('') + '</select>') +
         campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="dsPct" value="5">') +
-        campo('', 'O un monto ($)', '<input type="text" inputmode="decimal" id="dsVal" placeholder="$">') +
+        campo('', 'O un monto ($)', '<input type="text" inputmode="decimal" id="dsVal" data-plata placeholder="$0">') +
       '</div><div class="pos-error" id="dsError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dsOk">Agregar</button></div>');
     var tipo = caja.querySelector('#dsTipo'), pct = caja.querySelector('#dsPct'), val = caja.querySelector('#dsVal');
@@ -2471,7 +2481,7 @@
         : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
       return '<div class="pos-pago-fila" data-f="' + i + '">' +
         campo('', 'Medio', '<select data-k="medio">' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }), x.medio) + '</select>') +
-        campo('', 'Monto', '<input type="text" inputmode="decimal" data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
+        campo('', 'Monto', '<input type="text" inputmode="decimal" data-plata data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
         '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
     }
     function cuentaTxt() {
@@ -3061,7 +3071,7 @@
         : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
       return '<div class="pos-pago-fila" data-f="' + i + '">' +
         campo('', 'Medio', '<select data-k="medio">' + opciones(medios, x.medio) + '</select>') +
-        campo('', 'Monto', '<input type="text" inputmode="decimal" data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
+        campo('', 'Monto', '<input type="text" inputmode="decimal" data-plata data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
         '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
     }
     function cuentaTxt() {
@@ -4549,7 +4559,7 @@
           '<div class="tk-sug" id="vfSug" role="listbox" aria-label="Productos" hidden></div></div>' +
           '<div id="vfElegido"></div></div>' +
         campo('', 'Detalle', '<textarea id="vfDetalle" maxlength="500" rows="2" placeholder="Qué buscaba, qué le ofrecimos…"></textarea>') +
-        campo('', 'Monto perdido estimado', '<input type="text" inputmode="decimal" id="vfMonto" placeholder="$">') +
+        campo('', 'Monto perdido estimado', '<input type="text" inputmode="decimal" id="vfMonto" data-plata placeholder="$0">') +
       '</div>' +
       '<div class="pos-error" id="vfError"></div>' +
       /* El aviso del No Compra va al lado de los botones: así la ventana entera entra en la PC del local. */
@@ -4980,7 +4990,7 @@
           '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + (s === 'sale' ? pillStock(CB.local_id, l) : '') + '</td>' +
           '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
           '<td class="c"><input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '"></td>' +
-          '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
+          '<td class="n"><input type="text" inputmode="decimal" data-plata class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
             (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '">' +
             (aj ? '<small class="cb-lista">lista ' + plata(l.lista) + '</small>' : '') + '</td>' +
           '<td class="n"><b>' + plata(l.precio * l.cantidad) + '</b></td>' +
@@ -7210,7 +7220,7 @@
           texto('pfMarca', 'Marca', 60, p && p[9], ' list="pfMarcas"') +
           campo('ancho', 'Talles <span class="lbl-opc">(separados por comas, como en la etiqueta)</span>',
                 '<input type="text" id="pfTalles" maxlength="400" autocomplete="off" spellcheck="false" placeholder="S, M, L, XL" value="' + esc(p ? tallesDe(p).join(', ') : '') + '">') +
-          (li ? campo('', 'Precio', '<input type="text" inputmode="decimal" id="pfPrecio" placeholder="Sin precio"' +
+          (li ? campo('', 'Precio', '<input type="text" inputmode="decimal" id="pfPrecio" data-plata placeholder="Sin precio"' +
                       ' value="' + esc(x ? plataCampo(x.c) : '') + '">') : '') +
           '<label class="pos-check pd-activo"><input type="checkbox" id="pfActivo"' + (!p || p[6] ? ' checked' : '') + '> Activo (si no, no sale al buscar en la venta)</label>' +
         '</div>' +
@@ -7471,7 +7481,7 @@
     };
     function editarPrecio(tr, cod) {
       var celda = tr.querySelector('.pos-precio-celda'), x = (S.precios[li.id] || {})[cod];
-      celda.innerHTML = '<input type="text" inputmode="decimal" class="pos-precio-in" value="' + (x ? plataCampo(x.c) : '') + '" aria-label="Precio de ' + esc(cod) + '">';
+      celda.innerHTML = '<input type="text" inputmode="decimal" data-plata class="pos-precio-in" value="' + (x ? plataCampo(x.c) : '') + '" aria-label="Precio de ' + esc(cod) + '">';
       tr.querySelector('.pos-acc').innerHTML = '<button type="button" class="pos-link" data-ok>Guardar</button><button type="button" class="pos-link" data-no>Cancelar</button>';
       var inp = celda.querySelector('input');
       inp.focus(); inp.select();
@@ -10240,7 +10250,7 @@
         '<div class="tk-datos rn-datos pe-datos">' +
           campo('', 'Transporte', '<select id="peTransp">' + opcionesTransp(tr.length === 1 ? tr[0] : transpDe(r0.destino_local_id)) + '</select>') +
           campo('', 'Bultos', '<input type="number" id="peBultos" min="1" max="999" step="1" inputmode="numeric" value="' + esc(bultos) + '">') +
-          (exp ? campo('', 'Monto asegurado', '<input type="text" id="peAseg" inputmode="decimal" maxlength="15" autocomplete="off" value="' + esc(plataCampo(aseg)) + '" placeholder="0">') : '') +
+          (exp ? campo('', 'Monto asegurado', '<input type="text" id="peAseg" inputmode="decimal" maxlength="15" autocomplete="off" value="' + esc(plataCampo(aseg)) + '" data-plata placeholder="$0">') : '') +
         '</div><p class="pos-ayuda">Es para esta impresión: ' + (rs.length === 1 ? 'el remito queda como está (se cambia con «Cambiar el transporte o los bultos»).'
                                                                     : 'los remitos quedan como están.') + '</p>' +
         '<div class="pos-error" id="peError"></div>' +
@@ -10269,7 +10279,7 @@
         '<div class="tk-datos rn-datos">' +
           campo('', 'Transporte', '<select id="edTransp">' + opcionesTransp(r.transporte_id || '') + '</select>') +
           campo('', 'Bultos', '<input type="number" id="edBultos" min="1" max="999" step="1" inputmode="numeric" value="' + esc(r.bultos || '') + '">') +
-          campo('', 'Monto asegurado', '<input type="text" id="edAseg" inputmode="decimal" maxlength="15" autocomplete="off" value="' + esc(plataCampo(cent(r.asegurado || 0))) + '" placeholder="0">') +
+          campo('', 'Monto asegurado', '<input type="text" id="edAseg" inputmode="decimal" maxlength="15" autocomplete="off" value="' + esc(plataCampo(cent(r.asegurado || 0))) + '" data-plata placeholder="$0">') +
           campo('', 'Temporada', '<select id="edTemp"><option value="">Sin temporada</option>' +
             opciones((r.temporada && temps.indexOf(r.temporada) < 0 ? [r.temporada] : []).concat(temps).map(function (t) { return [t, t]; }), r.temporada || '') + '</select>') +
           campo('', 'Referencia', '<input type="text" id="edRef" maxlength="40" autocomplete="off" value="' + esc(r.referencia || '') + '">') +
@@ -11139,9 +11149,10 @@
         opciones((RN.temp && temps.indexOf(RN.temp) < 0 ? [RN.temp] : []).concat(temps).map(function (x) { return [x, x]; }), RN.temp || '') + '</select>') +
       campo('', 'Transporte', '<select id="rnTransp" class="desplegable">' + opcionesTransp(transpRn()) + '</select>') +
       campo('', 'Bultos', '<input type="number" id="rnBultos" min="1" max="999" step="1" inputmode="numeric" placeholder="—">') +
-      campo('', 'Monto asegurado <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnAseg" inputmode="decimal" maxlength="15" placeholder="0" autocomplete="off">');
+      campo('', 'Monto asegurado <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnAseg" inputmode="decimal" maxlength="15" data-plata placeholder="$0" autocomplete="off">');
     $('rnBultos').value = RN.bultos || '';
     $('rnAseg').value = RN.aseg || '';
+    plataEnVivo($('rnAseg'));   // un borrador de antes, sin el formato: se muestra con el formato
     $('rnDepF').onchange = function () { RN.dep_f = this.value; guardarBorradorRn(); pintarRn(); };
     $('rnTemp').onchange = function () { RN.temp = this.value; guardarBorradorRn(); };
     $('rnTransp').onchange = function () { RN.transp = this.value; guardarBorradorRn(); };
