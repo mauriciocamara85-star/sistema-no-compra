@@ -1492,3 +1492,37 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 /* La nota de crédito resta: los importes en rojo, como el negativo que es. */
 .pos-tabla.iv-tabla tr.iv-nc td.n { color: var(--bad-txt); }
 .iv-anula { font-size: 11.5px; font-weight: 500; color: var(--txt-3); }
+
+/* ── SQL 259: los remitos de la fábrica («Pendiente de envío», Enviar, imprimir) y Transportes ── */
+/* La lista: la casilla para elegir, y abajo del local, el transporte y los bultos. */
+.rg-tabla th.rg-sel, .rg-tabla td.rg-sel { width: 30px; padding-right: 0; text-align: center; }
+.rg-sel input { width: 17px; height: 17px; margin: 0; vertical-align: middle; accent-color: var(--acc); cursor: pointer; }
+.cj-tabla td small.rg-envio { color: var(--txt-2); }
+/* La barra de los elegidos, como la de Diferencias: negra y pegada arriba mientras se baja. */
+.rg-barra {
+  position: sticky; top: 8px; z-index: 3;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; padding: 8px 10px 8px 14px;
+  background: var(--tablero-negro); color: #FFFFFF; border-radius: 12px; box-shadow: var(--sombra);
+}
+.rg-barra span { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: rgba(255, 255, 255, .78); }
+.rg-barra .btn-sec { background: transparent; color: #FFFFFF; border-color: rgba(255, 255, 255, .35); }
+.rg-barra .btn:disabled { opacity: .45; cursor: default; }
+.rg-barra .pos-link { color: #FFFFFF; }
+/* El remito abierto: imprimir el remito, el expreso y los rótulos, y cambiar los datos del envío. */
+.rm-imprimir { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; padding: 8px 12px; background: var(--surface-2); border-radius: 10px; font-size: 13px; }
+.rm-imprimir > span:first-child { font-weight: 700; color: var(--txt-2); }
+.rm-imprimir .pos-link + .pos-link { margin-left: 0; }
+.rm-sep { color: var(--txt-3); }
+/* El nuevo remito: los datos del envío de la fábrica, en un renglón (el depósito, la temporada y el transporte, más anchos; los bultos, angosto). */
+.tk-datos.rn-envio[hidden] { display: none; }
+@media (min-width: 1000px) {
+  .tk-datos.rn-envio > * { grid-column: span 3; }
+  .tk-datos.rn-envio > :nth-child(4) { grid-column: span 1; }
+  .tk-datos.rn-envio > :nth-child(5) { grid-column: span 2; }
+}
+/* Transportes: las filas se tocan para editarlas; la dirección puede ir en dos renglones. */
+.tr-tabla tbody tr[data-tr], .tr-tabla tbody tr[data-loc] { cursor: pointer; }
+.tr-tabla tbody tr[data-tr]:hover td, .tr-tabla tbody tr[data-loc]:hover td { background: var(--surface-2); }
+.cj-tabla.tr-tabla td { white-space: normal; }
+.cj-tabla.tr-tabla td.n { white-space: nowrap; }
+.tk-datos.tr-rem > .tr-rem-pie { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
