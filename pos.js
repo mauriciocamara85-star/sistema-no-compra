@@ -315,12 +315,16 @@
   }
   function aPesos(c) { return Math.round(c) / 100; }
   /** El importe se ve con su formato mientras se escribe (Mauricio, 7/11, en la Transferencia de fondos: "no hay símbolo
-      de peso, no hay punto"): "100000" se ve "$100.000". Los puntos los pone el campo (un punto tipeado no hace nada);
+      de peso, no hay punto"; después "ponémoslos en todos": Gastos, Retiros, el ajuste de la caja fuerte y el Cierre de
+      caja): "100000" se ve "$100.000". Engancharlo ANTES del oninput del campo, así lo que viene después ya lee el
+      importe formateado. Los puntos los pone el campo (un punto tipeado no hace nada);
       la coma es para los centavos, hasta 2. El cursor queda donde estaba, contando sólo los números. Lo escrito se
       sigue leyendo con leerPlata. Borrar parado detrás de un punto borra el número de antes. Al pegar un importe
       ("1500.50", "$ 150.000") entra como lo lee leerPlata. */
   function plataEnVivo(inp) {
-    if (!inp) return inp;
+    /* Una sola vez por campo: enganchado dos veces, el Backspace detrás de un punto saltaría dos lugares. */
+    if (!inp || inp.plataEnVivo) return inp;
+    inp.plataEnVivo = true;
     function cuenta(x) { return x === ',' || (x >= '0' && x <= '9'); }
     function formatear() {
       var v = inp.value, pos = typeof inp.selectionStart === 'number' ? inp.selectionStart : v.length;
@@ -5411,7 +5415,7 @@
       /* Lo que tendría que haber cambia mientras escriben el saldo inicial. */
       if ($('cjSaldo')) {
         $('cjSaldo').value = saldo;
-        $('cjSaldo').oninput = alEscribir;
+        plataEnVivo($('cjSaldo')).oninput = alEscribir;   // se arma de nuevo en cada pintada: el formato, otra vez
         /* Al salir del saldo inicial, si ya escribieron el efectivo, el conteo se anota con el saldo nuevo. */
         $('cjSaldo').onchange = function () { if ($('cjContado').value.trim()) anotar(false); };
       }
@@ -5812,7 +5816,7 @@
     $('cjLocal').onchange = function () { S.cajaLocal = this.value; recordarLocal(this.value); $('cjContado').value = ''; cargar(); };
     /* Sin «Ver la cuenta» (Mauricio, 7/11): cada tecla rehace la cuenta en la pantalla; al salir del campo o con Enter,
        el conteo se anota en la base. */
-    $('cjContado').oninput = alEscribir;
+    plataEnVivo($('cjContado')).oninput = alEscribir;   // el formato va antes: la cuenta lee «$182.550»
     $('cjContado').onchange = anotarSolo;
     $('cjContado').onkeydown = function (e) {
       if (e.key !== 'Enter') return;
@@ -5974,6 +5978,7 @@
       caja.querySelector('#gmDescL').firstChild.textContent = tipo === 'gasto' ? 'Descripción (si hace falta)' : '¿De qué es?';
     }
     marcar();
+    plataEnVivo(caja.querySelector('#gmMonto'));
     caja.querySelector('#gmTipo').onclick = function (e) { var b = e.target.closest('[data-tipo]'); if (b) { tipo = b.getAttribute('data-tipo'); marcar(); } };
     setTimeout(function () { caja.querySelector('#gmRubro').focus(); }, 0);
     function guardarMov() {
@@ -6273,7 +6278,7 @@
       verHay();
     };
     caja.querySelector('#rtLocal').onchange = function () { pintarQuien(); errorEn(caja, 'rtError', ''); verHay(); };
-    caja.querySelector('#rtMonto').oninput = function () { errorEn(caja, 'rtError', ''); };
+    plataEnVivo(caja.querySelector('#rtMonto')).oninput = function () { errorEn(caja, 'rtError', ''); };
     setTimeout(function () { var b = caja.querySelector('[data-caja]'); if (b) b.focus(); }, 0);
     function guardarRetiro() {
       var bt = caja.querySelector('#rtGuardar');
@@ -6998,7 +7003,7 @@
       '</div><p class="pos-ayuda" id="ajDif"></p><div class="pos-error" id="ajError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="ajGuardar">Ajustar</button></div>');
-    var m = caja.querySelector('#ajMonto');
+    var m = plataEnVivo(caja.querySelector('#ajMonto'));   // primero el formato, después «Sobran / Faltan» (lee lo ya formateado)
     setTimeout(function () { m.focus(); }, 0);
     m.oninput = function () {
       errorEn(caja, 'ajError', '');
