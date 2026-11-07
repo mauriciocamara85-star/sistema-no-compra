@@ -5395,6 +5395,9 @@
     return dv > 0 ? { cls: 'mal', txt: 'Faltan ' + plata(a), corto: 'Faltan ' + plata(a) } : { cls: 'warn', txt: 'Sobran ' + plata(a), corto: 'Sobran ' + plata(a) };
   }
   function recordarLocal(id) { var r = recuerdo(); r.local = id; guardarJSON(K_RECUERDO, r); }
+  /** Lo que suma «Otras salidas» en un cierre (abierto o hecho), en centavos. Desde el 7/11, como BlueSoft: las otras salidas
+      + los movimientos de salida (a la caja fuerte, SQL 180) + los retiros de la caja chica (SQL 191). */
+  function otrasSalidas(x) { return cent(x.otras_salidas || 0) + cent(x.a_caja_fuerte || 0) + cent(x.retiros_fondos || 0); }
   function filaRes(lbl, valor, cls) { return '<div class="cj-r' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + valor + '</b></div>'; }
   function opcionesLocales(actual) { return opciones(localesMios().map(function (l) { return [l.id, nombreLocal(l)]; }), actual); }
   /** Todos los locales, aunque no sean suyos: a dónde va un envío. */
@@ -5567,6 +5570,8 @@
         salidas ('salida') o los otros ingresos ('ingreso') de esta caja, cada uno con su botón en los resultados. Hasta el
         5/11 «Gastos» mostraba también las otras salidas y los otros ingresos; ahora cada renglón, lo suyo (lo que suma). */
     function movsDe(que) {
+      /* 7/11: «Otras salidas» junta, como BlueSoft, las otras salidas, los pases a la caja fuerte y los retiros de la caja chica. */
+      if (que === 'otras') return ((K.d && K.d.movimientos) || []).filter(function (m) { return m.tipo === 'salida' || m.tipo === 'caja_fuerte' || m.tipo === 'retiro'; });
       var k = que === true ? 'caja_fuerte' : que === 'retiros' ? 'retiro' : que === 'salida' || que === 'ingreso' ? que : 'gasto';
       return ((K.d && K.d.movimientos) || []).filter(function (m) { return m.tipo === k; });
     }
@@ -5575,10 +5580,7 @@
       var d = K.d, k = K.k;
       if (!d) return;
       var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); }, vista = aLaVista();
-      var nm = movsDe(false).length, nf = movsDe(true).length, nr = movsDe('retiros').length, nc = Number(x.cambios) || 0;
-      var ns = movsDe('salida').length, ni = movsDe('ingreso').length;
-      /* SQL 191: el renglón de los retiros sólo si hay; entonces los descuentos pasan al pie (con un renglón más, el cierre no entra en la PC del local). */
-      var conRet = !!(nr || cent(x.retiros_fondos || 0));
+      var nm = movsDe(false).length, ns = movsDe('otras').length, ni = movsDe('ingreso').length, nc = Number(x.cambios) || 0;
       var saldo = !d.primer ? p(d.saldo_inicial) : k ? p(k.saldo_inicial) :
         vista && $('cjSaldo') && $('cjSaldo').value.trim() && !isNaN(saldoEscrito()) ? plata(saldoEscrito()) : '<i class="cj-oculto">en el Paso 1</i>';
       /* SQL 246: cada renglón de las ventas se toca y muestra cada venta (los botones ocupan lo mismo que los renglones). */
@@ -5594,13 +5596,11 @@
         (ver ? fd('total', 'Ventas totales del día', p(x.ventas_total), 'barra') : filaRes('Ventas totales del día', OCULTO, 'barra')) +
         '<button type="button" class="cj-r cj-r-btn" id="cjMovs" title="Ver los gastos que entran en este cierre"><span>Gastos en efectivo' +
           (nm ? ' (' + nm + ')' : '') + '</span><b>' + p(x.gastos) + '</b></button>' +
-        '<button type="button" class="cj-r cj-r-btn" id="cjSalidas" title="Ver las otras salidas que entran en este cierre"><span>Otras salidas' +
-          (ns ? ' (' + ns + ')' : '') + '</span><b>' + p(x.otras_salidas) + '</b></button>' +
-        /* 6/11: se llama como en el menú («Movimientos de salida»); antes decía «A la caja fuerte» y Mauricio lo buscó en «Otras salidas». */
-        '<button type="button" class="cj-r cj-r-btn" id="cjFuerte" title="Ver los movimientos de salida (de la caja chica a la caja fuerte) que entran en este cierre"><span>Movimientos de salida' +
-          (nf ? ' (' + nf + ')' : '') + '</span><b>' + p(x.a_caja_fuerte) + '</b></button>' +
-        (conRet ? '<button type="button" class="cj-r cj-r-btn" id="cjRetiros" title="Ver los retiros de fondos de la caja chica desde el último cierre"><span>Retiros de fondos' +
-          (nr ? ' (' + nr + ')' : '') + '</span><b>' + p(x.retiros_fondos) + '</b></button>' : fd('descuentos', 'Descuentos', p(x.descuentos), 'info')) +
+        /* 7/11 (Mauricio, con el cierre de BlueSoft): los movimientos de salida y los retiros de la caja chica van dentro de
+           «Otras salidas», sin renglón propio (del 6/11 al 7/11 hubo uno «Movimientos de salida»; antes, «A la caja fuerte»). */
+        '<button type="button" class="cj-r cj-r-btn" id="cjSalidas" title="Ver lo que salió de la caja chica en este cierre: movimientos de salida, retiros de fondos y otras salidas"><span>Otras salidas' +
+          (ns ? ' (' + ns + ')' : '') + '</span><b>' + plata(otrasSalidas(x)) + '</b></button>' +
+        fd('descuentos', 'Descuentos', p(x.descuentos), 'info') +
         '<button type="button" class="cj-r cj-r-btn" id="cjIngresos" title="Ver los otros ingresos que entran en este cierre"><span>Otros ingresos' +
           (ni ? ' (' + ni + ')' : '') + '</span><b>' + p(x.otros_ingresos) + '</b></button>' +
         filaRes('Saldo final en efectivo', k ? p(k.esperado) : vista ? plata(esperadoHoy()) : OCULTO, 'barra') +
@@ -5608,12 +5608,10 @@
         '<p class="cj-res-pie">' + enLista([x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets')].concat(anuladasCaja(d.detalle),   // SQL 260: «y 1 nota de crédito»
           [nc ? nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : ''])) +
           (cent((d.ventas || {}).giftcard || 0) ? '. Pagado con gift card: ' + p(d.ventas.giftcard) + ', ya sumado en las ventas' : '') +   // SQL 200: no es efectivo
-          (conRet ? '. Descuentos: ' + p(x.descuentos) + ', ya restados de las ventas.</p>' : '. Los descuentos ya están restados de las ventas.</p>');
+          '. Los descuentos ya están restados de las ventas.</p>';
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
-      $('cjSalidas').onclick = function () { abrirMovsCaja('salida'); };
+      $('cjSalidas').onclick = function () { abrirMovsCaja('otras'); };
       $('cjIngresos').onclick = function () { abrirMovsCaja('ingreso'); };
-      $('cjFuerte').onclick = function () { abrirMovsCaja(true); };
-      if ($('cjRetiros')) $('cjRetiros').onclick = function () { abrirMovsCaja('retiros'); };
       $('cjRes').querySelectorAll('[data-det]').forEach(function (b) { b.onclick = function () { abrirDetalleCaja(b.getAttribute('data-det')); }; });
     }
     /* SQL 246: el detalle de un renglón de las ventas, con la caja al día (la trae de nuevo: puede haber entrado una venta
@@ -5643,9 +5641,7 @@
       var partes = ['Saldo inicial ' + plata(isNaN(s) ? 0 : s), '+ ventas en efectivo ' + plata(cent(d.ventas.efectivo))];
       if (cent(d.otros_ingresos)) partes.push('+ otros ingresos ' + plata(cent(d.otros_ingresos)));
       if (cent(d.gastos)) partes.push('− gastos ' + plata(cent(d.gastos)));
-      if (cent(d.otras_salidas)) partes.push('− otras salidas ' + plata(cent(d.otras_salidas)));
-      if (cent(d.a_caja_fuerte || 0)) partes.push('− movimientos de salida ' + plata(cent(d.a_caja_fuerte)));
-      if (cent(d.retiros_fondos || 0)) partes.push('− retiros de fondos ' + plata(cent(d.retiros_fondos)));
+      if (otrasSalidas(d)) partes.push('− otras salidas ' + plata(otrasSalidas(d)));   // 7/11: como el renglón (con los movimientos de salida y los retiros)
       return '<div class="cj-tendria"><span>Tendría que haber en efectivo</span><b>' + plata(esperadoHoy()) + '</b>' +
         '<small>' + esc(partes.join(' ')) + '</small></div>';
     }
@@ -5867,33 +5863,42 @@
         '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Entendido</button></div>');
     }
 
-    /* Los gastos (o los pases a la caja fuerte, o los retiros de la caja chica) que entran en este cierre, para mirarlos. Se cargan
-       y se anulan en Gastos, en Movimientos de salida (26/10) y en Retiros de fondos (SQL 191). */
+    /* Los gastos (false), los otros ingresos ('ingreso') o las otras salidas ('otras') que entran en este cierre, para mirarlos.
+       7/11: «Otras salidas» junta, como BlueSoft, las otras salidas (se cargan en Gastos), los movimientos de salida (a la caja
+       fuerte, en Movimientos de salida) y los retiros de la caja chica (en Retiros de fondos, SQL 191); cada fila dice qué es. */
     function abrirMovsCaja(que) {
-      var fuerte = que === true, ret = que === 'retiros', sal = que === 'salida', ing = que === 'ingreso', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
+      var otras = que === 'otras', ing = que === 'ingreso', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
       var tot = ms.reduce(function (t, x) { return t + cent(x.monto); }, 0);
       /* SQL 247: un día anterior que quedó sin cerrar trae sólo lo de ese día. */
       var desde = pend() ? 'del ' + esc(diaCaja(K.d.dia)) : 'desde el último cierre';
-      ventana('<h3 id="posVentTit">' + (fuerte ? 'Movimientos de salida' : ret ? 'Retiros de fondos' : sal ? 'Otras salidas' : ing ? 'Otros ingresos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
-          ? 'Lo que pasó de la caja chica a la caja fuerte de ' + de + ' ' + desde + ': se resta en este. Se carga y se anula en «Movimientos de salida».'
-          : ret ? 'Lo que se retiró de la caja chica de ' + de + ' ' + desde + ': se resta en este. Se carga y se anula en «Retiros de fondos».'
-          : sal ? 'Las de ' + de + ' ' + desde + ': se restan en este. Se cargan y se anulan en «Gastos» (Qué es: «Otra salida»).'
+      var hay = function (t) { return ms.some(function (x) { return x.tipo === t; }); };
+      var queEs = function (x) { return x.tipo === 'caja_fuerte' ? 'Movimiento de salida (a la caja fuerte)' : TIPOS_MOV[x.tipo] || x.tipo; };
+      /* Los botones para ir a cargar o anular: en Otras salidas, los de lo que hay (sin nada, Movimientos de salida, lo de todos los días). */
+      var ir = [];
+      if (otras) {
+        if (hay('caja_fuerte') || !ms.length) ir.push(['salidas', 'cjIrSalidas', 'Ir a Movimientos de salida']);
+        if (hay('retiro') && puede('retiros')) ir.push(['retiros', 'cjIrRetiros', 'Ir a Retiros de fondos']);   // SQL 262
+        if (hay('salida')) ir.push(['gastos', 'cjIrGastos', 'Ir a Gastos']);
+      } else ir.push(['gastos', 'cjIrGastos', 'Ir a Gastos']);
+      /* Juntos a la izquierda: el «izq» (margin-right: auto) sólo en el último, o cada uno empuja a los demás. */
+      ir = ir.map(function (b, i) { return '<a class="btn btn-sec btn-chico' + (i === ir.length - 1 ? ' izq' : '') + '" href="#' + b[0] + '" id="' + b[1] + '">' + b[2] + '</a>'; });
+      ventana('<h3 id="posVentTit">' + (otras ? 'Otras salidas' : ing ? 'Otros ingresos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (otras
+          ? 'Lo que salió de la caja chica de ' + de + ' ' + desde + ': se resta en este. Los movimientos de salida (a la caja fuerte) se cargan y se anulan en «Movimientos de salida», ' +
+            'los retiros en «Retiros de fondos» y las otras salidas en «Gastos» (Qué es: «Otra salida»).'
           : ing ? 'Los de ' + de + ' ' + desde + ': se suman en este. Se cargan y se anulan en «Gastos» (Qué es: «Otro ingreso»).'
           : 'Los de ' + de + ' ' + desde + ': entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
-        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th>' + (fuerte ? '<th>De → A</th>' : ret ? '<th>Lo retiró</th>' : '<th>Qué es</th>') +
-          '<th>' + (fuerte || ret ? 'Observaciones' : 'Detalle') + '</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
+        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th><th>Qué es</th>' +
+          '<th>Detalle</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
           ms.map(function (x) {
             return '<tr><td><b>' + esc(refGasto(x, prueba) || '—') + '</b></td><td>' + esc(fechaHora(x.fecha)) + '</td>' +
-              (fuerte ? '<td>Caja chica → Caja fuerte</td>' : '<td>' + esc(ret ? x.retira || '—' : TIPOS_MOV[x.tipo] || x.tipo) + '</td>') +
-              '<td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+              '<td>' + esc(queEs(x)) + '</td>' +
+              '<td>' + esc([x.rubro, x.tipo === 'retiro' && x.retira ? 'lo retiró ' + x.retira : '', x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
           '<div class="pos-ticket-tot"><span>' + ms.length + (ms.length === 1 ? ' movimiento' : ' movimientos') + '</span><b>Total ' + plata(tot) + '</b></div>' :
-          '<div class="pos-cartel">' + (fuerte ? 'Todavía no hay movimientos de salida en esta caja: nada pasó a la caja fuerte.' : ret ? 'Todavía no se retiró nada de esta caja.' :
-            sal ? 'Todavía no hay otras salidas en esta caja.' : ing ? 'Todavía no hay otros ingresos en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
-        '<div class="pos-pie">' + (fuerte ? '<a class="btn btn-sec btn-chico izq" href="#salidas" id="cjIrSalidas">Ir a Movimientos de salida</a>'
-                                   : ret ? (puede('retiros') ? '<a class="btn btn-sec btn-chico izq" href="#retiros" id="cjIrRetiros">Ir a Retiros de fondos</a>' : '')   // SQL 262
-                                          : '<a class="btn btn-sec btn-chico izq" href="#gastos" id="cjIrGastos">Ir a Gastos</a>') +
+          '<div class="pos-cartel">' + (otras ? 'Todavía no salió nada de esta caja: ni movimientos de salida, ni retiros, ni otras salidas.' :
+            ing ? 'Todavía no hay otros ingresos en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
+        '<div class="pos-pie">' + ir.join('') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
     }
 
@@ -6568,9 +6573,8 @@
             fd('modo', 'Ventas MODO', p(c.ventas_modo)) + fd('go_cuotas', 'Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
             (Number(c.ventas_giftcard) ? fd('giftcard', 'Ventas Gift card', p(c.ventas_giftcard)) : '') +   // SQL 200
             fd('total', 'Ventas totales del día', p(c.ventas_total), 'barra') +
-            filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
-            (c.a_caja_fuerte != null ? filaRes('Movimientos de salida', p(c.a_caja_fuerte)) : '') +   // SQL 180: los movimientos de salida
-            (Number(c.retiros_fondos) ? filaRes('Retiros de fondos', p(c.retiros_fondos)) : '') +   // SQL 191: los de la caja chica
+            /* 7/11: como en el Nuevo cierre, «Otras salidas» con los movimientos de salida (SQL 180) y los retiros de la caja chica (SQL 191). */
+            filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', plata(otrasSalidas(c))) +
             fd('descuentos', 'Descuentos', p(c.descuentos), 'info') +
             (c.cambios ? fd('cambios', 'Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
             filaRes('Otros ingresos', p(c.otros_ingresos)) +
