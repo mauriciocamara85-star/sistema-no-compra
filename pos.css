@@ -1331,9 +1331,20 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .vf-vars { display: flex; flex-wrap: wrap; gap: 0 24px; }
 .vf-var { margin-top: 6px; }
 .vf-var > span { display: block; margin-bottom: 4px; font: 600 11.5px var(--sans); color: var(--txt-2); }
-.vf-nc { align-self: center; margin: 0; font-size: 13px; color: var(--txt-2); }
-.vf-nc a { color: var(--txt); font-weight: 700; }
 .pos-tabla td.vf-det { min-width: 160px; max-width: 280px; white-space: normal; font-size: 13px; }
+/* v434: como la de BlueSoft. El título con la fecha al lado; dos columnas (los datos angostos a la izquierda, lo que pasó a la
+   derecha); el Detalle grande y el Monto angosto debajo, como allá. En el celular, una columna. */
+.pos-caja.ancha.vf { width: min(1060px, 100%); }
+.vf-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 28px; margin: 0 40px 14px 0; }
+.vf-cab h3 { margin: 0; }
+.vf-fecha { font: 600 15px var(--display); color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.vf-bs { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 12px 24px; align-items: start; }
+.vf-izq, .vf-der { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pos-caja .vf-der textarea#vfDetalle { min-height: 104px; resize: vertical; }
+.vf-der .vf-monto { max-width: 260px; }
+.vf-nc { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); font-size: 13px; line-height: 1.4; color: var(--txt-2); }
+@media (max-width: 760px) { .vf-bs { grid-template-columns: minmax(0, 1fr); } }
 
 /* ── Ventas por vendedor (SQL 192) ──────────────────────────────────────
    A la izquierda las columnas de BlueSoft; a la derecha, donde BlueSoft

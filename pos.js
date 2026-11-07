@@ -4780,26 +4780,36 @@
     o = o || {};
     var l = localMio(o.local) || localInicial(), prueba = enPrueba();
     var F = { clave: nuevaClave(), local: l ? l.id : null, vendedor: o.vendedor || vendedorInicial(l), motivo: '', prod: null, talle: '', color: '', montoAuto: '' };
-    var caja = ventana('<h3 id="posVentTit">Nueva venta fallida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : '') + '</h3>' +
-        '<p class="pos-bajada">' + fechaCorta(S.ini.hoy) + ' · El cliente que se fue sin comprar y no dejó su WhatsApp.</p>' +
-      '<div class="pos-campos">' +
-        campo('', 'Sucursal', '<select id="vfLocal" class="desplegable">' + opcionesLocales(F.local) + '</select>') +
-        campo('', 'Vendedor', '<select id="vfVend"></select>') +
-        '<div class="pos-f ancho"><span>Motivo</span><div class="chips vf-motivos" id="vfMotivos">' + MOTIVOS.map(function (m) {
-          return '<button type="button" class="chip" data-motivo="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join('') + '</div></div>' +
-        '<div class="pos-f ancho"><span>Producto <span class="lbl-opc">(si buscaba uno)</span></span>' +
-          '<div class="tk-prod"><input type="search" id="vfProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="vfSug">' +
-          '<div class="tk-sug" id="vfSug" role="listbox" aria-label="Productos" hidden></div></div>' +
-          '<div id="vfElegido"></div></div>' +
-        campo('', 'Detalle', '<textarea id="vfDetalle" maxlength="500" rows="2" placeholder="Qué buscaba, qué le ofrecimos…"></textarea>') +
-        campo('', 'Monto perdido estimado', '<input type="text" inputmode="decimal" id="vfMonto" data-plata placeholder="$0">') +
+    /* 7/11 (v434, Mauricio: «dale así»): como la «Nueva venta fallida» de BlueSoft, en las mismas posiciones. Arriba el título
+       y la fecha; a la izquierda el Vendedor, la Sucursal y, donde BlueSoft tiene el Cliente, el No Compra (el que deja su
+       WhatsApp no es una venta fallida); a la derecha el Motivo (botones, en el orden de BlueSoft), el producto que buscaba
+       (lo nuestro: con el talle y el color que buscaba), el Detalle grande y el Monto perdido estimado; abajo a la derecha
+       Guardar y nueva, Guardar y Cancelar. */
+    var caja = ventana('<div class="vf-cab"><h3 id="posVentTit">Nueva venta fallida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : '') + '</h3>' +
+        '<span class="vf-fecha">' + fechaCorta(S.ini.hoy) + '</span></div>' +
+      '<div class="vf-bs">' +
+        '<div class="vf-izq">' +
+          campo('', 'Vendedor', '<select id="vfVend"></select>') +
+          campo('', 'Sucursal', '<select id="vfLocal" class="desplegable">' + opcionesLocales(F.local) + '</select>') +
+          '<div class="vf-nc"><span>¿Dejó su WhatsApp? Entonces no es una venta fallida: es un No Compra, y se le escribe cuando entra lo que buscaba.</span>' +
+            '<a class="btn btn-sec btn-chico" href="index.html?volver=pos">Cargarlo como No Compra</a></div>' +
+        '</div>' +
+        '<div class="vf-der">' +
+          '<div class="pos-f"><span>Motivo</span><div class="chips vf-motivos" id="vfMotivos">' + MOTIVOS.map(function (m) {
+            return '<button type="button" class="chip" data-motivo="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join('') + '</div></div>' +
+          '<div class="pos-f"><span>Producto que buscaba <span class="lbl-opc">(si buscaba uno)</span></span>' +
+            '<div class="tk-prod"><input type="search" id="vfProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="vfSug">' +
+            '<div class="tk-sug" id="vfSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+            '<div id="vfElegido"></div></div>' +
+          campo('', 'Detalle', '<textarea id="vfDetalle" maxlength="500" rows="4" placeholder="Qué buscaba, qué le ofrecimos…"></textarea>') +
+          campo('vf-monto', 'Monto perdido estimado', '<input type="text" inputmode="decimal" id="vfMonto" data-plata placeholder="$0">') +
+        '</div>' +
       '</div>' +
       '<div class="pos-error" id="vfError"></div>' +
-      /* El aviso del No Compra va al lado de los botones: así la ventana entera entra en la PC del local. */
-      '<div class="pos-pie"><p class="vf-nc izq" title="Así se le escribe cuando entra lo que buscaba.">¿Dejó su WhatsApp? Entonces es un <a href="index.html?volver=pos">No Compra</a>.</p>' +
-        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+      '<div class="pos-pie">' +
         '<button type="button" class="btn btn-sec btn-chico" id="vfOtra">Guardar y nueva</button>' +
-        '<button type="button" class="btn btn-chico btn-fallida" id="vfOk">' + (prueba ? 'Guardar prueba' : 'Guardar') + '</button></div>', true);
+        '<button type="button" class="btn btn-chico btn-fallida" id="vfOk">' + (prueba ? 'Guardar prueba' : 'Guardar') + '</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button></div>', true);
     caja.classList.add('vf');
     function lista() { return listaDe(localDe(F.local)); }
     function llenarVend() {
@@ -4822,10 +4832,15 @@
       F.color = cs.length === 1 ? cs[0].cod : '';
       caja.querySelector('#vfProd').limpiar();
       pintarProd();
-      /* El monto perdido: el precio de la prenda, si no escribieron otro. */
-      var m = caja.querySelector('#vfMonto'), pr = precioDe(p[0], lista());
+      montoAuto();
+    }
+    /* El monto perdido: el precio de la prenda, si no escribieron otro. También cuando la lista de precios llega después de
+       elegir la prenda (7/11: si tardaba, el monto quedaba vacío) o cambia con la sucursal. */
+    function montoAuto() {
+      var m = caja.querySelector('#vfMonto'), pr = m && F.prod ? precioDe(F.prod[0], lista()) : null;
       if (pr && (!m.value.trim() || m.value === F.montoAuto)) m.value = F.montoAuto = plataCampo(pr);
     }
+    function traerPrecios() { asegurarPrecios(lista()).then(function () { if (caja.isConnected) montoAuto(); }, function () {}); }
     function pintarProd() {
       var e = caja.querySelector('#vfElegido'), p = F.prod;
       if (!p) { e.innerHTML = ''; return; }
@@ -4846,13 +4861,13 @@
         avisar('info', 'No está en el catálogo: quedó escrito en «Detalle».');
         d.focus();
       } });
-    asegurarPrecios(lista()).catch(function () {});
+    traerPrecios();
     caja.querySelector('#vfLocal').onchange = function () {
       var x = localDe(this.value);
       F.local = x.id;
       F.vendedor = vendedorInicial(x);
       llenarVend();
-      asegurarPrecios(lista()).catch(function () {});
+      traerPrecios();
     };
     caja.querySelector('#vfVend').onchange = function () { F.vendedor = this.value; };
     caja.querySelector('#vfMotivos').onclick = function (e) {
