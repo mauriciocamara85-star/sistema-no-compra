@@ -33,8 +33,9 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
 };
 
 const QUE_ES: Record<TipoFoto, string> = {
+  // (7/11, Unicenter 6/11) De la caja de ventas: la «Caja Fuerte» tiene la misma pantalla y no sirve.
   sistema:
-    'la pantalla "Cierre de caja" del sistema del local: a la derecha "Resultados del día" y a la izquierda el recuadro "TOTAL EFECTIVO" con el mensaje de sobrante o faltante (puede verse sólo "Resultados del día")',
+    'la pantalla "Cierre de caja" del sistema del local, de la caja de ventas (no la «Caja Fuerte»): a la derecha "Resultados del día" y a la izquierda el recuadro "TOTAL EFECTIVO" con el mensaje de sobrante o faltante (puede verse sólo "Resultados del día")',
   // (5/11) El cierre de lote puede ser el ticket impreso o la pantalla del posnet (Mauricio: "a veces también puede ser
   // la pantalla, directamente la pantalla del posnet").
   lote: "el cierre de lote del posnet (Payway, Getnet u otro), en el ticket impreso o en la pantalla del posnet; puede haber dos o más posnet en la misma foto",
@@ -67,6 +68,10 @@ export function esquemaCaja(tipo: TipoFoto) {
     foto_valida: { type: "boolean", description: "false SÓLO si es claramente otra cosa o si no se lee lo principal" },
     motivo: { type: "string", description: 'Si foto_valida es false: UNA sola frase corta y simple (12 palabras como mucho) con qué está mal y qué hacer; si no, ""' },
     fecha: { type: "string", description: 'Fecha que aparece en la foto, formato AAAA-MM-DD; "" si no aparece' },
+    // (7/11) Qué caja es (texto: no suma anyOf). La «Caja Fuerte» la rechaza el código (cajaDeVentas).
+    ...(tipo === "sistema"
+      ? { caja: { type: "string", description: 'Lo que dice el casillero «CAJA» de arriba, tal cual (por ejemplo "Caja Fuerte"); "" si no se ve' } }
+      : {}),
     ...montos,
     ...(conLista
       ? { suma_operaciones: numeroONulo("Si NO hay total y se ve una lista, la suma de los montos visibles; si no, null") }
@@ -82,9 +87,15 @@ export function esquemaCaja(tipo: TipoFoto) {
             type: "object",
             properties: {
               nombre: { type: "string", description: 'El nombre del posnet o de la empresa ("Payway", "Getnet"…); "" si no se ve' },
-              total: numeroONulo("El total en pesos del cierre de ese posnet"),
+              // (7/11, San Justo 6/11) Lo cobrado, lo anulado y lo devuelto por separado: la resta la hace el código
+              // (sumarPosnets). Antes la IA daba las compras ($ 627.510) y el sistema decía el neto ($ 556.110).
+              total: numeroONulo(
+                "Las compras (ventas) de ese posnet tal como figuran, SIN restar anulaciones ni devoluciones (en Payway o Sistema POS: el monto de «Co» en TOTALES EN PESOS; en Getnet: VENTAS del TOTAL GENERAL)",
+              ),
+              anulaciones: numeroONulo("Lo anulado en ese cierre (en Payway o Sistema POS: el monto de «An» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
+              devoluciones: numeroONulo("Lo devuelto en ese cierre (en Payway o Sistema POS: el monto de «Dv» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
             },
-            required: ["nombre", "total"],
+            required: ["nombre", "total", "anulaciones", "devoluciones"],
             additionalProperties: false,
           },
         },
@@ -122,7 +133,9 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Los montos están en pesos argentinos con formato "$ 1.440.100,00": el punto separa miles y la coma, decimales. Devolvé números simples (1440100).
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
-${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
+${tipo === "sistema" ? `- Arriba, en «CAJA», dice qué caja es: copialo en "caja". Tiene que ser la caja de ventas: la «Caja Fuerte» es otra pantalla.
+` : ""}${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
+- En cada posnet, el total son las compras tal como figuran, sin restar nada. Si el cierre trae anulaciones («An») o devoluciones («Dv») con monto, anotalas aparte en "anulaciones" y "devoluciones" (0 si no hay): no las restes, la cuenta la hace el sistema.
 ` : ""}${tipo === "mp" ? `- Si se ve la lista de cobros, anotá cada uno en "operaciones", en el orden de la pantalla: la hora tal como aparece, el número de operación si se ve y el monto. Un renglón cortado por el borde de la foto va sólo si se leen la hora y el monto. No los sumes: la cuenta la hace el sistema.
 - En "operaciones" van sólo los cobros del día de la caja: si la lista separa los días («Hoy», «Ayer» o una fecha), los de otros días no van. "lista_cortada" = true sólo si pueden quedar cobros de ese día fuera de la foto (si abajo ya empiezan los de otro día, la lista del día está completa). Si no se ve de qué día son (ni «Hoy» ni una fecha), "lista_cortada" = true.
 ` : ""}${tipo === "mp" || tipo === "gocuotas" ? `- Si la pantalla dice que no hay cobros ni ventas (por ejemplo «No tenés ninguna venta»), la foto vale y el total es 0.
@@ -164,7 +177,7 @@ export async function leerFotoCaja(opts: {
     r.total_de_lista = true;
   }
   if (opts.tipo === "lote") sumarPosnets(r);
-  if (opts.tipo === "sistema") { efectivoContado(r); ventasEnCero(r); }
+  if (opts.tipo === "sistema") { efectivoContado(r); ventasEnCero(r); cajaDeVentas(r); }
   r.fecha = fechaValida(r.fecha);
   // Sin motivo, null como antes (la base y la app preguntan si hay motivo).
   if (typeof r.motivo !== "string" || !r.motivo.trim()) r.motivo = null;
@@ -219,17 +232,52 @@ export function ventasEnCero(r: Record<string, unknown>) {
  *  código, no la IA). Si uno no se lee, el total queda sin leer y va a dudas: mejor que lo carguen a mano. */
 export function sumarPosnets(r: Record<string, unknown>) {
   const lista = Array.isArray(r.posnets) ? r.posnets as Record<string, unknown>[] : [];
-  const posnets = lista.map((p) => ({ nombre: typeof p?.nombre === "string" ? p.nombre.trim() : "", total: aNumero(p?.total) }));
+  const posnets = lista.map((p) => netoDelPosnet(p, r));
   r.posnets = posnets;
   if (posnets.length < 2) {
-    if (r.total == null && posnets[0]?.total != null) r.total = posnets[0].total;
+    // (7/11) Con anulaciones vale el neto del posnet, no el total de arriba (que la IA copia del ticket, sin restar).
+    if (posnets[0] && "compras" in posnets[0]) r.total = posnets[0].total;
+    else if (r.total == null && posnets[0]?.total != null) r.total = posnets[0].total;
     return;
   }
   const sinLeer = posnets.filter((p) => p.total == null);
   if (sinLeer.length) {
     r.total = null;
-    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), ...sinLeer.map((p) => `No se lee el total del posnet ${p.nombre || "sin nombre"}`)];
+    // (El que no cierra lo anulado ya tiene su duda.)
+    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []),
+      ...sinLeer.filter((p) => !("compras" in p)).map((p) => `No se lee el total del posnet ${p.nombre || "sin nombre"}`)];
   } else r.total = posnets.reduce((s, p) => s + (p.total as number), 0);
+}
+
+/** (7/11, San Justo 6/11: Co $ 627.510, An $ 71.400; el sistema decía $ 556.110) El posnet neto: las compras menos lo
+ *  anulado y lo devuelto. La resta la hace el código. Sin anulaciones el posnet queda como siempre ({nombre, total}); con
+ *  anulaciones, total = el neto (la base y la app suman ese) y quedan aparte compras, anulaciones y devoluciones. Una
+ *  anulación sin leer (null) cuenta como que no hubo, como antes. Si lo anulado pasa lo cobrado, no cierra: sin leer. */
+export function netoDelPosnet(p: Record<string, unknown> | null | undefined, r: Record<string, unknown>) {
+  const nombre = typeof p?.nombre === "string" ? p.nombre.trim() : "";
+  const compras = aNumero(p?.total);
+  const anulaciones = Math.abs(aNumero(p?.anulaciones) ?? 0), devoluciones = Math.abs(aNumero(p?.devoluciones) ?? 0);
+  if (compras == null || anulaciones + devoluciones === 0) return { nombre, total: compras };
+  const neto = Math.round((compras - anulaciones - devoluciones) * 100) / 100;
+  if (neto < 0) {
+    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), `No cierra lo anulado del posnet ${nombre || "sin nombre"}`];
+    return { nombre, total: null, compras, anulaciones, devoluciones };
+  }
+  return { nombre, total: neto, compras, anulaciones, devoluciones };
+}
+
+/** (7/11, Unicenter 6/11) La foto del cierre de la «Caja Fuerte» no sirve: tiene la misma pantalla, pero no las ventas
+ *  del día (todas en $ 0 con un total de $ 993.000), y el sistema no pedía ni el lote ni Mercado Pago porque «daban» $ 0.
+ *  Se rechaza si «CAJA» dice Caja Fuerte, o si hay Ventas Totales y todas las ventas por medio están en $ 0 (eso no pasa
+ *  en una caja de ventas: de las 88 fotos del sistema leídas hasta el 6/11, sólo la de Unicenter). */
+export function cajaDeVentas(r: Record<string, unknown>) {
+  const fuerte = typeof r.caja === "string" && /fuerte/i.test(r.caja);
+  const n = (k: string) => (typeof r[k] === "number" && Number.isFinite(r[k]) ? r[k] as number : null);
+  const total = n("ventas_totales");
+  const enCero = r.foto_valida !== false && total != null && total > 0 && Object.keys(VENTAS_SISTEMA).every((k) => n(k) === 0);
+  if (!fuerte && !enCero) return;
+  r.foto_valida = false;
+  r.motivo = fuerte ? "Es la Caja Fuerte: elegí la caja de ventas." : "Es otra caja: elegí la caja de ventas.";
 }
 
 /** (SQL 242) Las ventas de la lista de Mercado Pago: la hora como "18:42" y el número sólo con sus dígitos (así la misma

@@ -1939,10 +1939,18 @@ function lecturaCierre(t, f, k, enPartes) {
   }
   /* Dos o más posnet en la misma foto: cada uno y la suma (la hace el código, no la IA). */
   var posnets = Array.isArray(r.posnets) && r.posnets.length > 1 ? detalleSumaCaja([{ tipo: t[0], ia_estado: 'ok', ia_resultado: r }], t[0]) : '';
+  /* (7/11, San Justo 6/11) El posnet con anulaciones vale neto (la resta la hace el código): el ticket dice $ 627.510 y el
+     lote leído $ 556.110, así que se explica de dónde sale. */
+  var anulado = (Array.isArray(r.posnets) ? r.posnets : []).filter(function (p) { return p && p.compras != null; }).map(function (p) {
+    var resta = (Number(p.anulaciones) || 0) + (Number(p.devoluciones) || 0);
+    return (p.nombre ? p.nombre + ' ' : '') + pesos(p.compras) + ' − ' + pesos(resta) + ' anulado' +
+      (p.total == null ? ': no cierra, cargalo a mano' : ' = ' + pesos(p.total));
+  });
   var otroDia = r.fecha && r.fecha !== String(k.fecha).slice(0, 10);
   return '<div class="lectura-ia">El sistema leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
     (lista ? '<div>' + esc(lista) + '</div>' : '') +
     (posnets ? '<div>' + esc(posnets) + '</div>' : '') +
+    (anulado.length ? '<div>Lo anulado se resta: ' + esc(anulado.join('; ')) + '.</div>' : '') +
     (otroDia ? '<div class="rojo">La foto dice ' + esc(diaMes(r.fecha)) + ': parece de otro día.</div>' : '') +
     ((r.dudas || []).length ? '<div>No se leían bien: ' + esc(r.dudas.join(', ')) + '</div>' : '') + '</div>';
 }

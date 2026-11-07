@@ -284,8 +284,8 @@ Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con
 });
 
 import {
-  aNumero, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets, ventasDeLaLista,
-  ventasEnCero,
+  aNumero, cajaDeVentas, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets,
+  ventasDeLaLista, ventasEnCero,
 } from "./caja_ia.ts";
 
 /** Las propiedades con anyOf o con una lista de tipos, en todo el esquema (la API acepta hasta 16). */
@@ -415,7 +415,7 @@ Deno.test("caja: dos posnet en la foto del lote se suman en el código, no en la
   const lote = esquemaCaja("lote") as { properties: Record<string, unknown>; required: string[] };
   igual("posnets" in lote.properties && lote.required.includes("posnets"), true, "el lote pide la lista de posnets");
   igual(["sistema", "mp", "gocuotas"].some((t) => "posnets" in esquemaCaja(t as "mp").properties), false, "los demás no");
-  igual(uniones(lote), 2, "el total y el total de cada posnet");
+  igual(uniones(lote), 4, "el total y, de cada posnet, el total, lo anulado y lo devuelto (7/11)");
   igual(sistemaCaja("lote", "2026-11-04", "Parque Brown").includes('"posnets"'), true, "el lote lo explica");
   igual(sistemaCaja("mp", "2026-11-04", "Parque Brown").includes("posnets"), false, "Mercado Pago no");
 
@@ -475,4 +475,83 @@ Deno.test("caja: Mercado Pago anota cada venta y la suma la hace el código (4/1
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
   });
   igual([r.total, r.suma_operaciones, r.total_de_lista], [47400, 47400, true], "la lectura completa: el total sale de la lista del código");
+});
+
+Deno.test("caja: la foto de la Caja Fuerte no es la caja de ventas (7/11, Unicenter 6/11)", async () => {
+  const sis = esquemaCaja("sistema") as { properties: Record<string, unknown>; required: string[] };
+  igual("caja" in sis.properties && sis.required.includes("caja"), true, "el sistema pide qué caja es");
+  igual(uniones(sis), 15, "y no suma anyOf (es texto)");
+  igual(["lote", "mp", "gocuotas"].some((t) => "caja" in esquemaCaja(t as "mp").properties), false, "los demás no");
+  igual(sistemaCaja("sistema", "2026-11-06", "Unicenter").includes("Caja Fuerte"), true, "el pedido lo explica");
+  const caja = (r: Record<string, unknown>) => (cajaDeVentas(r), r);
+  // La lectura real de Unicenter 6/11 (la IA la dio por buena).
+  const unicenter = {
+    foto_valida: true, motivo: null, saldo_inicial: 2600000, ventas_tarjeta: 0, ventas_efectivo: 0, ventas_mercado_pago: 0,
+    ventas_cuenta_corriente: 0, ventas_deposito_bancario: 0, ventas_debito_go: 0, ventas_totales: 993000, gastos_efectivo: 920000,
+    otros_gastos: 0, otras_salidas: 0, descuentos: 0, saldo_final_efectivo: 1700000, total_efectivo: 1700000, sobrante_faltante: 0,
+  };
+  const a = caja({ ...unicenter });
+  igual([a.foto_valida, a.motivo], [false, "Es otra caja: elegí la caja de ventas."], "ventas en $ 0 con total: otra caja");
+  const b = caja({ ...unicenter, caja: "Caja Fuerte" });
+  igual([b.foto_valida, b.motivo], [false, "Es la Caja Fuerte: elegí la caja de ventas."], "dice Caja Fuerte");
+  const c = caja({ ...unicenter, caja: "CAJA FUERTE", ventas_tarjeta: 993000 });
+  igual(c.foto_valida, false, "Caja Fuerte aunque traiga ventas");
+  const d = caja({ ...unicenter, foto_valida: false, motivo: "Salió borrosa: sacala quieta.", caja: "Caja Fuerte" });
+  igual(d.motivo, "Es la Caja Fuerte: elegí la caja de ventas.", "la Caja Fuerte manda sobre el motivo de la IA");
+  const e = caja({ ...unicenter, caja: "Caja 1", ventas_tarjeta: 500000, ventas_efectivo: 493000 });
+  igual([e.foto_valida, e.motivo], [true, null], "una caja de ventas: igual que siempre");
+  const f = caja({ ...unicenter, ventas_totales: 0, saldo_inicial: 50000 });
+  igual(f.foto_valida, true, "un día sin ventas (total $ 0): vale");
+  const g = caja({ ...unicenter, ventas_efectivo: null });
+  igual(g.foto_valida, true, "con una venta sin leer no se sabe: no se rechaza");
+  const h = caja({ ...unicenter, foto_valida: false, motivo: "Falta la parte de abajo." });
+  igual(h.motivo, "Falta la parte de abajo.", "inválida por otra cosa: queda el motivo de la IA");
+  // De punta a punta: la base la marca «invalida» con el motivo (orden_caja_aplicar_lectura usa foto_valida).
+  const r = await leerFotoCaja({
+    tipo: "sistema", fecha: "2026-11-06", local: "Unicenter", foto: { media_type: "image/jpeg", data: "eA==" }, modelo: "m", apiKey: "k",
+    pedir: (async () => new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({ ...unicenter, caja: "Caja Fuerte", motivo: "", fecha: "2026-11-06", lista_cortada: false, dudas: [] }) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
+  });
+  igual([r.foto_valida, r.motivo, r.caja], [false, "Es la Caja Fuerte: elegí la caja de ventas.", "Caja Fuerte"], "la lectura completa");
+});
+
+Deno.test("caja: el lote vale neto, las compras menos lo anulado y lo devuelto (7/11, San Justo 6/11)", async () => {
+  const lote = esquemaCaja("lote") as { properties: { posnets: { items: { required: string[] } } } };
+  igual(lote.properties.posnets.items.required, ["nombre", "total", "anulaciones", "devoluciones"], "cada posnet pide lo anulado y lo devuelto");
+  igual(sistemaCaja("lote", "2026-11-06", "San Justo").includes("«An»"), true, "el pedido lo explica");
+  const suma = (r: Record<string, unknown>) => (sumarPosnets(r), r);
+  // La lectura de San Justo 6/11 con lo anulado aparte (el ticket: Co 006 $ 627.510, An 001 $ 71.400).
+  const sj = suma({ total: 627510, posnets: [{ nombre: "Sistema POS", total: 627510, anulaciones: 71400, devoluciones: 0 }], dudas: [] });
+  igual([sj.total, sj.posnets], [556110, [{ nombre: "Sistema POS", total: 556110, compras: 627510, anulaciones: 71400, devoluciones: 0 }]],
+    "San Justo: $ 556.110, lo mismo que el sistema");
+  igual(suma({ total: 627510, posnets: [{ nombre: "Payway", total: "$ 627.510,00", anulaciones: "-$ 71.400,00", devoluciones: "$ 1.000" }] }).total,
+    555110, "como texto y con signo menos; las devoluciones también se restan");
+  const sin = suma({ total: 253000, posnets: [{ nombre: "Payway", total: 253000, anulaciones: 0, devoluciones: 0 }] });
+  igual([sin.total, sin.posnets], [253000, [{ nombre: "Payway", total: 253000 }]], "sin anulaciones: como siempre");
+  igual(suma({ total: 253000, posnets: [{ nombre: "Payway", total: 253000, anulaciones: null, devoluciones: null }] }).total, 253000,
+    "lo anulado sin leer cuenta como que no hubo, como antes");
+  const dos = suma({ total: 253000, posnets: [{ nombre: "Payway", total: 253000, anulaciones: 3000, devoluciones: 0 },
+    { nombre: "Getnet", total: 564500, anulaciones: 0, devoluciones: 0 }], dudas: [] });
+  igual([dos.total, (dos.posnets as Record<string, unknown>[]).map((p) => p.total)], [814500, [250000, 564500]], "dos posnet: se suman los netos");
+  const raro = suma({ total: 1000, posnets: [{ nombre: "Getnet", total: 1000, anulaciones: 5000, devoluciones: 0 }], dudas: [] });
+  igual([raro.total, raro.dudas], [null, ["No cierra lo anulado del posnet Getnet"]], "lo anulado pasa lo cobrado: sin leer");
+  const raro2 = suma({ total: 1000, posnets: [{ nombre: "Getnet", total: 1000, anulaciones: 5000, devoluciones: 0 },
+    { nombre: "Payway", total: 2000, anulaciones: 0, devoluciones: 0 }], dudas: [] });
+  igual([raro2.total, raro2.dudas], [null, ["No cierra lo anulado del posnet Getnet"]], "con dos: una sola duda");
+  const todo = suma({ total: 71400, posnets: [{ nombre: "Payway", total: 71400, anulaciones: 71400, devoluciones: 0 }] });
+  igual(todo.total, 0, "todo anulado: $ 0");
+
+  const r = await leerFotoCaja({
+    tipo: "lote", fecha: "2026-11-06", local: "San Justo", foto: { media_type: "image/jpeg", data: "eA==" }, modelo: "m", apiKey: "k",
+    pedir: (async () => new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({
+        foto_valida: true, motivo: "", fecha: "2026-11-06", total: 627510, lista_cortada: false, dudas: [],
+        posnets: [{ nombre: "Sistema POS", total: 627510, anulaciones: 71400, devoluciones: 0 }],
+      }) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
+  });
+  igual(r.total, 556110, "la lectura completa");
 });
