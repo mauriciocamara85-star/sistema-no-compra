@@ -147,7 +147,7 @@ var usuarios = (function () {
             (c[2] ? ' <small>(' + esc(c[2]) + ')</small>' : '') + '</span></label>';
         }).join('') + '</div>' +
       (conFabrica() ? '<label class="us-pos-fab"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="fabrica"' + (e.fabrica && !adm ? ' checked' : '') + '> ' +
-        '<span>Entra a Fábrica <small>(los productos y sus precios, los remitos a los locales y sus diferencias; sin el POS no ve ventas, caja ni plata)</small></span></label>' : '') +
+        '<span>Entra a Fábrica <small>(los productos y sus precios, el stock de la fábrica, los remitos a los locales y sus diferencias; sin el POS no ve ventas ni cajas)</small></span></label>' : '') +
       '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>' + esc(textoAdmin()) + '</p>' +
     '</div>';
   }

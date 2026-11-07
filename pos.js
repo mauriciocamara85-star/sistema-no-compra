@@ -130,7 +130,7 @@
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock'],
                       ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
-         los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión.
+         los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Con «Ver otros locales», los listados ofrecen «Todas» (desde el 7/11 Gestión no los repite).
          Los cierres (Mauricio, 5/11): como en BlueSoft, primero la lista de los cierres y ahí «Nuevo cierre de caja», como un ticket. */
       ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierres', 'Cierres de caja', 'caja']]]
     ],
@@ -705,11 +705,15 @@
     if (MODO === 'fabrica') return y.fabrica === true || (y.fabrica === undefined && y.gestion === true && y.rol === 'admin');
     return MODO === 'gestion' ? y.gestion === true : y.pos === true;
   }
+  /* SQL 256: en la Fábrica se ven todos los locales y todos los días (la base hace lo mismo con quien la tiene), aunque la
+     persona no tenga «Ver otros locales» ni «Ver otros días» del POS (la gente de la fábrica no usa el POS). También cada vez
+     que se vuelve a traer pos_inicio (las listas de precios: si no, a Lucas le quedaban sólo su local y hoy; el árbitro, 7/11). */
+  function arreglarFabrica(ini) {
+    if (MODO === 'fabrica' && ini && ini.puede && ini.puede.fabrica === true) { ini.puede.locales = true; ini.puede.dias = true; }
+    return ini;
+  }
   function empezar(ini, sinRed) {
-    S.ini = ini;
-    /* SQL 256: en la Fábrica se ven todos los locales y todos los días (la base hace lo mismo con quien la tiene), aunque la
-       persona no tenga «Ver otros locales» ni «Ver otros días» del POS (la gente de la fábrica no usa el POS). */
-    if (MODO === 'fabrica' && ini.puede && ini.puede.fabrica === true) { ini.puede.locales = true; ini.puede.dias = true; }
+    S.ini = arreglarFabrica(ini);
     if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
     if (sinRed) ini.hoy = hoyAR();   // la copia puede ser de otro día
     S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
@@ -749,12 +753,19 @@
 
   function esDe(modo, v) { return enMenu(MENUS[modo], v) || !!DENTRO[modo][v]; }
 
-  function ir(v) {
+  var yaAbrio = false;   // ya se abrió una pantalla en esta página (S.vista arranca en «venta»: no sirve para saberlo)
+  function ir(v, desdeHash) {
     /* Una dirección vieja (pos.html#listas, gestion.html#remitos) o un enlace a otra pantalla: se va para allá. */
     var otro = esDe(MODO, v) ? null : (OTRA_VISTA[MODO] || {})[v] || OTRAS[MODO].filter(function (m) { return esDe(m, v); })[0];
-    if (otro) { location.replace(PAGINA[otro] + '#' + v); return; }
+    if (otro) {
+      /* Al abrir (una dirección vieja), replace: el Atrás no pasa por una página que sólo redirige. Desde un botón de una pantalla
+         abierta (Inventario → «Ver el stock»), assign: el Atrás vuelve a donde estaba (el árbitro, 7/11). */
+      if (yaAbrio && !desdeHash) location.assign(PAGINA[otro] + '#' + v); else location.replace(PAGINA[otro] + '#' + v);
+      return;
+    }
     if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
+    yaAbrio = true;
     S.recargar = null;   // la vista que se abre pone el suyo (Tickets, el cierre): lo llama la fila al mandar ventas (SQL 212)
     S.actualizar = null; // y el del botón de actualizar, si lo tiene (actualizable)
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
@@ -779,7 +790,7 @@
                 general: verStockGeneral, general_modulo: verModuloSg }[v];
     if (ver) ver(); else verPronto(v);
   }
-  window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
+  window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v, true); });
 
   function ponerPrueba(si) {
     try { if (si) sessionStorage.setItem(K_PRUEBA, '1'); else sessionStorage.removeItem(K_PRUEBA); } catch (e) {}
@@ -5675,7 +5686,7 @@
           '<div class="pos-cartel">' + (fuerte ? 'Todavía no hay movimientos de salida en esta caja: nada pasó a la caja fuerte.' : ret ? 'Todavía no se retiró nada de esta caja.' :
             sal ? 'Todavía no hay otras salidas en esta caja.' : ing ? 'Todavía no hay otros ingresos en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
         '<div class="pos-pie">' + (fuerte ? '<a class="btn btn-sec btn-chico izq" href="#salidas" id="cjIrSalidas">Ir a Movimientos de salida</a>'
-                                   : ret ? '<a class="btn btn-sec btn-chico izq" href="#retiros" id="cjIrRetiros">Ir a Retiros de fondos</a>'
+                                   : ret ? (puede('retiros') ? '<a class="btn btn-sec btn-chico izq" href="#retiros" id="cjIrRetiros">Ir a Retiros de fondos</a>' : '')   // SQL 262
                                           : '<a class="btn btn-sec btn-chico izq" href="#gastos" id="cjIrGastos">Ir a Gastos</a>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
     }
@@ -6117,6 +6128,8 @@
         return;
       }
       z.textContent = 'Sale de la caja chica: lo resta el próximo cierre.';
+      /* SQL 262: quien hace retiros sin la caja no ve cuánto hay (pos_caja es la caja entera del día: las ventas y los pagos). */
+      if (!puede('caja')) return;
       llamar('pos_caja', { p_local: caja.querySelector('#rtLocal').value, p_prueba: !!prueba }).then(function (d) {
         if (n !== pedido || !caja.isConnected || d.primer || d.ventas.efectivo == null) return;
         hay = d.en_caja != null ? cent(d.en_caja) : esperadoCaja(d, cent(d.saldo_inicial || 0));   // SQL 247: todo lo abierto
@@ -6482,7 +6495,8 @@
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
         campo('', 'Sucursal', '<select id="mvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
+        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'retiro' || puede('retiros'); })
+          .map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +   // SQL 262: el retiro, con su casilla
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
@@ -6505,7 +6519,7 @@
         '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' +
         '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
-        (t.retiro !== undefined ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>' +   // SQL 191
+        (t.retiro !== undefined && puede('retiros') ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>' +   // SQL 191
         ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
       if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = kpis + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>'; return; }
       var prueba = $('mvPrueba').value === '1', ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
@@ -7230,12 +7244,12 @@
     if (!li) { c.innerHTML = cabeza('Listas de precios', '') + '<div class="pos-cartel">No hay listas de precios.</div>'; return; }
     var base = li.base_id ? listaPorId(li.base_id) : null;
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
-    var quien = usan.length ? 'La usan: ' + esc(usan.join(', ')) + '.' : 'Ninguna sucursal la usa todavía: se elige en Gestión → Sucursales.';
+    var quien = usan.length ? 'La usan: ' + esc(usan.join(', ')) + '.' : 'Ninguna sucursal la usa todavía: la elige la oficina en Gestión → Sucursales.';
     /* SQL 226: cambiarle el nombre y darla de baja (crear una nueva, «+ Nueva lista», va con las listas). */
     var acc = '<div class="ls-acc"><button type="button" class="pos-link" id="lsRenombrar">Cambiar el nombre</button>' +
               '<button type="button" class="pos-link" id="lsBaja">Dar de baja</button></div>';
     if (S.subida && S.subida.li !== li.id) S.subida = null;
-    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Gestión → Sucursales). Un precio cambiado acá vale desde la próxima venta.',
+    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (la elige la oficina en Gestión → Sucursales). Un precio cambiado acá vale desde la próxima venta.',
         base ? '' : '<label class="btn btn-sec btn-chico">Subir lista de BlueSoft…<input type="file" id="lsArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
                     '<button type="button" class="btn btn-sec btn-chico" id="lsAumentar">Aumentar precios…</button>') +
       '<div class="pos-listas-elegir" role="group" aria-label="Lista">' + S.ini.listas.map(function (l) {
@@ -7281,9 +7295,10 @@
     var t = null;
     $('lsBuscar').oninput = function () { clearTimeout(t); t = setTimeout(pintarTabla, 150); };
     $('lsSolo').onchange = pintarTabla;
-    asegurarPrecios(li.id).then(pintarTabla, function (e) { $('lsTabla').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    asegurarPrecios(li.id).then(pintarTabla, function (e) { if ($('lsTabla')) $('lsTabla').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
 
     function pintarTabla() {
+      if (!$('lsBuscar') || S.listaSel !== li.id) return;   // se fue a otra pantalla u otra lista mientras cargaban los precios (el árbitro, 7/11)
       var m = S.precios[li.id] || {}, q = $('lsBuscar').value.trim().toLowerCase(), solo = $('lsSolo').checked;
       var filas = LISTA_PROD.map(function (p) { return { cod: p[0], nom: p[1], rubro: p[2] || '' }; });   // SQL 202: todos, no sólo catalogo.js
       Object.keys(m).forEach(function (k) { if (!PROD[k]) filas.push({ cod: k, nom: '(no está en el catálogo)', rubro: '' }); });
@@ -7349,7 +7364,7 @@
   /** Después de crear, renombrar o dar de baja: las listas de nuevo (pos_inicio), y las dadas de baja cuando se vean. */
   function recargarListas() {
     S.listasBajas = null;
-    return llamar('pos_inicio').then(function (ini) { S.ini = ini; });
+    return llamar('pos_inicio').then(function (ini) { S.ini = arreglarFabrica(ini); });
   }
   function nombreRepetido(nombre, salvo) {
     var n = nombre.toLowerCase();
@@ -7376,7 +7391,7 @@
                ['copia', 'Copia de otra', 'Arranca con los mismos precios y después va por su cuenta: se cambia con «Aumentar precios» o a mano.'],
                ['vacia', 'Vacía', 'Sin precios: se llena con «Subir lista de BlueSoft» o a mano.']];
     var caja = ventana('<h3 id="posVentTit">Nueva lista de precios</h3>' +
-      '<p class="pos-bajada">No cambia ningún precio de venta hasta que una sucursal la use (se elige en Gestión → Sucursales).</p>' +
+      '<p class="pos-bajada">No cambia ningún precio de venta hasta que una sucursal la use (la elige la oficina en Gestión → Sucursales).</p>' +
       campo('ancho ls-nombre', 'Nombre', '<input type="text" id="nlNombre" maxlength="60" autocomplete="off" placeholder="Por ejemplo: Outlet" autofocus>') +
       '<p class="ls-tit">¿De dónde salen los precios?</p>' +
       '<div class="df-ops" role="radiogroup" aria-label="De dónde salen los precios">' + OPS.map(function (o, i) {
@@ -7423,7 +7438,7 @@
           S.listaSel = r.id;
           verListas();
           avisar('ok', 'Listo: «' + r.nombre + '» creada' + (r.copiados ? ' con ' + (r.copiados === 1 ? '1 precio' : num(r.copiados) + ' precios') : '') +
-                       '. Para usarla, elegila en Gestión → Sucursales.');
+                       '. Para que la use una sucursal, la elige la oficina en Gestión → Sucursales.');
         });
       }).catch(function (e) {
         bt.disabled = false;
@@ -7472,7 +7487,7 @@
   function bajaLista(li) {
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
     var hijas = S.ini.listas.filter(function (l) { return l.base_id === li.id; }), n = hijas.length;
-    if (usan.length) { avisar('err', 'No se puede dar de baja: la usan ' + usan.join(', ') + '. Primero pasá esas sucursales a otra lista en Gestión → Sucursales.'); return; }
+    if (usan.length) { avisar('err', 'No se puede dar de baja: la usan ' + usan.join(', ') + '. Primero la oficina tiene que pasar esas sucursales a otra lista, en Gestión → Sucursales.'); return; }
     if (n) {
       avisar('err', '«' + hijas.map(function (l) { return l.nombre; }).join('» y «') + '» se calcula' + (n > 1 ? 'n' : '') + ' de esta: primero da' + (n > 1 ? 'las' : 'la') + ' de baja.');
       return;
@@ -7506,7 +7521,7 @@
         cerrarVentana();
         S.listaSel = id;
         verListas();
-        avisar('ok', 'Listo: «' + nom + '» se puede usar de nuevo. Para que la use una sucursal, elegila en Gestión → Sucursales.');
+        avisar('ok', 'Listo: «' + nom + '» se puede usar de nuevo. Para que la use una sucursal, la elige la oficina en Gestión → Sucursales.');
       }).catch(function (er) { b.disabled = false; avisar('err', mensajeDe(er)); });
     };
   }

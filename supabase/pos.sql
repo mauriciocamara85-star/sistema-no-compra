@@ -10020,10 +10020,12 @@ end $function$;
    subir el precio, de cargar los precios y que lo reciban los locales"; los precios los cambia Lucas). Y los retiros de fondos
    aparte de la caja ("el fondo no es para cualquiera").
    1. Productos y Listas de precios (crear, cambiar, subir la lista, aumentar, deshacer, dar de baja): también quien tiene
-      «Entra a Fábrica», aunque no use el POS. Quien tenía la Gestión sigue pudiendo. (15 funciones)
+      «Entra a Fábrica», aunque no use el POS. En la base, quien tenía la Gestión sigue pudiendo (las pantallas están
+      ahora en Fábrica: necesita «Entra a Fábrica»). (15 funciones)
    2. Una casilla nueva por persona, «Retiros de fondos» (clave 'retiros'), aparte de «Caja». Arranca como la caja de cada
       uno: por rol, la misma regla; a quien ya le cambiaron la caja (Lautaro, Nano y Seba), se le copia. Nadie pierde nada.
-      El retiro (guardarlo, anularlo, la lista, quién retira) pide esa casilla; la caja, la suya. (9 funciones)
+      El retiro (guardarlo, anularlo, su lista, quién retira) pide esa casilla; sin ella, la lista de todos los movimientos
+      no trae los retiros. Lo que hay en la caja y el cierre siguen pidiendo la caja. (8 funciones)
    Sin tablas nuevas. Se puede correr dos veces. Se deshace con deshacer-262.sql. ═══════════════════════════════════════════════════════════════════════════ */
 
 CREATE OR REPLACE FUNCTION public.pos_lista_aumentar(p_lista integer, p_porcentaje numeric, p_rubro text, p_familia text, p_redondeo integer, p_aplicar boolean, p_clave text)
@@ -10706,8 +10708,11 @@ CREATE OR REPLACE FUNCTION public.pos_caja_movimientos(p_desde date, p_hasta dat
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+declare
+  v_retiros boolean;   -- SQL 262
 begin
   perform pos_permiso(case when p_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: la lista de los retiros, con su casilla
+  v_retiros := pos_puede('retiros');   -- SQL 262: sin la casilla, «Todos» no trae los retiros
   perform pos_local_ok(p_local);
   perform pos_dias_ok(p_desde);
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
@@ -10728,7 +10733,7 @@ begin
        where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
          and (p_local is null or c.local_id = p_local)
     ), f as (
-      select * from t where p_tipo is null or t.tipo = p_tipo
+      select * from t where (p_tipo is null or t.tipo = p_tipo) and (t.tipo <> 'retiro' or v_retiros)   -- SQL 262
     )
     select jsonb_build_object(
       'filas', coalesce((
@@ -10764,105 +10769,6 @@ begin
   perform pos_permiso('retiros');   -- SQL 262
   return coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial)) order by p.nombre, p.inicial)
                      from orden_personas p where p.rol = 'admin' and p.activo and p.aprobado), '[]'::jsonb);
-end $function$;
-
-CREATE OR REPLACE FUNCTION public.pos_caja(p_local uuid, p_prueba boolean DEFAULT false)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-declare
-  a          jsonb;
-  t          jsonb;
-  v_prueba   boolean := coalesce(p_prueba, false);
-  v_hoy      date;
-  v_dia      date;
-  v_hasta    timestamptz;
-  v_corte    timestamptz;
-  u          pos_cierres;
-  k          pos_caja_conteos;
-  v_valido   boolean := false;
-  v_por      text;
-  v_saldo    numeric;
-  v_esp      numeric;
-  v_en_caja  numeric;
-begin
-  /* SQL 262: también quien hace retiros sin la caja (el retiro muestra cuánto hay en cada caja). */
-  perform pos_permiso(case when pos_puede('caja') then 'caja' else 'retiros' end);   -- SQL 190
-  perform pos_local_ok(p_local);
-  if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
-    raise exception 'Elegí la sucursal.';
-  end if;
-  v_hoy := pos_caja_dia_de(p_local);
-  v_dia := pos_caja_a_cerrar(p_local, v_prueba);
-  v_hasta := pos_caja_dia_fin(p_local, v_dia);
-  a := pos_caja_dia(p_local, v_prueba, v_dia);
-  select * into u from pos_cierres c
-   where c.local_id = p_local and c.prueba = v_prueba and c.estado = 'cerrada'
-   order by c.fecha desc limit 1;
-  v_corte := coalesce((select min(c.desde) from pos_cierres c
-                        where c.local_id = p_local and c.prueba = v_prueba and c.estado = 'cerrada'), '-infinity'::timestamptz);
-  if v_dia < v_hoy then
-    /* Lo que contaron ese día sirve si después no entró ni salió efectivo de ese día. */
-    select * into k from pos_caja_conteos x
-     where x.local_id = p_local and x.prueba = v_prueba and x.dia = v_dia and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
-     order by x.fecha desc, x.id desc limit 1;
-    if k.id is not null then
-      v_por := pos_caja_efectivo_entre(p_local, v_prueba, k.fecha, v_hasta);
-      v_valido := v_por is null;
-    end if;
-  end if;
-  v_saldo := case when u.id is not null then u.queda when v_valido then k.saldo_inicial end;
-  v_esp := v_saldo + (a->'ventas'->>'efectivo')::numeric + (a->>'otros_ingresos')::numeric
-         - (a->>'gastos')::numeric - (a->>'otras_salidas')::numeric - (a->>'a_caja_fuerte')::numeric
-         - (a->>'retiros_fondos')::numeric;
-  if v_dia < v_hoy then
-    t := pos_caja_dia(p_local, v_prueba, null);
-    v_en_caja := u.queda + (t->'ventas'->>'efectivo')::numeric + (t->>'otros_ingresos')::numeric
-               - (t->>'gastos')::numeric - (t->>'otras_salidas')::numeric - (t->>'a_caja_fuerte')::numeric
-               - (t->>'retiros_fondos')::numeric;
-  else
-    v_en_caja := v_esp;
-  end if;
-  return a || jsonb_build_object(
-    'numero', (select coalesce(max(c.numero), 0) + 1 from pos_cierres c where c.local_id = p_local and c.prueba = v_prueba),
-    'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
-    'movimientos', coalesce((
-      select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro,
-                                          'descripcion', m.descripcion, 'monto', m.monto, 'persona', m.persona_nombre,
-                                          'numero', m.numero,   -- SQL 179
-                                          'retira', m.retira) order by m.fecha)   -- SQL 191
-        from pos_caja_movimientos m
-       where m.local_id = p_local and m.prueba = v_prueba and m.cierre_id is null and m.estado = 'ok'
-         and coalesce(m.caja, 'chica') = 'chica'   -- SQL 191: sin los retiros de la caja fuerte
-         and m.fecha < v_hasta), '[]'::jsonb),   -- SQL 247: los de ese día
-    'detalle', pos_caja_detalle(p_local, v_prueba, null, v_dia),   -- SQL 246 (y 247: de ese día)
-    'hoy', v_hoy,
-    'pendiente', v_dia < v_hoy,
-    'esperado', v_esp,
-    'en_caja', v_en_caja,
-    'conteo', case when v_valido then jsonb_build_object(
-                'contado', k.contado, 'esperado', k.esperado, 'saldo_inicial', k.saldo_inicial, 'fecha', k.fecha,
-                'persona', (select pe.nombre from orden_personas pe where pe.id = k.persona)) end,
-    'conteo_viejo', case when k.id is not null and not v_valido then jsonb_build_object('fecha', k.fecha, 'contado', k.contado, 'por', v_por) end,
-    'efectivo_despues', case when v_dia < v_hoy then pos_caja_efectivo_entre(p_local, v_prueba, v_hasta, 'infinity'::timestamptz) end,
-    'dias_despues', case when v_dia < v_hoy then (
-      select coalesce(jsonb_agg(z.d order by z.d), '[]'::jsonb) from (
-        select distinct pos_caja_dia_de(p_local, w.fecha) d from (
-          select x.fecha from pos_ventas x
-           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'cobrada' and x.fecha >= v_hasta
-          union all
-          select x.fecha from pos_cambios x
-           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'hecho' and x.fecha >= v_hasta
-          union all
-          select x.fecha from pos_caja_movimientos x
-           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'ok'
-             and coalesce(x.caja, 'chica') = 'chica' and x.fecha >= v_hasta) w) z) end,
-    'tickets_despues', case when v_dia < v_hoy then (
-      select count(*) from pos_ventas x
-       where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'cobrada'
-         and x.fecha >= v_hasta and x.fecha >= v_corte) end);
 end $function$;
 
 /* La casilla nueva arranca como la caja de cada uno: a quien le cambiaron la caja, se le copia. */
