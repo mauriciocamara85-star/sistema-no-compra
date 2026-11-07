@@ -11616,8 +11616,9 @@
              /* SQL 193: el envío entre depósitos sigue en los mismos depósitos y con el mismo responsable (el módulo, no). */
              tipo: antes && antes.tipo || '', dep_o: antes && antes.dep_o || '', dep_d: antes && antes.dep_d || '', modulo: '', responsable: antes && antes.responsable || '',
              /* SQL 259: lo de la fábrica, con el depósito de donde sale y la temporada (siguen); los bultos y lo asegurado arrancan vacíos.
-                El transporte (transp) no está hasta que lo cambian: mientras tanto, el de siempre del local. */
-             dep_f: antes && antes.dep_f || '', temp: antes && antes.temp || '', bultos: '', aseg: '' };
+                El transporte (transp) no está hasta que lo cambian: mientras tanto, el de siempre del local.
+                La temporada, mientras no la eligen, es la de turno (tempRn); sin_temp = eligieron «Sin temporada» a mano. */
+             dep_f: antes && antes.dep_f || '', temp: antes && antes.temp || '', sin_temp: !!(antes && antes.sin_temp), bultos: '', aseg: '' };
   }
   function cargarRemitoNuevo() {
     var b = leerJSON(claveBorradorRn(), null);
@@ -11716,6 +11717,8 @@
     if (S.envios === undefined || (!S.dep[FAB] && !S.sin258)) {
       Promise.all([traerEnvios(), traerDepositos(FAB)]).then(function () { if (S.vista === 'remito_nuevo' && RN) { pintarEnvioRn(); pintarRn(); } });
     }
+    /* La primera vez en una compu el catálogo llega después: recién ahí están las temporadas (y la de turno). */
+    (S.artPromesa || Promise.resolve(false)).then(function (vino) { if (vino && S.vista === 'remito_nuevo' && RN) pintarTempRn(); }, function () {});
   }
 
   /* SQL 259: lo que sale de la fábrica a un local queda «Pendiente de envío» al guardarlo (ya sale del depósito) y
@@ -11729,6 +11732,25 @@
   /** Los datos del envío se ven (y se mandan) cuando ya están los transportes y los depósitos de la fábrica. */
   function datosEnvioRn() { return rnFab() && !!S.envios && !!S.dep[FAB]; }
   function transpRn() { return 'transp' in RN ? RN.transp || '' : transpDe(RN.destino); }
+  /** La temporada del remito de la fábrica: la elegida; si no la eligieron, la de turno, como BlueSoft (la regla de los
+      depósitos: de julio a diciembre el Verano del año que sigue, «41 Verano 2027»; buscada entre las del catálogo). Si la de
+      turno todavía no tiene productos (enero, sin nada de Invierno 2027), la anterior (Verano 2027).
+      «Sin temporada» elegido a mano queda vacío. */
+  function tempRn(temps) {
+    if (RN.temp || RN.sin_temp) return RN.temp || '';
+    var t = temporadaNueva(), o = t[1] * 2 + (t[0] === 'Invierno' ? 1 : 0);
+    var vi = (temps || valoresDe(8)).filter(function (x) { return /(verano|invierno)\s*\d{4}/i.test(x); });   // ya vienen de la más nueva a la más vieja
+    return vi.filter(function (x) { return ordenTemporada(x) === o; })[0] || vi.filter(function (x) { return ordenTemporada(x) < o; })[0] || '';
+  }
+  /** El campo Temporada solo: lo pinta pintarEnvioRn y, si el catálogo llega después (la primera vez en una compu), de nuevo. */
+  function pintarTempRn() {
+    var zt = $('rnTempZ');
+    if (!zt || zt.hidden || !RN) return;
+    var temps = valoresDe(8), tp = tempRn(temps);
+    zt.innerHTML = campo('c6', 'Temporada', '<select id="rnTemp" class="desplegable"><option value="">Sin temporada</option>' +
+        opciones((tp && temps.indexOf(tp) < 0 ? [tp] : []).concat(temps).map(function (x) { return [x, x]; }), tp) + '</select>');
+    $('rnTemp').onchange = function () { RN.temp = this.value; RN.sin_temp = !this.value; guardarBorradorRn(); };
+  }
   function pintarEnvioRn() {
     var z = $('rnEnvio'), zt = $('rnTempZ'), b = $('rnBajada'), e = $('rnEstado');
     if (!z || !RN) return;
@@ -11738,12 +11760,11 @@
     if (e) e.value = fab ? 'Pendiente de envío' : 'Enviado';   // sin el 259, o de un local: el local lo ve al guardarlo
     z.hidden = zt.hidden = !si;
     if (!si) { z.innerHTML = zt.innerHTML = ''; return; }
-    var ds = (S.dep[FAB] || []).filter(function (d) { return d.activo; }), d = depFabRn(), temps = valoresDe(8);
+    var ds = (S.dep[FAB] || []).filter(function (d) { return d.activo; }), d = depFabRn();
     if (RN.dep_f && !depDe(ds, RN.dep_f)) { RN.dep_f = ''; guardarBorradorRn(); }
     /* En los lugares de BlueSoft: la Temporada al lado de la Lista de precios; el Depósito al lado de la Sucursal; abajo el
        Transporte, los Bultos y el Monto asegurado, e Imprimir expreso y rótulos. */
-    zt.innerHTML = campo('c6', 'Temporada', '<select id="rnTemp" class="desplegable"><option value="">Sin temporada</option>' +
-        opciones((RN.temp && temps.indexOf(RN.temp) < 0 ? [RN.temp] : []).concat(temps).map(function (x) { return [x, x]; }), RN.temp || '') + '</select>');
+    pintarTempRn();
     z.innerHTML =
       campo('c6', 'Depósito', '<select id="rnDepF" class="desplegable" title="De dónde sale la mercadería">' +
         (ds.length ? opciones(ds.map(function (x) { return [x.id, nombreDep(x)]; }), d ? d.id : '') : '<option value="">El predeterminado</option>') + '</select>') +
@@ -11761,7 +11782,6 @@
     $('rnAseg').value = RN.aseg || '';
     plataEnVivo($('rnAseg'));   // un borrador de antes, sin el formato: se muestra con el formato
     $('rnDepF').onchange = function () { RN.dep_f = this.value; guardarBorradorRn(); pintarRn(); };
-    $('rnTemp').onchange = function () { RN.temp = this.value; guardarBorradorRn(); };
     $('rnTransp').onchange = function () { RN.transp = this.value; guardarBorradorRn(); };
     $('rnBultos').oninput = function () { RN.bultos = this.value; guardarBorradorRn(); };
     $('rnAseg').oninput = function () { RN.aseg = this.value; guardarBorradorRn(); };
@@ -12296,7 +12316,7 @@
       if (dD) pl.origen_deposito_id = dD.id;   // la base revisa que sea de la sucursal y esté activo (SQL 193)
       /* SQL 259: lo que se ve en pantalla (el transporte también: «Sin transporte» va vacío). */
       if (conDatos) Object.assign(pl, { origen_deposito_id: dF ? dF.id : null, transporte_id: transpRn() || null, bultos: bu,
-                                        asegurado: ac == null ? '' : String(aPesos(ac)), temporada: RN.temp || '' });
+                                        asegurado: ac == null ? '' : String(aPesos(ac)), temporada: tempRn() });
       llamar('pos_remito_guardar', { p: pl }).then(function (r) {
         S.guardando = false;
         if (lo) delete S.stock[lo.id];
