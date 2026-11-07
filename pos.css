@@ -471,15 +471,32 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
   position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
   padding: 16px; overflow-y: auto; background: rgba(20, 20, 18, .5);
 }
+/* Más grandes desde la v425 (Mauricio, 7/11: «en BlueSoft son un poquito más grandes»): allá la ventana ocupa la mitad de
+   la pantalla. Más anchas (520 → 640, las anchas 780 → 920, la de «listo» 460 → 540) y la letra un poco más grande, pero el
+   alto de los campos casi igual: en la PC del local (1366×768, unos 657 px útiles) lo que falta es el alto, no el ancho.
+   En el celular quedan como estaban (ya ocupan todo el ancho): con más margen, los datos del ticket pasaban a una columna. */
 .pos-caja {
-  position: relative; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+  position: relative; width: min(640px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
   background: var(--surface); color: var(--txt); border: 1px solid var(--line); border-radius: var(--r);
   box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .45); padding: 18px 18px 16px;
 }
-.pos-caja.ancha { width: min(780px, 100%); }
+.pos-caja.ancha { width: min(920px, 100%); }
 .pos-caja:focus { outline: none; }
 .pos-caja h3 { margin: 0 40px 2px 0; font: 700 18px/1.25 var(--display); }
 .pos-caja .pos-bajada { margin: 0 0 12px; font-size: 13.5px; color: var(--txt-2); line-height: 1.45; }
+/* En la compu: más margen, el título más grande y, adentro, el texto, lo que se escribe y las etiquetas 1 px más que en la
+   pantalla; el relleno de arriba y abajo del campo, medio px menos, para que quede del mismo alto. */
+@media (min-width: 900px) {
+  .pos-caja { padding: 20px 22px 18px; }
+  .pos-caja h3 { font-size: 21px; }
+  .pos-caja .pos-bajada { font-size: 14.5px; }
+  .pos-caja input[type=text], .pos-caja input[type=tel], .pos-caja input[type=email], .pos-caja input[type=number],
+  .pos-caja input[type=search], .pos-caja input[type=date], .pos-caja select, .pos-caja textarea {
+    font-size: 15px; padding-top: 6.5px; padding-bottom: 6.5px;
+  }
+  .pos-caja .pos-f > span:first-child, .pos-caja .pos-lbl { font-size: 12.5px; }
+  .pos-caja .pos-ayuda { font-size: 12.5px; }
+}
 .pos-x {
   position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border: 0; border-radius: 50%;
   background: var(--surface-2); color: var(--txt-2); display: grid; place-items: center; cursor: pointer;
@@ -496,7 +513,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-pie .izq { margin-right: auto; }
 /* «Listo» (v413 la venta, v419 todo lo que crea, anula o termina un documento): una sola ventana en vez de las tres de BlueSoft;
    con ARCA, el recuadro de la factura con el CAE. */
-.pos-caja.vg { width: min(460px, 100%); }
+.pos-caja.vg { width: min(540px, 100%); }
 .pos-caja .vg-cab { display: flex; align-items: center; gap: 12px; min-height: 34px; margin: 0 40px 12px 0; }
 .pos-caja .vg-cab > svg {
   width: 34px; height: 34px; flex: none; padding: 7px; border-radius: 50%;
@@ -730,8 +747,9 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
 /* Adentro de la ventana el título no es el de la ventana (que deja lugar para la X). */
 .cj-det .cj-res-tit { margin: 0 0 4px; font: 700 14px var(--sans); }
 .cj-det .cj-r { padding-top: 3px; padding-bottom: 3px; }
-/* Los seis datos en un renglón: así la ventana entra en la PC del local. */
-@media (min-width: 700px) { .cj-det-datos { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* Los seis datos en un renglón: así la ventana entra en la PC del local. El último («Tickets: 6 y 1 nota de crédito»,
+   «Lo subió: … · 7/11 11:16») es el más largo y tiene más lugar, así no pasa a dos renglones (v425). */
+@media (min-width: 700px) { .cj-det-datos { grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.6fr); } }
 .cj-det-der { display: grid; gap: 8px; min-width: 0; }
 .cj-det-der .cj-res { padding: 4px 0 0; }
 .cj-det-der .pos-lbl { margin: 4px 0 0; }
@@ -1075,7 +1093,9 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 /* 7/11: el remito de la fábrica a un local, guardado, como el «Remito de Venta» de BlueSoft: arriba el título, el número con
    la fecha y los botones; los datos en tres columnas; la grilla a la izquierda y, a la derecha, los bultos y lo asegurado con
    imprimir expreso y rótulos, y abajo la cantidad y «Enviar». En la PC ocupa todo el alto, como una pantalla. */
-.pos-caja.ancha.rm-bs { width: min(1280px, 100%); }
+/* El margen y el título de antes de la v425: ésta ya es grande (1280) y en la PC del local entra justa a lo alto. */
+.pos-caja.ancha.rm-bs { width: min(1280px, 100%); padding: 18px 18px 16px; }
+.pos-caja.rm-bs .rm-bs-tit h3 { font-size: 18px; }
 .rm-bs > .pos-x { display: none; }   /* el «Cerrar» va con los otros botones, arriba a la derecha */
 .rm-bs-cab { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 26px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .rm-bs-tit { display: flex; flex-direction: column; gap: 1px; }
