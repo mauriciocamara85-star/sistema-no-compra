@@ -336,6 +336,10 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .tk-quitar svg { width: 15px; height: 15px; }
 .tk-fila-d td { background: var(--ok-soft); color: var(--ok-txt); font-weight: 600; }
 .tk-fila-d.manual td { background: var(--warn-soft); color: var(--warn-txt); }
+/* SQL 265: el premio del Club (en vez del precio, sus puntos) y el que espera la prenda. */
+.tk-premio { font-weight: 700; font-size: 12.5px; color: var(--ok-txt); white-space: nowrap; }
+.tk-fila-premio td { background: var(--info-soft); color: var(--info-txt); font-size: 13px; padding-top: 7px; padding-bottom: 7px; }
+.tk-fila-premio button { border: 0; background: none; padding: 0; color: var(--txt); font: 600 13px var(--sans); text-decoration: underline; cursor: pointer; }
 /* SQL 215: el interés de las cuotas suma (en la venta y en el ticket); la excepción sin interés, gris. */
 .tk-fila-i td { background: var(--info-soft); color: var(--info-txt); font-weight: 600; }
 .tk-fila-i.sin td { background: none; color: var(--txt-3); font-weight: 500; font-size: 12.5px; }
@@ -1318,6 +1322,13 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .so-niv { font-weight: 700; font-size: 12.5px; color: var(--txt-2); }
 .so-pts { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .so-nada { margin: 0; padding: 8px 2px; font-size: 13px; color: var(--txt-3); }
+/* SQL 265: lo que el socio puede usar en la venta (el cumpleaños, sus cupones, los premios) y el cupón de «Descuentos +». */
+.so-club { display: grid; gap: 4px; margin: -2px 0 12px; max-height: 260px; overflow-y: auto; }
+.so-club .pos-ds-titulo { margin: 6px 0 2px; }
+.so-ben { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13.5px; }
+.so-ben em { font-style: normal; font-size: 12.5px; color: var(--txt-3); white-space: nowrap; }
+.pos-buscar-cup { display: flex; gap: 6px; }
+.pos-buscar-cup input { flex: 1; min-width: 0; }
 
 /* La ventana de la venta fallida: roja arriba, como la de BlueSoft. */
 .pos-caja.vf { border-top: 6px solid #A00F1E; }

@@ -228,6 +228,9 @@
   .elegir-link { margin-top: 14px; background: none; border: 0; padding: 0; font: inherit; font-size: 13.5px;
                  color: var(--txt-3); text-decoration: underline; cursor: pointer; }
   .vacio-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.55; }
+  /* SQL 265: en los locales, Cobrar va por el POS. */
+  .enpos-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; margin: 0 0 6px; }
+  .enpos-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.5; margin: 8px 0 14px; }
 </style>
 <!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
 <script src="persona.js"></script>
@@ -305,6 +308,20 @@
 </nav>
 
 <main class="hoja">
+  <!-- SQL 265 (7/11): en los 14 locales, lo que se hacía acá va en la venta del POS (Mauricio: "sacá lo de Cobrar y la de
+       Gift Card y pongamos todo en el POS… en los 14 puntos"). Esta pantalla lo dice y no cobra: si no, los puntos se
+       sumarían dos veces y el cupón no quedaría en la venta. La oficina, igual que antes. -->
+  <section class="bloque" id="cajaEnPos" hidden>
+    <h2 class="enpos-tit">Cobrar ahora va por el POS</h2>
+    <p class="enpos-txt">Todo se hace en la venta: en el POS, <b>«Nueva venta»</b>.</p>
+    <p class="enpos-txt"><b>Los puntos del Club</b>: elegí al socio con «Cargar» (la lupita del cliente) y se suman solos al guardar la venta.
+      Ahí mismo están su <b>regalo de cumpleaños</b>, sus <b>cupones</b> y los <b>premios</b> («Entregar», y pasás la prenda por la pistola).</p>
+    <p class="enpos-txt"><b>Un cupón</b>: pasá su código por «Producto», o buscalo en «Descuentos +» con el código o el WhatsApp del cliente.</p>
+    <p class="enpos-txt"><b>La gift card</b>: para venderla o para pagar con ella, pasala por la pistola en «Producto».</p>
+    <a class="btn btn-pri" id="cajaIrPos" href="pos.html#venta">Abrir el POS</a>
+    <p class="enpos-txt" id="cajaSinPos" hidden>Si no te aparece el POS en la barra, pedile a la oficina que te lo prenda (Config → Usuarios).</p>
+  </section>
+
   <p class="aviso-caja" id="avisoCaja" hidden></p>
 
   <!-- ── Dónde y quién ──
@@ -1209,6 +1226,19 @@
   })();
   /* Cuando la base confirma quién entró (el PIN corto, por ejemplo), la nota del Club se pone al día. */
   persona.listo.then(pintarClubNota);
+
+  /* SQL 265: en los locales (persona.mostradorEnPos), sólo el cartel que manda al POS; lo demás queda escondido sin
+     tocar su hidden (lo maneja la pantalla). Se vuelve a mirar cuando cambia quién está adentro. */
+  function irAlPos() {
+    var si = enElPos();
+    $('cajaEnPos').hidden = !si;
+    Array.prototype.forEach.call(document.querySelectorAll('main.hoja > :not(#cajaEnPos)'), function (e) { e.style.display = si ? 'none' : ''; });
+    var pos = !!(persona.usaPos && persona.usaPos());
+    $('cajaIrPos').hidden = !pos;
+    $('cajaSinPos').hidden = pos;
+  }
+  irAlPos();
+  document.addEventListener('persona', irAlPos);
 
   iniciarPWA();
 })();

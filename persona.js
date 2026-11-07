@@ -171,7 +171,7 @@ var persona = (function () {
        uno: al vendedor que entra en la compu del local la barra no se la muestra (estilos.css). */
     if (compuDelLocal()) document.documentElement.setAttribute('data-nc-compu-habilitada', '');
     else document.documentElement.removeAttribute('data-nc-compu-habilitada');
-    /* SQL 264: en Rivadavia el mostrador ya es el POS (la barra sin Gift Cards, estilos.css). */
+    /* SQL 264: en Rivadavia el mostrador ya es el POS (la barra sin Gift Cards, estilos.css). SQL 265: en los 14, y sin Cobrar. */
     if (mostradorEnPos()) document.documentElement.setAttribute('data-nc-mostrador-pos', '');
     else document.documentElement.removeAttribute('data-nc-mostrador-pos');
   }
@@ -179,12 +179,16 @@ var persona = (function () {
      para Rivadavia; en los demás locales que no hay POS, lo dejaría igual"): los locales cuyo mostrador ya es el POS. Ahí
      la gift card se vende, se cobra y se consulta en el POS: la barra no muestra Gift Cards y giftcards.html lo dice. Vale
      para la gente de ese local (en cualquier compu) y para quien trabaja en su compu (el que cubre); la oficina
-     (Administración, Atención, Gerencia) sigue igual. Códigos de orden_locales (Rivadavia es «MAR DEL PLATA»). */
-  var MOSTRADOR_POS = ['MAR DEL PLATA'];
+     (Administración, Atención, Gerencia) sigue igual. Códigos de orden_locales (Rivadavia es «MAR DEL PLATA»).
+     SQL 265 (Mauricio, 7/11: "sacá lo de Cobrar y la de Gift Card y pongamos todo en el POS"; "se sacaba Cobrar y Gift Card
+     en los 14 puntos"; "hagamos como que ya estaría funcionando el POS"): ya no es una lista, son TODOS los locales, y
+     además de Gift Cards se va Cobrar (el Club, los cupones y la gift card van en la venta del POS). Queda igual para la
+     oficina y para quien no es de un local en una compu que no es de un local (el supervisor de zona en su compu). */
+  var NO_ES_LOCAL = { OFICINA: 1, ECOMMERCE: 1, 'E-COMMERCE': 1 };
   function mostradorEnPos() {
     if (OFICINA[rol()]) return false;
-    var suyo = vigente(_yo) && _yo.local ? String(_yo.local).toUpperCase() : '';
-    return MOSTRADOR_POS.indexOf(suyo) > -1 || MOSTRADOR_POS.indexOf(String(codDelLocal() || '').toUpperCase()) > -1;
+    var suyo = vigente(_yo) && _yo.local ? String(_yo.local).toUpperCase() : '', aca = String(codDelLocal() || '').toUpperCase();
+    return !!((suyo && !NO_ES_LOCAL[suyo]) || (aca && !NO_ES_LOCAL[aca]));
   }
   marcar();
 

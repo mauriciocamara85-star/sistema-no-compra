@@ -498,7 +498,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_fabrica_/.test(m) ? '258 (el depósito de la Fábrica)' : /pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_club_beneficios|pos_cupon/.test(m) ? '265 (el Club en la venta: cupones, cumpleaños y premios)' :
+                                             /pos_fabrica_/.test(m) ? '258 (el depósito de la Fábrica)' : /pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
@@ -1329,7 +1330,8 @@
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
              lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], puestas: {}, manuales: [],
              forma: 'efectivo', pago: {}, multiples: null, observaciones: '',
-             deposito_id: null };   // SQL 252: null = el predeterminado (cada venta nueva arranca en él)
+             deposito_id: null,     // SQL 252: null = el predeterminado (cada venta nueva arranca en él)
+             cupon: null, cumple: null, premioPend: null };   // SQL 265: el Club en la venta
   }
   function cargarBorrador() {
     var b = leerJSON(K_BORRADOR, null);
@@ -1418,6 +1420,26 @@
       resto -= monto;
       desc.push({ tipo: 'manual', idx: i, descripcion: m.descripcion + (m.pct ? ' (' + String(m.pct).replace('.', ',') + ' %)' : ''), monto: monto });
     });
+    /* SQL 265: el Club. El cupón y el regalo de cumpleaños van sobre lo que queda (después de las promos y los descuentos
+       a mano), redondeados para abajo: la base no deja que pasen de su %. Primero el cupón; el cumple, sobre lo que queda.
+       El que con esta venta no va, en clubNo (un renglón gris con el porqué, como la promo que no aplica). */
+    var clubNo = [], otros = desc.length, conGcs = gcs > 0 ? 'no va en una venta con una Gift Card (la Gift Card, en otra venta)' : '';
+    if (v.cupon) {
+      var cu = v.cupon, lc = localDe(v.local_id), porque = conGcs;
+      if (!porque && cu.al_portador && !cu.acumulable && (otros || v.cumple)) porque = 'no se combina con otras promociones';
+      else if (!porque && cu.desde && cu.desde > hoy) porque = 'empieza a valer el ' + fechaCorta(cu.desde).slice(0, 5);
+      else if (!porque && cu.locales && cu.locales.length && !(lc && cu.locales.some(function (x) { return String(x).trim().toUpperCase() === String(lc.codigo || '').toUpperCase(); })))
+        porque = 'no vale en esta sucursal';
+      else if (!porque && cu.compra_minima && resto < cent(cu.compra_minima)) porque = 'es para compras desde ' + plata(cent(cu.compra_minima));
+      var mc = porque ? 0 : Math.min(cu.pct ? Math.floor(resto * Number(cu.pct) / 100 + 1e-6) : cent(cu.valor || 0), cu.tope ? cent(cu.tope) : Infinity, resto);
+      if (mc > 0) { resto -= mc; desc.push({ tipo: 'cupon', beneficio: cu.id, clave: cu.clave || '', telefono: cu.telefono || '', descripcion: textoCupon(cu), monto: mc }); }
+      else clubNo.push({ tipo: 'cupon', texto: textoCupon(cu), porque: porque || 'con estas prendas no descuenta nada' });
+    }
+    if (v.cumple && v.socio) {
+      var mb = conGcs ? 0 : Math.floor(resto * Number(v.cumple.porcentaje) / 100 + 1e-6);
+      if (mb > 0) { resto -= mb; desc.push({ tipo: 'cumple', descripcion: 'Regalo de cumpleaños (' + v.cumple.porcentaje + ' %)', monto: mb }); }
+      else clubNo.push({ tipo: 'cumple', texto: 'Regalo de cumpleaños', porque: conGcs || 'con estas prendas no descuenta nada' });
+    }
     /* SQL 215: el interés de lo que se paga en 3 o 6 cuotas. La regla mira el total del ticket, sin el interés. */
     var interes = 0, notas = [], sinInteres = false;
     function sumarInteres(monto, cuotas, sin) {
@@ -1430,7 +1452,7 @@
     }
     if (v.forma === 'tarjeta') sumarInteres(resto, v.pago && v.pago.cuotas, v.pago && v.pago.sin_interes);
     else if (v.forma === 'multiple') (v.multiples || []).forEach(function (x) { if (x.medio === 'tarjeta') sumarInteres(x.monto, x.cuotas, x.sin_interes); });
-    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto,
+    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, clubNo: clubNo, descuento: neto - resto,
              subtotal: resto, interes: interes, interesNota: notas.join(' · '), sinInteres: sinInteres, total: resto + interes,
              gcCobro: neto ? Math.round(gcs * resto / neto) : 0 };   // SQL 200: lo que se cobra por las gift cards que se venden
   }
@@ -1882,22 +1904,36 @@
         '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + pillStock(V.local_id, l) + '</td>' +
         '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
         '<td class="c">' + (l.giftcard ? '<span title="Una Gift Card va de a una">1</span>' :   // SQL 200
+          l.premio ? '<span title="El premio va de a uno">1</span>' :   // SQL 265
           '<input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '">') + '</td>' +
+        /* SQL 265: el premio del Club va a $0: en vez del precio, cuántos puntos le descuenta. */
+        (l.premio ? '<td class="n"><span class="tk-premio" title="Se lleva con los puntos del Club">' + miles(l.premio.puntos) + ' pts</span></td>' :
         '<td class="n"><input type="text" inputmode="decimal" data-plata class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
-          (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '"></td>' +
+          (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '"></td>') +
         '<td class="n">' + (d ? '<span class="tk-desc-l">−' + plata(d) + '</span>' : '') + '</td>' +
         '<td class="n"><b>' + plata(l.precio * l.cantidad) + '</b></td>' +
         '<td><button type="button" class="tk-quitar" data-quitar="' + i + '" title="Quitar" aria-label="Quitar ' + esc(l.descripcion) + '">' + icono('x') + '</button></td></tr>';
     });
+    /* SQL 265: el premio elegido en el socio espera la prenda que se lleva (el próximo disparo de la pistola). */
+    if (V.premioPend) {
+      filas.unshift('<tr class="tk-fila-premio"><td></td><td colspan="9"><b>Premio del Club «' + esc(V.premioPend.nombre) + '»</b> (' + miles(V.premioPend.puntos) +
+        ' puntos): pasá por la pistola la prenda que se lleva. <button type="button" data-premio-sin>Sin prenda</button> · <button type="button" data-premio-no>Cancelar</button></td></tr>');
+    }
     c.descuentos.forEach(function (d) {
-      filas.push('<tr class="tk-fila-d' + (d.tipo === 'manual' ? ' manual' : '') + '"><td></td><td colspan="7">' + esc(d.descripcion) + '</td>' +
+      var club = d.tipo === 'cupon' || d.tipo === 'cumple';   // SQL 265
+      filas.push('<tr class="tk-fila-d' + (d.tipo === 'manual' ? ' manual' : club ? ' club' : '') + '"><td></td><td colspan="7">' + esc(d.descripcion) + '</td>' +
         '<td class="n">−' + plata(d.monto) + '</td><td><button type="button" class="tk-quitar" ' +
-        (d.tipo === 'promo' ? 'data-sacar="' + d.promo_id + '" title="Sacar la promo" aria-label="Sacar la promo ' + esc(d.descripcion) + '"'
-                            : 'data-manual="' + d.idx + '" title="Sacar el descuento" aria-label="Sacar el descuento ' + esc(d.descripcion) + '"') + '>' + icono('x') + '</button></td></tr>');
+        (d.tipo === 'promo' ? 'data-sacar="' + d.promo_id + '" title="Sacar la promo" aria-label="Sacar la promo ' + esc(d.descripcion) + '"' :
+         club ? 'data-club="' + d.tipo + '" title="Sacarlo de la venta" aria-label="Sacar ' + esc(d.descripcion) + '"'
+              : 'data-manual="' + d.idx + '" title="Sacar el descuento" aria-label="Sacar el descuento ' + esc(d.descripcion) + '"') + '>' + icono('x') + '</button></td></tr>');
     });
     c.noAplican.forEach(function (p) {
       filas.push('<tr class="tk-fila-sacada"><td></td><td colspan="9">Elegiste «' + esc(p.nombre) + '», pero ' + esc(porQueNoPromo(p, V)) + ': todavía no descuenta. ' +
         '<button type="button" data-sacar="' + p.id + '">Sacarla</button></td></tr>');
+    });
+    c.clubNo.forEach(function (x) {   // SQL 265
+      filas.push('<tr class="tk-fila-sacada"><td></td><td colspan="9">' + esc(x.texto) + ': ' + esc(x.porque) + ', todavía no descuenta. ' +
+        '<button type="button" data-club="' + x.tipo + '">Sacarlo</button></td></tr>');
     });
     /* SQL 215: el interés de las cuotas, con su tilde (ver filaInteres). */
     if (V.lineas.length) { var fi = filaInteres(c); if (fi) filas.push(fi); }
@@ -1925,15 +1961,21 @@
     /* SQL 200: la gift card que se vende no da puntos (los da lo que se compre con ella). SQL 215: el interés tampoco. */
     var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total - c.interes - c.gcCobro, so.factor) : 0;
     /* Los puntos del socio: los anota la venta; los suma recién con la regla del Club prendida (SQL 171). */
+    /* SQL 265: ya no se cargan en Cobrar (Cobrar se sacó de los locales): con el 265 corrido, el POS los suma al guardar. */
+    var prem = puntosPremios();
     var club = !so ? '' : '<span class="tk-nota-club"><b>Club:</b> ' + (enPrueba() ? 'en modo prueba no se suman puntos.' :
       !c.total ? esc(String(so.nombre || '').split(' ')[0]) + ' suma puntos con lo que compre.' :
       'esta venta le da ' + miles(pts) + (pts === 1 ? ' punto' : ' puntos') + ' a ' + esc(String(so.nombre || '').split(' ')[0]) +
-      (clubIni().suma ? ': se suman al guardar.' : '. Hasta el lanzamiento se cargan en Cobrar.')) + '</span> ';
+      (clubIni().suma ? ': se suman al guardar.' : '. Todavía no se suman: falta correr el SQL 265.')) +
+      (prem ? ' El premio le descuenta ' + miles(prem) + ' puntos.' : '') +
+      (so.tiene ? ' <button type="button" class="pos-link" id="vClubVer">' + esc(so.tiene) + '</button>' : '') + '</span> ';
     $('vNota').innerHTML = club + (enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
       V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
       (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : ''));
+    var cv = $('vClubVer');   // SQL 265
+    if (cv) cv.onclick = abrirSocio;
     guardarBorrador();
   }
 
@@ -2037,7 +2079,8 @@
   function prodVenta() {
     /* SQL 264: la Gift Card también es un artículo («GIFTCARD», para el stock): en la venta no va como una prenda, la
        sugerencia es la de siempre (que pide pasar la tarjeta). */
-    return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar, giftcard: abrirGiftcard,
+    /* SQL 265: lo que no está en el catálogo puede ser un cupón (su código): queda como descuento. */
+    return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar, giftcard: abrirGiftcard, noEsta: cuponEnProducto,
              buscar: function (q) {
                var r = buscarProductos(q).filter(function (p) { return p[0] !== 'GIFTCARD'; });
                return /^gif/i.test(String(q || '').trim()) ? [SUG_GC].concat(r).slice(0, 8) : r;
@@ -2142,8 +2185,9 @@
   }
 
   function agregar(p, talle, color, cant) {
+    if (V.premioPend) { ponerPremio({ p: p, talle: talle, color: color }); return; }   // SQL 265: la prenda del premio
     var cod = p[0];
-    var ya = V.lineas.filter(function (l) { return !l.libre && l.codigo === cod && l.talle === talle && l.color === color; })[0];
+    var ya = V.lineas.filter(function (l) { return !l.libre && !l.premio && l.codigo === cod && l.talle === talle && l.color === color; })[0];
     if (ya) ya.cantidad = Math.min(999, ya.cantidad + (cant || 1));
     else V.lineas.push({ codigo: cod, descripcion: p[1], rubro: p[2] || '', talle: talle || '', color: color || '', color_nom: nombreColor(color, cod),
                          cantidad: cant || 1, precio: precioDe(cod) || 0, propio: false });
@@ -2254,6 +2298,10 @@
       if (b.hasAttribute('data-quitar')) V.lineas.splice(Number(b.getAttribute('data-quitar')), 1);
       else if (b.hasAttribute('data-sacar')) delete V.puestas[b.getAttribute('data-sacar')];
       else if (b.hasAttribute('data-manual')) V.manuales.splice(Number(b.getAttribute('data-manual')), 1);
+      /* SQL 265: el cupón o el regalo de cumpleaños se sacan; el premio espera la prenda, sale sin prenda o se cancela. */
+      else if (b.hasAttribute('data-club')) { if (b.getAttribute('data-club') === 'cupon') V.cupon = null; else V.cumple = null; }
+      else if (b.hasAttribute('data-premio-sin')) { ponerPremio(null); return; }
+      else if (b.hasAttribute('data-premio-no')) V.premioPend = null;
       else return;
       pintar();
       $('vProd').focus();
@@ -2287,7 +2335,20 @@
         campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="dsPct" value="5">') +
         campo('', 'O un monto ($)', '<input type="text" inputmode="decimal" id="dsVal" data-plata placeholder="$0">') +
       '</div><div class="pos-error" id="dsError"></div>' +
+      /* SQL 265: el cupón (del CRM, de campaña o de la persona), como lo buscaba Cobrar. */
+      '<div class="pos-ds-titulo">O un cupón</div>' +
+      (V.cupon ? '<p class="pos-ayuda pos-ds-ayuda">Ya hay un cupón en la venta (' + esc(textoCupon(V.cupon)) + '): va uno por venta. Para usar otro, sacalo con la ✕ de la grilla.</p>' :
+        '<div class="pos-campos">' + campo('ancho', 'Código del cupón o WhatsApp del cliente',
+          '<div class="pos-buscar-cup"><input type="text" id="dsCup" maxlength="30" autocomplete="off" spellcheck="false" placeholder="El código, o el WhatsApp con la característica">' +
+          '<button type="button" class="btn btn-sec btn-chico" id="dsCupBuscar">Buscar</button></div>') + '</div><div class="so-lista" id="dsCupLista"></div>') +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dsOk">Agregar</button></div>');
+    var cupC = caja.querySelector('#dsCup');
+    if (cupC) {
+      var buscarCup = function () { buscarCupon(cupC.value.trim(), caja.querySelector('#dsCupLista')); };
+      /* El Enter acá busca el cupón (no agrega el descuento a mano). */
+      cupC.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); buscarCup(); } });
+      caja.querySelector('#dsCupBuscar').onclick = buscarCup;
+    }
     var tipo = caja.querySelector('#dsTipo'), pct = caja.querySelector('#dsPct'), val = caja.querySelector('#dsVal');
     tipo.onchange = function () { var d = DESCUENTOS[Number(tipo.value)]; pct.value = d[1] ? d[1] : ''; if (!d[1]) val.focus(); };
     val.oninput = function () { if (val.value.trim()) pct.value = ''; };
@@ -2343,7 +2404,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -2383,8 +2444,10 @@
     var so = V.socio, prueba = enPrueba();
     var caja = ventana('<h3 id="posVentTit">Cliente</h3><p class="pos-bajada">Buscalo por su nombre, DNI o CUIT, WhatsApp, mail o la tarjeta del Club. ' +
         'Si no está, crealo; si quiere sumar puntos, hacelo socio.</p>' +
-      (so ? '<div class="so-actual">' + marcaClub(so) + '<b>' + esc(so.nombre) + '</b><span>' + miles(so.puntos) + ' puntos</span>' +
-            '<button type="button" class="pos-link" id="soSacar">Sacarlo de la venta</button></div>' : '') +
+      (so ? '<div class="so-actual">' + marcaClub(so) + '<b>' + esc(so.nombre) + '</b><span id="soPts">' + miles(so.puntos) + ' puntos</span>' +
+            '<button type="button" class="pos-link" id="soSacar">Sacarlo de la venta</button></div>' +
+            /* SQL 265: lo que puede usar en esta venta (antes, en Cobrar). */
+            '<div class="so-club" id="soClub"><p class="so-nada">Buscando lo que tiene para usar del Club…</p></div>' : '') +
       campo('', 'Buscar cliente', '<input type="search" id="soBuscar" autocomplete="off" spellcheck="false" placeholder="Nombre, DNI o CUIT, WhatsApp, mail o tarjeta" autofocus>') +
       '<div class="so-lista" id="soLista"></div><div class="pos-error" id="soError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="soFinal">Consumidor final</button>' +
@@ -2426,8 +2489,9 @@
       pintar();
     };
     var sacar = caja.querySelector('#soSacar');
-    if (sacar) sacar.onclick = function () { V.socio = null; cerrarVentana(); pintar(); };
-    caja.querySelector('#soFinal').onclick = function () { V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    if (sacar) sacar.onclick = function () { soltarClub(); V.socio = null; cerrarVentana(); pintar(); };
+    caja.querySelector('#soFinal').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    if (so) cargarClubSocio(caja, so);   // SQL 265
     caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
     caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
     caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
@@ -2446,7 +2510,9 @@
   /** El socio elegido: su nombre va al ticket (menos en la factura A, que lleva la razón social) y su mail y su
       WhatsApp quedan a mano para mandarle la factura (con su sí, en «Datos para la factura»). */
   function elegirSocio(s) {
+    if (V.socio && V.socio.codigo !== s.codigo) soltarClub();   // SQL 265: lo del Club era del otro socio
     V.socio = { codigo: s.codigo, nombre: s.nombre, nivel: s.nivel || '', puntos: Number(s.puntos) || 0, factor: Number(s.factor) || 1 };
+    traerTiene(V.socio);   // SQL 265: si tiene algo para usar, lo dice la nota del Club
     /* SQL 197: si antes estaba elegido un cliente de la lista, sus datos no pasan a este socio. */
     var cl = (!V.cliente_id && V.cliente) || { condicion: 'consumidor_final' };
     V.cliente_id = null;
@@ -2454,6 +2520,212 @@
     if (!cl.email && s.mail) cl.email = String(s.mail).toLowerCase();
     if (!cl.tel && s.telefono) cl.tel = s.telefono;
     V.cliente = cl;
+  }
+
+  /* ── El Club en la venta (SQL 265) ──────────────────────────────────────
+     Mauricio (7/11): "sacá lo de Cobrar y la de Gift Card y pongamos todo en el POS… en los 14 puntos". Lo que se hacía en
+     Cobrar pasa a la venta, con las mismas reglas (las vuelve a mirar la base al guardar):
+     · el cupón (del CRM, de campaña o el de la persona): se pasa su código en «Producto», o se busca en «Descuentos +»
+       (por el código o el WhatsApp), o sale en la lupita del socio. Entra como un descuento y se usa al guardar;
+     · el regalo de cumpleaños (el % de su nivel, en su semana): desde el socio, otro descuento;
+     · el premio: desde el socio, «Entregar», y la prenda que se lleva por la pistola: un renglón a $0 que sale del stock y
+       le descuenta los puntos. «Sin prenda» si el premio no es del stock.
+     Anular la venta (o la nota de crédito) devuelve todo. Sin el 265 corrido, nada de esto aparece (la lupita lo dice). */
+  function textoCupon(cu) {
+    return 'Cupón ' + (cu.pct ? String(cu.pct).replace('.', ',') + ' %' : plata(cent(cu.valor || 0))) + (cu.multiuso ? ' (de campaña)' : '');
+  }
+  function estadoCupon(e) { return { usado: 'usado', vencido: 'vencido', anulado: 'anulado' }[e] || String(e || 'sin usar'); }
+  function subCupon(cu) {
+    return [cu.nombre || '', cu.vence ? 'vence el ' + fechaCorta(cu.vence).slice(0, 5) : '', cu.compra_minima ? 'compras desde ' + plata(cent(cu.compra_minima)) : '',
+            cu.tope ? 'tope ' + plata(cent(cu.tope)) : '', cu.al_portador && !cu.acumulable ? 'no se combina con otras promos' : '',
+            cu.buscaba ? 'buscaba: ' + cu.buscaba : ''].filter(Boolean).join(' · ');
+  }
+  /** Los puntos de los premios que ya están en la venta. */
+  function puntosPremios() { return (V && V.lineas || []).reduce(function (s, l) { return s + (l.premio ? Number(l.premio.puntos) || 0 : 0); }, 0); }
+  function falta265(e) {
+    return /SQL 265/.test(mensajeDe(e)) ?
+      'Para usar los cupones, el regalo de cumpleaños y los premios en la venta falta correr el SQL 265.' : '';
+  }
+  /** Sin el 265, la base no conoce el cupón ni el regalo de cumpleaños como descuentos. */
+  function falta265Venta(e) {
+    return /descuento de un tipo que no existe/.test(mensajeDe(e)) ?
+      'Para usar el cupón o el regalo de cumpleaños en la venta falta correr el SQL 265: sacalos con la ✕ de la grilla o esperá.' : '';
+  }
+  /** Un renglón de lo que se puede usar: título, detalle y el botón (o, si no se puede, el porqué). */
+  function filaBen(tipo, i, titulo, detalle, no, verbo) {
+    return '<div class="so-ben"><span class="so-nom"><b>' + esc(titulo) + '</b>' + (detalle ? '<small>' + esc(detalle) + '</small>' : '') + '</span>' +
+      (no ? '<em>' + esc(no) + '</em>' : '<button type="button" class="btn btn-sec btn-chico" data-ben="' + tipo + '" data-i="' + i + '">' + verbo + '</button>') + '</div>';
+  }
+  /** «Tiene para usar: …» de la nota del Club ('' si no tiene nada). */
+  function textoTiene(r) {
+    var p = [], n = (r.cupones || []).length, libres = (Number(r.puntos) || 0) - puntosPremios();
+    if (r.cumple && !r.cumple.usado && r.cumple.tipo === 'descuento' && !V.cumple) p.push('regalo de cumpleaños');
+    if (n && !V.cupon) p.push(n === 1 ? '1 cupón' : n + ' cupones');
+    if ((r.premios || []).some(function (z) { return !z.vuelve && Number(z.puntos) <= libres; })) p.push('puntos para un premio');
+    return p.length ? 'Tiene para usar: ' + p.join(', ') : '';
+  }
+  /** Al elegir el socio: si tiene algo para usar, la nota del Club lo dice (con el botón que abre la lupita). */
+  function traerTiene(so) {
+    if (S.sin265) return;
+    llamar('pos_club_beneficios', { p_socio: so.codigo }).then(function (r) {
+      if (!V || V.socio !== so) return;
+      so.puntos = Number(r.puntos) || 0;
+      so.tiene = textoTiene(r);
+      pintar();
+    }).catch(function (e) { if (falta265(e)) S.sin265 = true; });
+  }
+  /** Lo del Club que dependía del socio sale de la venta (al sacarlo o elegir otro): el cumple, sus premios y el cupón
+      que salió de su WhatsApp. El cupón pasado por su código se queda. */
+  function soltarClub() {
+    if (!V) return;
+    var n = V.lineas.length, algo = !!(V.cumple || V.premioPend || (V.cupon && !V.cupon.clave));
+    V.lineas = V.lineas.filter(function (l) { return !l.premio; });
+    if (V.cupon && !V.cupon.clave) V.cupon = null;
+    V.cumple = null;
+    V.premioPend = null;
+    if (algo || V.lineas.length !== n) avisar('info', 'Lo del Club de ese socio (el regalo de cumpleaños, el premio o su cupón) salió de la venta.');
+  }
+  /** La sección del Club en la lupita, con el socio ya elegido (pos_club_beneficios). */
+  function cargarClubSocio(caja, so) {
+    var box = caja.querySelector('#soClub');
+    if (!box) return;
+    llamar('pos_club_beneficios', { p_socio: so.codigo }).then(function (r) {
+      if (!caja.isConnected) return;
+      so.puntos = Number(r.puntos) || 0;
+      so.tiene = textoTiene(r);
+      var pt = caja.querySelector('#soPts');
+      if (pt) pt.textContent = miles(so.puntos) + ' puntos';
+      var usados = puntosPremios(), libres = so.puntos - usados, usar = [];
+      if (r.cumple) {
+        usar.push(filaBen('cumple', 0, 'Regalo de cumpleaños', (r.cumple.texto || '') + (r.cumple.hasta ? ' · hasta el ' + fechaCorta(r.cumple.hasta).slice(0, 5) : ''),
+          r.cumple.usado ? 'Ya lo usó' : r.cumple.tipo !== 'descuento' ? 'Se entrega aparte' : V.cumple ? 'Ya está en la venta' : '', 'Usar'));
+      }
+      (r.cupones || []).forEach(function (cu, i) {
+        usar.push(filaBen('cupon', i, textoCupon(cu), subCupon(cu), V.cupon && V.cupon.id === cu.id ? 'Ya está en la venta' : '', 'Usar'));
+      });
+      var premios = (r.premios || []).map(function (z, i) {
+        var no = z.vuelve ? 'Vuelve el ' + fechaCorta(z.vuelve).slice(0, 5) : Number(z.puntos) > libres ? 'Le faltan ' + miles(Number(z.puntos) - libres) : '';
+        return filaBen('premio', i, z.nombre, miles(z.puntos) + ' puntos' + (z.detalle ? ' · ' + z.detalle : ''), no, 'Entregar');
+      });
+      box.innerHTML = ((usar.length ? '<div class="pos-ds-titulo">Para usar en esta venta</div>' + usar.join('') : '') +
+        (premios.length ? '<div class="pos-ds-titulo">Premios · tiene ' + miles(libres) + ' puntos' + (usados ? ' (sin los ' + miles(usados) + ' del premio de esta venta)' : '') + '</div>' +
+          premios.join('') : '')) || '<p class="so-nada">Por ahora no tiene cupones, regalo de cumpleaños ni premios para usar.</p>';
+      box.onclick = function (e) {
+        var b = e.target.closest('[data-ben]');
+        if (!b) return;
+        var t = b.getAttribute('data-ben'), i = Number(b.getAttribute('data-i'));
+        if (t === 'cumple') {
+          V.cumple = { porcentaje: Number(r.cumple.porcentaje), texto: r.cumple.texto || '' };
+          so.tiene = textoTiene(r);
+          cerrarVentana();
+          pintar();
+          var d = cuenta(V).descuentos.filter(function (x) { return x.tipo === 'cumple'; })[0];
+          avisar(d ? 'ok' : 'info', 'Regalo de cumpleaños' + (d ? ': −' + plata(d.monto) + '.' : ': todavía no descuenta (mirá la grilla).'));
+        } else if (t === 'cupon') {
+          cerrarVentana();
+          ponerCupon(r.cupones[i], '');
+          so.tiene = textoTiene(r);
+          pintar();
+        } else if (t === 'premio') {
+          var z = r.premios[i];
+          V.premioPend = { id: z.id, nombre: z.nombre, puntos: Number(z.puntos) };
+          cerrarVentana();
+          pintar();
+          avisar('info', 'Premio «' + z.nombre + '»: pasá por la pistola la prenda que se lleva (o «Sin prenda», en la grilla).');
+        }
+      };
+      pintar();
+    }).catch(function (e) {
+      if (!caja.isConnected) return;
+      if (falta265(e)) S.sin265 = true;
+      box.innerHTML = '<p class="so-nada">' + esc(falta265(e) || 'No se pudo ver lo del Club: ' + mensajeDe(e)) + '</p>';
+    });
+  }
+  /** El premio: con la prenda que pasaron (x = { p, talle, color }) o sin prenda (x = null). */
+  function ponerPremio(x) {
+    var pr = V.premioPend;
+    if (!pr) return;
+    V.premioPend = null;
+    V.lineas.push(x ? { codigo: x.p[0], descripcion: x.p[1] + ' (premio del Club)', rubro: x.p[2] || '', talle: x.talle || '', color: x.color || '',
+                        color_nom: nombreColor(x.color, x.p[0]), cantidad: 1, precio: 0, propio: true, premio: pr }
+                    : { codigo: '', descripcion: 'Premio del Club: ' + pr.nombre, rubro: '', talle: '', color: '', color_nom: '', cantidad: 1, precio: 0,
+                        propio: true, libre: true, premio: pr });
+    if (V.socio) V.socio.tiene = '';   // lo vuelve a decir la lupita, con los puntos que le quedan
+    var campoP = $('vProd');
+    if (campoP && campoP.limpiar) campoP.limpiar();
+    pintar();
+    avisar('ok', 'Premio «' + pr.nombre + '»: va a $0 y le descuenta ' + miles(pr.puntos) + ' puntos al guardar.');
+    if (campoP) campoP.focus();
+  }
+  function telDeVenta() { var t = String((V.cliente && V.cliente.tel) || '').replace(/\D/g, ''); return t.length >= 8 ? t : ''; }
+  /** El cupón a la venta (cu como lo dan pos_cupon o pos_club_beneficios; clave: lo que escribieron, o '' si salió del socio). */
+  function ponerCupon(cu, clave) {
+    if (!cu) return;
+    if (cu.estado && cu.estado !== 'disponible') { avisar('err', 'Ese cupón está ' + estadoCupon(cu.estado) + ': no se puede usar.'); return; }
+    /* El de campaña «uno por persona» necesita el WhatsApp (como en Cobrar). */
+    if (cu.multiuso && cu.por_cliente && !cu.telefono && !telDeVenta()) { pedirTelCupon(cu, clave); return; }
+    var antes = V.cupon;
+    V.cupon = { id: cu.id, pct: cu.pct, valor: cu.valor, tope: cu.tope, compra_minima: cu.compra_minima, locales: cu.locales || null,
+                acumulable: !!cu.acumulable, al_portador: !!cu.al_portador, multiuso: !!cu.multiuso, por_cliente: cu.por_cliente || null,
+                desde: cu.desde || null, clave: clave || '', telefono: cu.telefono || '' };
+    pintar();
+    var d = cuenta(V).descuentos.filter(function (x) { return x.tipo === 'cupon'; })[0];
+    avisar(d ? 'ok' : 'info', textoCupon(V.cupon) + (d ? ': −' + plata(d.monto) : ' quedó en la venta, pero todavía no descuenta (mirá la grilla)') +
+      (antes && antes.id !== cu.id ? ' (en lugar del otro: va uno por venta)' : '') + '.');
+    var pp = $('vProd');
+    if (pp) pp.focus();
+  }
+  function pedirTelCupon(cu, clave) {
+    var caja = ventana('<h3 id="posVentTit">' + esc(textoCupon(cu)) + '</h3><p class="pos-bajada">Es de ' +
+        (Number(cu.por_cliente) === 1 ? 'un uso por persona' : cu.por_cliente + ' usos por persona') + ': escribí el WhatsApp del cliente, con la característica.</p>' +
+      '<div class="pos-campos">' + campo('ancho', 'WhatsApp', '<input type="tel" id="cuTel" maxlength="20" autocomplete="off" autofocus>') + '</div>' +
+      '<div class="pos-error" id="cuError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="cuOk">Usar el cupón</button></div>');
+    function listo() {
+      var t = caja.querySelector('#cuTel').value.replace(/\D/g, '');
+      if (!errorEn(caja, 'cuError', t.length < 8 ? 'Escribí el WhatsApp entero, con la característica.' : '')) return;
+      cerrarVentana();
+      ponerCupon(Object.assign({}, cu, { telefono: t }), clave);
+    }
+    caja.querySelector('#cuOk').onclick = listo;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); listo(); } });
+  }
+  /** «Descuentos +» → «O un cupón»: por el código o por el WhatsApp de la persona. */
+  function buscarCupon(q, lista) {
+    if (!lista) return;
+    if (String(q || '').replace(/[^A-Za-z0-9]/g, '').length < 4) { lista.innerHTML = '<p class="so-nada">Escribí el código entero, o el WhatsApp con la característica.</p>'; return; }
+    lista.innerHTML = '<p class="so-nada">Buscando…</p>';
+    llamar('pos_cupon', { p_clave: q }).then(function (r) {
+      if (!lista.isConnected) return;
+      r = r || [];
+      lista.innerHTML = r.length ? r.map(function (cu, i) {
+        return filaBen('cupon', i, textoCupon(cu), subCupon(cu), cu.estado !== 'disponible' ? 'Está ' + estadoCupon(cu.estado) : '', 'Usar');
+      }).join('') : '<p class="so-nada">No hay ningún cupón con «' + esc(q) + '».</p>';
+      lista.onclick = function (e) {
+        var b = e.target.closest('[data-ben]');
+        if (!b) return;
+        cerrarVentana();
+        ponerCupon(r[Number(b.getAttribute('data-i'))], q);
+      };
+    }).catch(function (e) { if (lista.isConnected) lista.innerHTML = '<p class="so-nada">' + esc(falta265(e) || mensajeDe(e)) + '</p>'; });
+  }
+  /** «Producto»: lo que no está en el catálogo puede ser el código de un cupón (con letras: un código de barras de
+      números podría parecer un WhatsApp, y eso va en «Descuentos +»). Si no es, el aviso de siempre. */
+  function cuponEnProducto(cod) {
+    var campoP = $('vProd'), txt = campoP.value.trim();
+    function noEsta() {
+      avisar('err', 'No encontré «' + txt + '» en el catálogo. Si es un artículo suelto, cargalo con «Nueva línea».');
+      campoP.select();   // el próximo disparo lo reemplaza
+    }
+    if (S.sin265 || !/[A-Z]/i.test(cod) || cod.replace(/[^A-Za-z0-9]/g, '').length < 4) { noEsta(); return; }
+    llamar('pos_cupon', { p_clave: cod }).then(function (r) {
+      r = r || [];
+      if (!r.length) { noEsta(); return; }
+      var d = r.filter(function (x) { return x.estado === 'disponible'; });
+      campoP.limpiar();
+      if (!d.length) { avisar('err', 'El cupón «' + txt + '» está ' + estadoCupon(r[0].estado) + ': no se puede usar.'); return; }
+      ponerCupon(d[0], txt);
+    }).catch(function (e) { if (falta265(e)) S.sin265 = true; noEsta(); });
   }
   /* "Hacerlo socio": el alta de siempre del Club (club_alta: el bono de bienvenida), con el local de la venta.
      Es de verdad aunque se esté probando: por eso en modo prueba no se puede. */
@@ -2626,7 +2898,10 @@
     var mal = !V.local_id ? 'Elegí la sucursal.' :
       !vendedorCargado(V.local_id, V.vendedor) ? 'Elegí quién vende.' :
       !V.lineas.length ? 'La venta no tiene productos.' :
-      V.lineas.some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
+      V.premioPend ? 'Falta la prenda del premio «' + V.premioPend.nombre + '»: pasala por la pistola (o «Sin prenda», en la grilla).' :   // SQL 265
+      V.lineas.some(function (l) { return !l.precio && !l.premio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
+      V.lineas.some(function (l) { return l.premio; }) && !V.socio ? 'El premio del Club va con el socio: elegilo en «Cargar».' :
+      V.socio && puntosPremios() > (Number(V.socio.puntos) || 0) ? 'Al socio no le alcanzan los puntos para el premio (tiene ' + miles(Number(V.socio.puntos) || 0) + ').' :
       V.letra === 'A' && !clienteParaA(V.cliente) ? 'La factura A necesita el cliente con su CUIT: tocá «Cargar».' :
       V.letra === 'X' && V.forma !== 'efectivo' ? 'La X va sólo con efectivo.' :
       /* SQL 200 */
@@ -2654,9 +2929,15 @@
         var it = { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
         if (l.giftcard) it.giftcard = l.giftcard;   // SQL 200: la tarjeta que se vende
         if (l.giftcard && l.vence_dias) it.vence_dias = l.vence_dias;   // SQL 264: cuándo vence
+        if (l.premio) it.premio = l.premio.id;   // SQL 265: el premio del Club
         return it;
       }),
-      descuentos: c.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
+      descuentos: c.descuentos.map(function (d) {
+        var x = { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) };
+        /* SQL 265: el cupón (cuál, con lo que escribieron y el WhatsApp si es «uno por persona»). */
+        if (d.tipo === 'cupon') { x.beneficio = d.beneficio; x.clave = d.clave || ''; x.telefono = d.telefono || ''; }
+        return x;
+      }),
       /* SQL 215: el interés de las cuotas (va en el total) y la excepción sin interés. */
       interes: aPesos(c.interes), interes_nota: c.interesNota, sin_interes: c.sinInteres,
       pagos: pagos.map(function (x) {
@@ -2668,6 +2949,10 @@
     };
     /* SQL 212: sin internet la venta queda en la compu y se manda sola cuando vuelve. La gift card no: hay que leerla en la base. */
     var conGc = p.items.some(function (i) { return i.giftcard; }) || p.pagos.some(function (x) { return x.medio === 'giftcard'; });
+    /* SQL 265: el cupón, el regalo de cumpleaños y el premio tampoco: la base tiene que ver que siguen valiendo. */
+    var conClub = p.items.some(function (i) { return i.premio; }) || p.descuentos.some(function (d) { return d.tipo === 'cupon' || d.tipo === 'cumple'; });
+    var clubHecho = [p.descuentos.some(function (d) { return d.tipo === 'cupon'; }) ? 'se usó el cupón' : '',
+                     p.descuentos.some(function (d) { return d.tipo === 'cumple'; }) ? 'se entregó el regalo de cumpleaños' : ''].filter(Boolean);
     var socio = V.socio;
     function aLaFila() {
       p.hecha = new Date().toISOString();
@@ -2689,7 +2974,7 @@
       ventanaHecho({ titulo: 'Venta guardada en esta compu', datos: [S.ultimo.local, plata(c.total)], tono: 'cola',
         notas: ['Sin internet: se manda sola cuando vuelva y ahí toma su número.', pts] });
     }
-    if (!conGc && redCaida()) { aLaFila(); return; }
+    if (!conGc && !conClub && redCaida()) { aLaFila(); return; }
     S.guardando = true;
     var b = $('vGuardar'), bv = $('vGuardarVer'), bx = aTickets ? bv : b;
     if (b) b.disabled = true;
@@ -2711,7 +2996,13 @@
       var n = Number(r.socio_puntos) || 0, quien = socio ? String(socio.nombre || '').split(' ')[0] : '';
       var otroNum = dichoN && !r.ya && Number(r.numero) !== dichoN ? 'El ' + ref({ serie: S.ultimo.serie, numero: dichoN }) + ' lo tomó otra venta.' : '';
       var pts = !socio || !n || p.prueba ? '' :
-        r.puntos_sumados ? 'Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : 'Los ' + miles(n) + ' puntos de ' + quien + ' se cargan en Cobrar.';
+        r.puntos_sumados ? 'Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : 'Los ' + miles(n) + ' puntos de ' + quien + ' quedaron anotados en la venta (todavía no se suman: falta correr el SQL 265).';
+      /* SQL 265: lo del Club que se usó. */
+      var pp = Number(r.premio_puntos) || 0;
+      if (!p.prueba && (clubHecho.length || pp)) {
+        var hecho = clubHecho.concat(pp ? ['el premio le descontó ' + miles(pp) + ' puntos'] : []).join(', ');
+        pts = (pts ? pts + ' ' : '') + 'Del Club: ' + hecho + '.';
+      }
       /* Si se fue a otra pantalla mientras se guardaba, el cartelito de siempre: la ventana es para seguir vendiendo. */
       if (S.vista !== 'venta') { avisar('ok', [nombreVenta(S.ultimo) + ' guardada.', otroNum, pts].filter(Boolean).join(' ')); return; }
       if (!aTickets) verVenta();
@@ -2728,9 +3019,11 @@
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
       /* Sin internet (o la base caída un rato): a la fila. Si en realidad llegó y se cortó la respuesta, al mandarla de nuevo
          la base la reconoce por la clave y no la duplica. */
-      if (reintentable(e) && !conGc) { aLaFila(); return; }
+      if (reintentable(e) && !conGc && !conClub) { aLaFila(); return; }
       reponerBotones();
-      avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : faltaInteres(e, c) || mensajeDe(e));
+      avisar('err', reintentable(e) ? (conGc ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' :
+        'Sin internet no se puede usar un cupón, el regalo de cumpleaños ni un premio del Club (los tiene que confirmar la base): sacalos o esperá a que vuelva.') :
+        faltaInteres(e, c) || falta265Venta(e) || mensajeDe(e));
     });
   }
   /* ── «Listo»: la ventana de lo que se hizo (7/11/2026) ──
