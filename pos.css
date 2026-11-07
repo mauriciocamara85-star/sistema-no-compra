@@ -1072,6 +1072,59 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .rm-dif-res { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
 .rm-dif-res small { font-size: 12px; color: var(--txt-3); }
 
+/* 7/11: el remito de la fábrica a un local, guardado, como el «Remito de Venta» de BlueSoft: arriba el título, el número con
+   la fecha y los botones; los datos en tres columnas; la grilla a la izquierda y, a la derecha, los bultos y lo asegurado con
+   imprimir expreso y rótulos, y abajo la cantidad y «Enviar». En la PC ocupa todo el alto, como una pantalla. */
+.pos-caja.ancha.rm-bs { width: min(1280px, 100%); }
+.rm-bs > .pos-x { display: none; }   /* el «Cerrar» va con los otros botones, arriba a la derecha */
+.rm-bs-cab { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 26px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.rm-bs-tit { display: flex; flex-direction: column; gap: 1px; }
+.pos-caja .rm-bs-tit h3 { margin: 0; text-transform: uppercase; letter-spacing: .3px; }
+.rm-bs-tit small { font-size: 11.5px; font-weight: 600; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
+.rm-bs-num { display: flex; flex-direction: column; gap: 1px; }
+.rm-bs-num b { font: 700 26px/1.1 var(--display); letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.rm-bs-num span { font-size: 13px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.rm-bs-acc { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.rm-bs #rmAnular:not(:empty) { margin-top: 10px; }
+.rm-bs-datos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .7fr); gap: 0 26px; margin: 8px 0 10px; }
+.rm-bs-datos > div > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+.rm-bs-datos span { font-size: 12px; font-weight: 600; color: var(--txt-3); }
+.rm-bs-datos b { font-weight: 600; overflow-wrap: anywhere; }
+.rm-bs-datos > div > .rm-bs-hueco { border-bottom-color: transparent; }   /* «Cantidad remitada» en el 2.º renglón, como BlueSoft */
+.rm-bs .cj-obs { margin: 0 0 10px; }
+.rm-bs-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+.rm-bs-izq { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rm-bs-der { display: flex; flex-direction: column; gap: 8px; }
+.rm-bs-grilla { flex: none; height: auto; min-height: 0; }   /* en el flujo (celu, pantalla baja): todos los renglones; la ventana se corre */
+.rm-bs-par { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.rm-bs-par .btn { min-height: 34px; padding-left: 6px; padding-right: 6px; }
+.rm-bs-par.rm-bs-cajas { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.rm-bs-par .tk-caja { flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 8px; }   /* «Bultos 1», «Monto asegurado $0» en una línea */
+.rm-bs-par .tk-caja b { margin-left: auto; }
+.rm-bs-notas { display: grid; gap: 8px; }
+.rm-bs-fin { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.rm-bs-tots { margin: 0; display: grid; gap: 2px; }
+.rm-bs-tots > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rm-bs-tots dt { font: 600 18px/1.3 var(--sans); color: var(--txt-2); }
+.rm-bs-tots dd { margin: 0; font: 700 22px/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.rm-bs-nota { padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 13px; line-height: 1.45; }
+.rm-bs-nota p { margin: 0; }
+.rm-bs-llego.ok { color: var(--ok-txt); font-weight: 700; }
+.rm-bs-llego.mal { color: var(--bad-txt); font-weight: 700; cursor: help; }
+@media (min-width: 1000px) and (min-height: 560px) {
+  .pos-caja.ancha.rm-bs { height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .rm-bs > .pos-caja-in { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .rm-bs-cuerpo { flex: 1 1 auto; min-height: 260px; grid-template-rows: minmax(0, 1fr); }
+  .rm-bs-notas { flex: 0 1 auto; min-height: 0; max-height: 45%; overflow-y: auto; align-content: start; }   /* la grilla sigue a la vista */
+  .rm-bs-grilla { flex: 1 1 auto; height: 0; min-height: 140px; }
+}
+@media (max-width: 860px) {
+  .rm-bs-datos { grid-template-columns: minmax(0, 1fr); }
+  .rm-bs-datos > div > .rm-bs-hueco { display: none; }
+  .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .rm-bs-acc { margin-left: 0; }
+}
+
 /* La planilla. */
 .df-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
 .df-tabla td.df-chk, .df-tabla th.df-chk { width: 34px; padding-right: 0; text-align: center; }
