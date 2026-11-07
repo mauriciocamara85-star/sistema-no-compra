@@ -5416,8 +5416,9 @@
       if ($('cjSaldo')) {
         $('cjSaldo').value = saldo;
         plataEnVivo($('cjSaldo')).oninput = alEscribir;   // se arma de nuevo en cada pintada: el formato, otra vez
-        /* Al salir del saldo inicial, si ya escribieron el efectivo, el conteo se anota con el saldo nuevo. */
-        $('cjSaldo').onchange = function () { if ($('cjContado').value.trim()) anotar(false); };
+        /* Al salir del saldo inicial, si ya escribieron el efectivo, el conteo se anota con el saldo nuevo (anotarSolo: si
+           la base dice que no, se ve; sin efectivo escrito, anotar no hace nada). */
+        $('cjSaldo').onchange = anotarSolo;
       }
       /* Un día anterior trae lo que contaron esa noche (o se cierra sin contar): ya se puede cerrar. Si ya escribieron el
          efectivo, la cuenta se rehace con los números que llegaron. */
