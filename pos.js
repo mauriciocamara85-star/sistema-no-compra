@@ -7840,7 +7840,16 @@
     var cs = coloresDe(PROD[cod]);
     if (cs.some(function (x) { return x.cod === color; })) return color;
     var n = cs.filter(function (x) { return sinTildes(x.nom).toUpperCase() === sinTildes(color); })[0];
+    /* Excel le borra los ceros de adelante a los colores con número: «2» es el «002» del producto. */
+    if (!n && /^\d+$/.test(color)) n = cs.filter(function (x) { return /^\d+$/.test(x.cod) && Number(x.cod) === Number(color); })[0];
     return n ? n.cod : color;
+  }
+  /** Lo mismo con los códigos con número: «3» es el «03» del catálogo, salvo que haya un «3» activo
+      (hay un «3» dado de baja, «Compras a fábrica»: ahí gana el «03» activo, la bolsa). */
+  function conCeros(cod) {
+    if (!/^\d+$/.test(cod) || (PROD[cod] && PROD[cod][6])) return cod;
+    for (var z = '0'; z.length <= 5; z += '0') if (PROD[z + cod] && (PROD[z + cod][6] || !PROD[cod])) return z + cod;
+    return cod;
   }
 
   /* ── Leer un Excel o lo que pegan ─────────────────────────────────────
@@ -7920,6 +7929,21 @@
       ic = { codigo: busca(esCod), desc: busca(/^(descripcion|producto|nombre)$/), talle: busca(/^(talle|talla|tal\.?)$/),
              color: busca(/^(color|col\.?)$/), cant: busca(/^(cantidad|cant\.?|stock|unidades|existencia|saldo)$/) };
       if (ic.cant < 0) return { error: 'No encontré la columna Cantidad.', items: [], errores: [] };
+      /* Un Excel de BlueSoft bajado con «Todos» los depósitos (o las sucursales) mezclaría lo de cada uno en uno solo. */
+      var mezcla = [[busca(/^(deposito|dep\.?)$/), 'depósito'], [busca(/^(sucursal|local)$/), 'sucursal']].map(function (x) {
+        if (x[0] < 0) return null;
+        var vs = {};
+        filas.slice(iCab + 1).forEach(function (f) {
+          var v = f && String(f[x[0]] == null ? '' : f[x[0]]).replace(/\s+/g, ' ').trim(), c = f && String(f[ic.codigo] == null ? '' : f[ic.codigo]).trim();
+          if (v && c && !/^total/i.test(c)) vs[v.toUpperCase()] = v;
+        });
+        var l = Object.keys(vs).map(function (k) { return vs[k]; });
+        return l.length > 1 ? [x[1], l] : null;
+      }).filter(Boolean)[0];
+      if (mezcla) {
+        return { error: 'Este Excel trae más de un ' + mezcla[0] + ': «' + mezcla[1].slice(0, 3).join('», «') + '»' + (mezcla[1].length > 3 ? ' y ' + (mezcla[1].length - 3) + ' más' : '') +
+                        '. Bajalo de BlueSoft eligiendo uno solo (o borrá los renglones de los otros) y volvé a probar.', items: [], errores: [] };
+      }
       /* SQL 258: el «Stock talles en columnas» de BlueSoft trae los talles como posiciones (00, 01, 02…) y la Cantidad
          es el total del color: leído así, cada producto entraría entero como un solo talle. */
       if (ic.talle < 0 && cab.filter(function (x) { return /^\d{1,2}$/.test(x || ''); }).length >= 2) {
@@ -7936,6 +7960,7 @@
       if (!f) return;
       var cod = String(f[ic.codigo] == null ? '' : f[ic.codigo]).trim().toUpperCase(), fila = iCab + 2 + j;
       if (!cod || /^total/i.test(cod)) return;
+      cod = conCeros(cod);
       var txt = String(f[ic.cant] == null ? '' : f[ic.cant]).trim(), n = Number(txt.replace(',', '.'));
       if (cod.length > 30) { errores.push('Fila ' + fila + ': el código «' + cod.slice(0, 40) + '» es demasiado largo.'); return; }
       if (txt === '' || !isFinite(n) || Math.round(n) !== n) { errores.push('Fila ' + fila + ': la cantidad de ' + cod + ' («' + txt + '») no es un número entero.'); return; }
