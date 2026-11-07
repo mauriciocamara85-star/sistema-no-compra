@@ -1313,7 +1313,8 @@
   function vendedorInicial(l) {
     if (!l) return '';
     var r = recuerdo(), vs = vendedoresDe(l.id), nc = leer('nc_vendedor');
-    if (r.vendedor && r.vendedor[l.id]) return r.vendedor[l.id];
+    /* El recordado, sólo si sigue en el equipo del local (7/11: no se vende con uno que no está cargado). */
+    if (r.vendedor && r.vendedor[l.id] && vs.indexOf(r.vendedor[l.id]) >= 0) return r.vendedor[l.id];
     return vs.indexOf(nc) >= 0 ? nc : '';
   }
   function ventaNueva(antes) {
@@ -1732,7 +1733,6 @@
       pintar();
     };
     $('vVend').onchange = function () {
-      if (this.value === '__otro') { this.value = V.vendedor; pedirVendedor(); return; }
       V.vendedor = this.value;
       recordar();
       pintar();
@@ -1787,28 +1787,21 @@
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
   }
 
+  /** Mauricio (7/11): "solo se pueden poner ahí los vendedores que están cargados. Si no están cargados, no." Sólo el
+      equipo activo de la sucursal (Config → Usuarios), sin «Otro (escribirlo)…»; el «Elegí quién vende…» se ve en el
+      campo pero no aparece en la lista. Uno que no está (lo escrito antes con «Otro», o el recordado de alguien que ya
+      no está en el equipo) se borra: hay que elegir de nuevo. */
   function llenarVendedores(cb) {
     var X = cb ? CB : V, vs = vendedoresDe(X.local_id);
-    if (X.vendedor && vs.indexOf(X.vendedor) < 0) vs.push(X.vendedor);
-    $(cb ? 'cbVend' : 'vVend').innerHTML = '<option value="">' + (cb ? 'Elegí quién hace el cambio…' : 'Elegí quién vende…') + '</option>' +
-      opciones(vs.map(function (n) { return [n, n]; }), X.vendedor) + '<option value="__otro">Otro (escribirlo)…</option>';
+    if (X.vendedor && !vendedorCargado(X.local_id, X.vendedor)) X.vendedor = '';
+    $(cb ? 'cbVend' : 'vVend').innerHTML = opcionVacia(vs.length ? (cb ? 'Elegí quién hace el cambio…' : 'Elegí quién vende…') : 'No hay vendedores cargados en esta sucursal', !X.vendedor) +
+      opciones(vs.map(function (n) { return [n, n]; }), X.vendedor);
   }
-  function pedirVendedor(cb) {
-    var caja = ventana('<h3 id="posVentTit">¿Quién vende?</h3><p class="pos-bajada">Si no está en la lista del local, escribí su nombre como lo usa en la Carga.</p>' +
-      campo('', 'Nombre', '<input type="text" id="pvNombre" maxlength="40" autofocus>') + '<div class="pos-error" id="pvError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="pvOk">Listo</button></div>');
-    function listo() {
-      var n = caja.querySelector('#pvNombre').value.trim();
-      if (!errorEn(caja, 'pvError', n.length < 2 ? 'Escribí el nombre.' : '')) return;
-      (cb ? CB : V).vendedor = n;
-      recordar(cb);
-      llenarVendedores(cb);
-      cerrarVentana();
-      if (cb) pintarCambio(); else pintar();
-    }
-    caja.querySelector('#pvOk').onclick = listo;
-    caja.querySelector('#pvNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo(); } };
-  }
+  /** Está en el equipo activo de la sucursal. */
+  function vendedorCargado(localId, n) { return !!n && vendedoresDe(localId).indexOf(n) >= 0; }
+  /** El «Elegí…» de un desplegable: se ve en el campo mientras no se eligió a nadie, pero no aparece en la lista
+      (disabled + hidden). Lleva «selected» a mano: sin él, el navegador mostraría elegido el primero que sí se puede. */
+  function opcionVacia(texto, elegida) { return '<option value="" disabled hidden' + (elegida ? ' selected' : '') + '>' + esc(texto) + '</option>'; }
 
   /** Otra lista: los renglones del catálogo toman su precio (los que se cambiaron a mano, no). */
   function cambiarLista(lista) {
@@ -2584,7 +2577,7 @@
     var c = cuenta(V), cl = V.cliente || {};
     var pagos = pagosDe(c.total);
     var mal = !V.local_id ? 'Elegí la sucursal.' :
-      !V.vendedor ? 'Elegí quién vende.' :
+      !vendedorCargado(V.local_id, V.vendedor) ? 'Elegí quién vende.' :
       !V.lineas.length ? 'La venta no tiene productos.' :
       V.lineas.some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
       V.letra === 'A' && !clienteParaA(V.cliente) ? 'La factura A necesita el cliente con su CUIT: tocá «Cargar».' :
@@ -4619,9 +4612,11 @@
     caja.classList.add('vf');
     function lista() { return listaDe(localDe(F.local)); }
     function llenarVend() {
+      /* Como en la venta (7/11): sólo el equipo de la sucursal, y el «Elegí…» no aparece en la lista. */
       var vs = vendedoresDe(F.local);
-      if (F.vendedor && vs.indexOf(F.vendedor) < 0) vs.push(F.vendedor);
-      caja.querySelector('#vfVend').innerHTML = '<option value="">Elegí quién atendió…</option>' + opciones(vs.map(function (n) { return [n, n]; }), F.vendedor);
+      if (F.vendedor && !vendedorCargado(F.local, F.vendedor)) F.vendedor = '';
+      caja.querySelector('#vfVend').innerHTML = opcionVacia(vs.length ? 'Elegí quién atendió…' : 'No hay vendedores cargados en esta sucursal', !F.vendedor) +
+        opciones(vs.map(function (n) { return [n, n]; }), F.vendedor);
     }
     function marcarMotivo() {
       caja.querySelectorAll('[data-motivo]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-motivo') === F.motivo); });
@@ -4690,7 +4685,7 @@
     };
     function guardarF(otra) {
       var det = caja.querySelector('#vfDetalle').value.trim(), mt = caja.querySelector('#vfMonto').value.trim(), m = mt ? leerPlata(mt) : null;
-      if (!errorEn(caja, 'vfError', !F.local ? 'Elegí la sucursal.' : !F.vendedor ? 'Elegí quién atendió.' : !F.motivo ? 'Elegí el motivo.' :
+      if (!errorEn(caja, 'vfError', !F.local ? 'Elegí la sucursal.' : !vendedorCargado(F.local, F.vendedor) ? 'Elegí quién atendió.' : !F.motivo ? 'Elegí el motivo.' :
                                      F.motivo === 'otro' && det.length < 3 ? 'Con «Otro motivo», escribí qué pasó en «Detalle».' :
                                      mt && !(m >= 0) ? 'El monto perdido no se entiende. Escribilo así: 20000 o 16.333,33' : '')) return;
       var p = { clave: F.clave, prueba: prueba, local_id: F.local, vendedor: F.vendedor, motivo: F.motivo, detalle: det, monto: m == null ? null : aPesos(m),
@@ -4891,7 +4886,6 @@
     pintarHechoCb();
 
     $('cbVend').onchange = function () {
-      if (this.value === '__otro') { this.value = CB.vendedor; pedirVendedor(true); return; }
       CB.vendedor = this.value;
       recordar(true);
       pintarCambio();
@@ -5095,7 +5089,7 @@
     if (S.guardando || !CB) return;
     var k = cuentaCambio(CB), cobra = k.dif > 0;
     var mal = !CB.local_id ? 'Elegí la sucursal.' :
-      !CB.vendedor ? 'Elegí quién hace el cambio.' :
+      !vendedorCargado(CB.local_id, CB.vendedor) ? 'Elegí quién hace el cambio.' :
       !CB.vuelve.length ? 'Falta lo que vuelve: escaneá la prenda que trae el cliente (arriba).' :
       !CB.sale.length ? 'Falta lo que se lleva (abajo): en un cambio no se devuelve plata.' :
       CB.vuelve.concat(CB.sale).some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
