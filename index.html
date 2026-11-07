@@ -1833,10 +1833,14 @@
      nombre como siempre y se respeta. Lo que se guarda como "quién cargó"
      lo pone la base con la sesión, aparte del vendedor. */
 
-  /** Quien entró, si es de este local (con su nombre de la Carga). */
+  /** Quien entró, si es de este local (con su nombre de la Carga). El supervisor de varios locales
+      no tiene local propio: es de acá si este es uno de los suyos (7/11, Franco en la compu de
+      Pacheco no podía elegirse en «Lo atendió»). */
   function yoDeAca() {
     var y = persona.yo();
-    return y && y.local && y.vendedor && y.local === local ? y : null;
+    if (!y || !y.vendedor || !local) return null;
+    if (y.local) return y.local === local ? y : null;
+    return (y.zona || []).some(function (z) { return z.codigo === local; }) ? y : null;
   }
 
   /* El equipo del local, con quien entró aunque todavía no figure (un
@@ -2461,11 +2465,12 @@
   function pintarBienvPaso2() {
     if ($('bienvenida').hidden || $('bienvPaso2').hidden) return;
     var nom = '<b>' + esc(nombreLocal(local)) + '</b>', caja = $('bienvVends');
-    var conLista = equipo.length > 0;
+    var lista = conYo();             // con quien entró, como «Lo atendió» (el supervisor de varios locales)
+    var conLista = lista.length > 0;
     var escribe = !conLista && !bienvEspera;
     if (conLista) {
       $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '. Tocá tu nombre.';
-      caja.innerHTML = equipo.map(function (v) {
+      caja.innerHTML = lista.map(function (v) {
         return '<button type="button" class="chip" data-v="' + esc(v) + '">' + esc(v) + '</button>';
       }).join('') + persona.chipOtroLocal();
       Array.prototype.forEach.call(caja.querySelectorAll('[data-v]'), function (b) {

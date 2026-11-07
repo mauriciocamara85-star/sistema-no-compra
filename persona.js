@@ -898,8 +898,14 @@ var persona = (function () {
     (o.conGrupos ? genteConGrupos() : genteDeTodos()).then(function (gente) {
       if (!c.isConnected) return;
       var ya = (o.yaEstan || []).map(llano);
+      /* Los de este local no salen: ya están en su lista. Salvo el supervisor de varios locales (sale en
+         la de entrar de cada uno, pero no en la de la Carga ni en la de Cobrar): sin esto, Franco, en la
+         compu de Pacheco, no estaba en ninguna lista ni en el buscador (7/11). Se lo reconoce porque está
+         en más de un local de verdad (los grupos, E-commerce y Administración, no tienen id). */
       var lista = gente.filter(function (x) {
-        return !x.locales.some(function (l) { return l.codigo === o.local; }) && ya.indexOf(llano(x.nombre)) < 0;
+        var deAca = x.locales.some(function (l) { return l.codigo === o.local; });
+        var deVarios = x.locales.filter(function (l) { return l.id; }).length > 1;
+        return (!deAca || deVarios) && ya.indexOf(llano(x.nombre)) < 0;
       }).sort(function (a, b) {
         return a.locales[0].nombre.localeCompare(b.locales[0].nombre, 'es') || a.nombre.localeCompare(b.nombre, 'es');
       });
