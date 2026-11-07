@@ -975,6 +975,28 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .rn-det b { font-weight: 600; }
 .pos-tabla tr.rn-marca td { background: var(--ok-soft); }
 .rn-tot { margin: 8px 2px 0; font-size: 13.5px; color: var(--txt-2); }
+/* El remito nuevo como el «Remito de Venta» de BlueSoft (7/11): la columna de los datos y la de los productos de la venta
+   (.tk). La Letra, angosta; los botones de imprimir, del alto de los campos; abajo, dos cajas (cantidad y diferentes). */
+.rn-bs .tk-datos .c2 { grid-column: span 2; }
+/* La Sucursal siempre a la izquierda, debajo de la Lista de precios (sin la Temporada, de un local, no sube a su lado). */
+.rn-bs .tk-datos .rn-suc { grid-column: 1 / span 6; }
+.rn-bs .tk-datos > .btn, .rn-bs .tk-pagox > .btn { min-height: 34px; padding-left: 6px; padding-right: 6px; }
+.rn-bs .tk-tot { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* En el celular la columna tiene el ancho de la de la PC: los mismos lugares (la letra es más grande: la Fecha, un poco más ancha). */
+@media (max-width: 520px) {
+  .rn-bs .tk-datos .c4 { grid-column: span 4; }
+  .rn-bs .tk-datos .c8 { grid-column: span 8; }
+  .rn-bs .tk-datos .rn-fecha, .rn-bs .tk-datos .rn-ref { grid-column: span 5; }
+}
+.tk-tabla tr.rn-marca td { background: var(--ok-soft); }
+.tk-tabla input.tk-cant[max="9999"] { width: 64px; }
+/* Abajo de la grilla: «Observaciones» con importar y exportar a la derecha, como los botones de BlueSoft. */
+.rn-pie { display: flex; flex-direction: column; gap: 4px; }
+.rn-pie-cab { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 6px 10px; }
+.rn-pie-bts { display: flex; flex-wrap: wrap; gap: 6px; }
+.rn-pie textarea { height: 58px; resize: none; }
+.rn-pie .rn-tot { margin: 2px 2px 0; font-size: 12.5px; }
+.rn-pie .rn-tot:empty { display: none; }
 /* La devolución a fábrica (SQL 189): sus cinco datos en una fila y las observaciones abajo, a todo el ancho. */
 @media (min-width: 1000px) {
   .tk-datos.dv-datos > * { grid-column: span 2; }
