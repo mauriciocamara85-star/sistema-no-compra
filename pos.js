@@ -514,6 +514,9 @@
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
+    /* La base corta lo que tarda más de unos segundos (Supabase) y lo dice en inglés: un período largo, «Todas» las
+       sucursales o un Excel muy grande (el inventario de la Fábrica con miles de renglones). No se guardó nada. */
+    if (/statement timeout|canceling statement due to/i.test(m)) return 'La base tardó demasiado y cortó (no se guardó nada). Probá de nuevo con menos: un período más corto, una sola sucursal o un Excel más chico.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
     return m.replace(/^La base respondió \d+: /, '');
   }
