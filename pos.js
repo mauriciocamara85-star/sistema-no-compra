@@ -5333,7 +5333,9 @@
     var l = localMio(S.cajaLocal) || localInicial();
     S.cajaLocal = l.id;
     /* d: la caja abierta (con el efectivo desde el SQL 175); k: lo que devolvió el conteo (con lo que tendría que haber y la diferencia). */
-    var K = { d: null, k: null, clave: nuevaClave() }, pedido = 0;
+    /* Sin el botón (7/11), k es también la cuenta de la pantalla (previa: true) mientras el conteo no está anotado en la base;
+       anot: el conteo que se está anotando (con qué efectivo y saldo inicial), para no anotar dos veces lo mismo. */
+    var K = { d: null, k: null, clave: nuevaClave(), anot: null }, pedido = 0;
     c.classList.add('lleno');
     /* Se entra desde la lista de los cierres («Nuevo cierre de caja») y se vuelve a ella al cerrar (Mauricio, 5/11). */
     c.innerHTML = cabeza('Nuevo cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
@@ -5351,8 +5353,8 @@
           '<div class="cj-ya" id="cjYa" hidden></div>' +
           '<div class="cj-paso" id="cjPaso1"><div class="cj-paso-cab"><b>Paso 1</b><span id="cjPaso1Txt">Ingresá el total de efectivo que hay en el local</span></div>' +
             '<div class="cj-fila"><div class="cj-saldo" id="cjSaldoIni"></div>' +
-              campo('cj-monto', 'Total efectivo', '<input type="text" inputmode="decimal" id="cjContado" autocomplete="off" placeholder="$0">') +
-              '<button type="button" class="btn btn-pri btn-chico" id="cjContar">Ver la cuenta</button></div>' +
+              /* Sin «Ver la cuenta» (Mauricio, 7/11, como BlueSoft): escriben el efectivo y en el momento dice si cuadra. */
+              campo('cj-monto', 'Total efectivo', '<input type="text" inputmode="decimal" id="cjContado" autocomplete="off" placeholder="$0">') + '</div>' +
             '<div class="cj-cuenta" id="cjCuenta" aria-live="polite"></div></div>' +
           '<div class="cj-paso" id="cjPaso2"><div class="cj-paso-cab"><b>Paso 2</b><span id="cjPaso2Txt"></span></div>' +
             campo('', 'Observaciones', '<textarea id="cjObs" maxlength="500" rows="2"></textarea>', ' id="cjObsL"') +
@@ -5363,10 +5365,14 @@
         '<aside class="cj-res" id="cjRes" aria-label="Resultados del día"><p class="cargando">Cargando…</p></aside>' +
       '</div>';
     engancharIr(c);
+    /* Si todavía es esta pantalla (y no otra, aunque sea otro cierre): una respuesta que llega tarde no la pisa. */
+    var raiz = $('cjCuerpo');
+    function vivo() { return raiz.isConnected; }
 
     function cargar() {
       var n = ++pedido;
-      K.k = null;
+      /* Lo escrito en el efectivo queda: la cuenta se rehace sola con los números nuevos (pintarTodo). */
+      K.k = previa();
       pintarPasos();
       llamar('pos_caja', { p_local: S.cajaLocal, p_prueba: prueba }).then(function (d) {
         if (n !== pedido || !$('cjRes')) return;
@@ -5403,9 +5409,15 @@
       /* El primer cierre no tiene de dónde sacar el saldo inicial: lo escriben (con cuánto arrancó la caja). */
       $('cjSaldoIni').innerHTML = d.primer ? campo('cj-monto', 'Saldo inicial', '<input type="text" inputmode="decimal" id="cjSaldo" autocomplete="off" placeholder="$0" title="Con cuánto efectivo arrancó la caja (el cambio)">') : '';
       /* Lo que tendría que haber cambia mientras escriben el saldo inicial. */
-      if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = function () { if (K.k) olvidarCuenta(); else pintarPasos(); }; }
-      /* Un día anterior trae lo que contaron esa noche (o se cierra sin contar): ya se puede cerrar. */
-      if (pend() && !$('cjContado').value.trim()) K.k = cuentaGuardada();
+      if ($('cjSaldo')) {
+        $('cjSaldo').value = saldo;
+        $('cjSaldo').oninput = alEscribir;
+        /* Al salir del saldo inicial, si ya escribieron el efectivo, el conteo se anota con el saldo nuevo. */
+        $('cjSaldo').onchange = function () { if ($('cjContado').value.trim()) anotar(false); };
+      }
+      /* Un día anterior trae lo que contaron esa noche (o se cierra sin contar): ya se puede cerrar. Si ya escribieron el
+         efectivo, la cuenta se rehace con los números que llegaron. */
+      K.k = pend() && !$('cjContado').value.trim() ? cuentaGuardada() : previa();
       pintarPasos();
     }
     /* La caja de hoy ya está cerrada: en vez de los pasos, el cartel con el cierre (Mauricio, 5/11: "que no permita volver
@@ -5524,11 +5536,11 @@
       llamar('pos_caja', { p_local: local, p_prueba: prueba }).then(function (d) {
         if (!_velo || !caja.isConnected) return;
         if (!d.detalle) { dentro.innerHTML = '<h3 id="posVentTit">' + esc(DET_CAJA[que][0]) + '</h3><div class="pos-cartel mal">No se pudo traer el detalle.</div>'; return; }
-        if (!K.k && $('cjRes') && S.cajaLocal === local) { K.d = d; pintarTodo(); }
+        if ((!K.k || K.k.previa) && $('cjRes') && S.cajaLocal === local) { K.d = d; pintarTodo(); }
         var x = K.k || d, renglon = que === 'total' ? x.ventas_total : que === 'descuentos' ? x.descuentos : x.ventas[que];
         pintarDetalleCaja(dentro, que, d.detalle, {
           donde: 'en esta caja', bajada: d.pendiente ? 'Las del ' + esc(diaCaja(d.dia)) + ' en ' + de + ': entran en este cierre.' : 'Las de ' + de + ' desde el último cierre: entran en este.',
-          renglon: cent(renglon || 0), desfase: pend() ? 'cambió algo de ese día; tocá «Actualizar»' : 'cambió algo después de contar; contá de nuevo («Ver la cuenta»)',
+          renglon: cent(renglon || 0), desfase: pend() ? 'cambió algo de ese día; tocá «Actualizar»' : 'cambió algo después de contar; contá de nuevo la plata y escribila otra vez',
           reabrir: function () { abrirDetalleCaja(que); },
           /* Si anulan una venta desde acá, la caja se trae de nuevo (y hay que contar de nuevo; un día anterior trae otra vez lo que contaron). */
           alCambiar: function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } }
@@ -5565,7 +5577,6 @@
       /* Un día anterior se cuenta sólo si hoy todavía no se movió efectivo: si no, la plata del cajón ya no es la de ese día. */
       var cuenta = sePuedeContar();
       $('cjContado').disabled = !cuenta;
-      $('cjContar').disabled = !cuenta;
       $('cjPaso1Txt').textContent = !p ? 'Ingresá el total de efectivo que hay en el local'
         : cuenta ? 'Contá la caja antes de cobrar en efectivo: vale para el ' + dia
         : 'La caja del ' + dia + ' ya no se puede contar';
@@ -5589,11 +5600,19 @@
         var antes = movsDe(true).length ? '' : 'Lo de la caja fuerte se pasa antes, en <a href="#salidas">Movimientos de salida</a>. ';
         /* Un día anterior que todavía se puede contar: la plata del cajón es la de ese día. */
         var viejo = p && d.conteo_viejo ? ' Lo contaron el ' + esc(fechaHora(d.conteo_viejo.fecha)) + ', pero después entró ' + esc(d.conteo_viejo.por) + ': ese conteo ya no sirve.' : '';
-        $('cjCuenta').innerHTML = p
-          ? '<p class="pos-ayuda">Hoy todavía no se movió efectivo: la plata del cajón es la del ' + esc(dia) + '. Contala, escribila y tocá «Ver la cuenta».' + viejo + '</p>' + tendria()
+        /* Escribieron algo y no hay cuenta: no es un número, o hay ventas sin internet que todavía no llegaron. */
+        var escrito = $('cjContado').value.trim(), sm = escrito && cuenta ? sinMandar() : '';
+        $('cjCuenta').innerHTML = sm
+          ? '<div class="cj-dif warn"><b>Todavía no se puede contar</b><span>' + esc(sm) + '. Se mandan solas cuando vuelve internet: recién ahí se cuenta y se cierra.</span></div>'
+          : escrito && cuenta && aLaVista() && isNaN(leerPlata(escrito))
+          ? '<p class="pos-ayuda">Escribí sólo la plata, con números (por ejemplo, 182550 o 182.550).</p>' + tendria()
+          : escrito && cuenta && aLaVista() && d.primer && isNaN(saldoEscrito())
+          ? '<p class="pos-ayuda">El saldo inicial no es un número: escribilo con números (por ejemplo, 20000).</p>' + tendria()
+          : p
+          ? '<p class="pos-ayuda">Hoy todavía no se movió efectivo: la plata del cajón es la del ' + esc(dia) + '. Contala y escribila: en el momento te dice si cuadra.' + viejo + '</p>' + tendria()
           : aLaVista()
-          ? '<p class="pos-ayuda">Contá la plata del cajón, escribila y tocá «Ver la cuenta»: te dice si cuadra. ' + antes + (ya || 'Cada conteo queda anotado.') + '</p>' + tendria()
-          : '<p class="pos-ayuda">' + (ya || 'Contá la plata del cajón y escribila. Recién ahí se ve cuánto tendría que haber.') + '</p>';
+          ? '<p class="pos-ayuda">Contá la plata del cajón y escribila: en el momento te dice si cuadra, si falta o si sobra. ' + antes + (ya || 'Cada conteo queda anotado.') + '</p>' + tendria()
+          : '<p class="pos-ayuda">' + (ya || 'Contá la plata del cajón, escribila y tocá Enter. Recién ahí se ve cuánto tendría que haber.') + '</p>';
         obsL.textContent = 'Observaciones';
         $('cjQueda').innerHTML = '';
       } else if (k.sin) {
@@ -5605,19 +5624,33 @@
         /* Un día anterior: lo que contaron esa noche (quién y cuándo). */
         var quien = k.guardado ? 'contaron ' + plata(cent(k.contado)) + ' (' + [d.conteo.persona, fechaHora(d.conteo.fecha)].filter(Boolean).join(', ') + ')' : 'contaste ' + plata(cent(k.contado));
         $('cjCuenta').innerHTML = '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + plata(cent(k.esperado)) +
-          ' y ' + esc(quien) + '.' + (k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + (k.guardado && cuenta ? ' Si querés, contá de nuevo.' : '') + '</span></div>';
+          ' y ' + esc(quien) + '.' + (!k.previa && k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + (k.guardado && cuenta ? ' Si querés, contá de nuevo.' : '') + '</span></div>';
         obsL.textContent = dv.cls === 'ok' ? 'Observaciones' : 'Observaciones: ¿por qué ' + (cent(k.desvio) > 0 ? 'falta' : 'sobra') + '?';
         /* Lo que contaron queda en la caja chica: lo de la caja fuerte ya salió antes. */
         $('cjQueda').innerHTML = 'Queda en la caja chica: <b>' + plata(cent(k.contado)) + '</b><small>Es el saldo inicial del próximo cierre.</small>';
       }
       pintarRes();
     }
-    /* Si cambian lo contado (o el saldo inicial) después de ver la cuenta, hay que volver a contar. Un día anterior
-       (SQL 247): con el efectivo vacío vuelve a lo que contaron esa noche (o a «sin contar»). */
-    function olvidarCuenta() {
-      if (pend()) { K.k = $('cjContado').value.trim() ? null : cuentaGuardada(); pintarPasos(); return; }
-      if (K.k) { K.k = null; pintarPasos(); }
+    /** La cuenta de la pantalla con lo escrito (Mauricio, 7/11: "una vez que ingresemos ahí el total, … que te aparezca si
+        sobra plata o no y listo", como BlueSoft): la misma que pos_caja_contar, con la tolerancia del local. Todavía no
+        está anotada en la base (previa); se anota al tocar Enter, al salir del campo o al cerrar (anotar). null si no se
+        puede: nada escrito, no es un número, ventas sin internet sin mandar, o sin el SQL 175. */
+    function previa() {
+      var t = $('cjContado') ? $('cjContado').value.trim() : '', d = K.d;
+      if (!t || !d || !aLaVista() || !sePuedeContar() || sinMandar()) return null;
+      var c = leerPlata(t), s = d.primer ? saldoEscrito() : cent(d.saldo_inicial || 0);
+      if (isNaN(c) || isNaN(s) || c >= 100000000000) return null;
+      var e = esperadoCaja(d, s);
+      return copiar(d, { contado: aPesos(c), esperado: aPesos(e), desvio: aPesos(e - c), saldo_inicial: aPesos(s), previa: true });
     }
+    /* Cada tecla rehace la cuenta. Un día anterior (SQL 247): con el efectivo vacío vuelve a lo que contaron esa noche
+       (o a «sin contar»). */
+    function alEscribir() {
+      K.k = pend() && !$('cjContado').value.trim() ? cuentaGuardada() : previa();
+      pintarPasos();
+    }
+    /** Qué se anota: el efectivo y el saldo inicial escritos, en centavos. */
+    function claveConteo() { return leerPlata($('cjContado').value) + '|' + (K.d && K.d.primer ? saldoEscrito() : ''); }
 
     /* SQL 212: las ventas hechas sin internet que todavía están en esta compu no están en la caja de la base. */
     function sinMandar() {
@@ -5625,32 +5658,67 @@
       return !n ? '' : n === 1 ? 'Hay 1 venta hecha sin internet que todavía no llegó a la base (no está en esta cuenta)'
                                : 'Hay ' + n + ' ventas hechas sin internet que todavía no llegaron a la base (no están en esta cuenta)';
     }
-    function contar() {
-      if (!K.d) return;
-      /* Cada conteo queda anotado: con ventas sin mandar daría un desvío que no es (la plata está y la venta no). */
+    /** Anota el conteo en la base (pos_caja_contar: cada conteo queda anotado y el cierre se hace con el último). Hasta el
+        7/11 lo hacía el botón «Ver la cuenta»; ahora, al tocar Enter (aviso: los errores a la vista), al salir del campo (sin
+        avisos de lo escrito: si falla, se anota al cerrar) y antes de cerrar o de dejarla abierta. Lo mismo no se anota dos
+        veces. Devuelve la promesa de la cuenta de la base, o de null si no hay qué anotar o cambió lo escrito mientras tanto. */
+    function anotar(aviso) {
+      if (!K.d || !vivo() || !sePuedeContar()) return Promise.resolve(null);
+      /* Con ventas sin mandar daría un desvío que no es (la plata está y la venta no). */
       var sm = sinMandar();
-      if (sm) { avisar('err', sm + '. Se mandan solas cuando vuelve internet: recién ahí se puede contar y cerrar.'); abrirCola(); return; }
+      if (sm) { if (aviso) { avisar('err', sm + '. Se mandan solas cuando vuelve internet: recién ahí se puede contar y cerrar.'); abrirCola(); } return Promise.resolve(null); }
       var cont = leerPlata($('cjContado').value);
-      if (isNaN(cont)) { avisar('err', 'Escribí cuánto efectivo hay en el local.'); $('cjContado').focus(); return; }
+      if (isNaN(cont)) { if (aviso) { avisar('err', 'Escribí cuánto efectivo hay en el local.'); $('cjContado').focus(); } return Promise.resolve(null); }
       var saldo = null;
       if (K.d.primer) {
-        var st = $('cjSaldo').value.trim();
-        saldo = st ? leerPlata(st) : 0;
-        if (isNaN(saldo)) { avisar('err', 'El saldo inicial no es un número.'); $('cjSaldo').focus(); return; }
+        saldo = saldoEscrito();
+        if (isNaN(saldo)) { if (aviso) { avisar('err', 'El saldo inicial no es un número.'); $('cjSaldo').focus(); } return Promise.resolve(null); }
       }
-      var b = $('cjContar');
-      b.disabled = true;
-      llamar('pos_caja_contar', { p_local: S.cajaLocal, p_prueba: prueba, p_contado: aPesos(cont), p_saldo_inicial: saldo === null ? null : aPesos(saldo) }).then(function (k) {
-        b.disabled = false;
-        if (!$('cjRes')) return;
+      var clave = claveConteo(), local = S.cajaLocal;
+      if (K.k && !K.k.previa && K.k.anotado === clave) return Promise.resolve(K.k);
+      if (K.anot && K.anot.clave === clave && K.anot.local === local) return K.anot.prom;
+      var este = { clave: clave, local: local };
+      este.prom = llamar('pos_caja_contar', { p_local: local, p_prueba: prueba, p_contado: aPesos(cont), p_saldo_inicial: saldo === null ? null : aPesos(saldo) }).then(function (k) {
+        if (K.anot === este) K.anot = null;
+        /* Se fue de la pantalla, cambió la sucursal o lo escrito mientras se anotaba: esta cuenta ya no va (el conteo quedó anotado). */
+        if (!vivo() || S.cajaLocal !== local || claveConteo() !== clave) return null;
         /* Mientras tenían la pantalla abierta la cerró otra compu (o esta, en otra pestaña): el cartel, no un cierre vacío. */
-        if (yaCerrada(k)) { $('cjContado').value = ''; avisar('info', 'Esta caja ya se cerró hoy: no hace falta cerrarla de nuevo.'); cargar(); return; }
+        if (yaCerrada(k)) { $('cjContado').value = ''; avisar('info', 'Esta caja ya se cerró hoy: no hace falta cerrarla de nuevo.'); cargar(); return null; }
+        k.anotado = clave;
         K.k = k;
         K.d.conteos = k.conteos;
         pintarPasos();
-        /* Si cuadra, queda a un Enter de cerrar; si no, en Observaciones, para escribir por qué. */
-        (desvioDe(cent(k.desvio), cent(k.tolerancia)).cls === 'ok' ? $('cjCerrar') : $('cjObs')).focus();
-      }).catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
+        return k;
+      }, function (e) { if (K.anot === este) K.anot = null; throw e; });
+      K.anot = este;
+      return este.prom;
+    }
+    /* Al salir del campo: si la base dice que no (y no es la red), se ve; sin red, se vuelve a probar al cerrar. */
+    function anotarSolo() { anotar(false).catch(function (e) { if (vivo() && !esDeRed(e)) avisar('err', sinBoton(mensajeDe(e))); }); }
+    /* La base todavía nombra el botón «Ver la cuenta», que se fue el 7/11: lo dice como es ahora. */
+    function sinBoton(m) {
+      return String(m).replace('Primero contá el efectivo y tocá «Ver la cuenta» (Paso 1).', 'Primero escribí el efectivo que hay en el local (Paso 1).')
+        .replace(': tocá «Ver la cuenta» de nuevo.', ': tocá «' + textoCerrar() + '» de nuevo.')
+        .replace(': contá de nuevo y tocá «Ver la cuenta».', ': contá de nuevo la plata y escribila.');
+    }
+    /** La cuenta de la pantalla se anota antes de cerrar o de dejarla abierta. hacer() sigue con la de la base; si la base dio
+        otra (entró o salió algo desde que se trajeron los números), se muestra esa y no se sigue: que la miren. */
+    function anotarYSeguir(boton, hacer) {
+      var k = K.k;
+      boton.disabled = true;
+      anotar(true).then(function (kk) {
+        boton.disabled = false;
+        if (!vivo()) return;
+        if (!kk) { pintarPasos(); return; }
+        if (cent(kk.desvio) !== cent(k.desvio)) { avisar('info', 'La caja cambió mientras tanto (entró o salió algo): mirá la cuenta de nuevo.'); return; }
+        hacer();
+      }).catch(function (e) {
+        boton.disabled = false;
+        if (!vivo()) return;
+        pintarPasos();
+        if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
+        avisar('err', esDeRed(e) ? 'Sin conexión: no se pudo anotar el conteo. Probá de nuevo.' : sinBoton(mensajeDe(e)));
+      });
     }
 
     function cerrar() {
@@ -5659,6 +5727,8 @@
       /* SQL 212: con ventas sin mandar el efectivo no da (la plata está en el cajón y la venta todavía no en la base). */
       var sm = sinMandar();
       if (sm) { avisar('err', sm + '. Esperá a que vuelva internet (se mandan solas) y contá de nuevo para cerrar.'); abrirCola(); return; }
+      /* Sin «Ver la cuenta» (7/11): lo que muestra la pantalla se anota primero (la base cierra con el último conteo). */
+      if (k.previa) { anotarYSeguir($('cjCerrar'), cerrar); return; }
       var obs = $('cjObs').value.trim(), dv = desvioDe(cent(k.desvio), cent(k.tolerancia)), d = K.d, tarde = pend();
       if (k.sin) {
         /* SQL 247: el primer cierre de la sucursal, sin contar, necesita el saldo inicial. */
@@ -5690,10 +5760,12 @@
         S.guardando = false;
         if (b.isConnected) { b.disabled = false; b.textContent = textoCerrar(); }
         if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
-        avisar('err', esDeRed(e) ? 'No se pudo cerrar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+        avisar('err', esDeRed(e) ? 'No se pudo cerrar: sin conexión. Probá de nuevo; no se duplica.' : sinBoton(mensajeDe(e)));
         /* SQL 180: entró o salió plata después de contar (una venta, un gasto, un pase a la caja fuerte): la cuenta nueva, y a contar de nuevo.
            SQL 247: si cambió el día que toca o el conteo de ese día, se trae todo de nuevo. */
-        if (!esDeRed(e) && /contá de nuevo|Actualizar/.test(mensajeDe(e)) && $('cjRes')) { $('cjContado').value = ''; cargar(); if (!$('cjContado').disabled) $('cjContado').focus(); }
+        if (!esDeRed(e) && /contá de nuevo|Actualizar/.test(mensajeDe(e)) && vivo()) { $('cjContado').value = ''; cargar(); if (!$('cjContado').disabled) $('cjContado').focus(); }
+        /* Después contaron en otra compu (el último conteo ya no es este): al volver a tocar «Cerrar caja» se anota de nuevo. */
+        else if (!esDeRed(e) && /no es el que contaste|Primero contá el efectivo/.test(mensajeDe(e)) && vivo()) { K.k = previa(); pintarPasos(); }
       });
     }
     /* «Dejarla abierta» (con diferencia, SQL 247): no se cierra. El conteo ya quedó anotado con su día: la próxima vez que
@@ -5738,11 +5810,24 @@
     }
 
     $('cjLocal').onchange = function () { S.cajaLocal = this.value; recordarLocal(this.value); $('cjContado').value = ''; cargar(); };
-    $('cjContado').oninput = olvidarCuenta;
-    $('cjContado').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); contar(); } };
-    $('cjContar').onclick = contar;
+    /* Sin «Ver la cuenta» (Mauricio, 7/11): cada tecla rehace la cuenta en la pantalla; al salir del campo o con Enter,
+       el conteo se anota en la base. */
+    $('cjContado').oninput = alEscribir;
+    $('cjContado').onchange = anotarSolo;
+    $('cjContado').onkeydown = function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      anotar(true).then(function (k) {
+        /* Si cuadra, queda a un Enter de cerrar; si no, en Observaciones, para escribir por qué. */
+        if (k && vivo()) (desvioDe(cent(k.desvio), cent(k.tolerancia)).cls === 'ok' ? $('cjCerrar') : $('cjObs')).focus();
+      }).catch(function (e) {
+        if (vivo()) avisar('err', esDeRed(e) ? 'Sin conexión: no se pudo anotar el conteo. Probá de nuevo.' : sinBoton(mensajeDe(e)));
+      });
+    };
     $('cjCancelar').onclick = function () {
       var k = K.k, abierta = !!k && !k.sin && !pend() && desvioDe(cent(k.desvio), cent(k.tolerancia)).cls !== 'ok' && !!K.d.hoy;
+      /* «Dejarla abierta» deja el conteo anotado: si todavía es el de la pantalla, se anota primero. */
+      if (abierta && k.previa) { var bc = this; anotarYSeguir(bc, function () { bc.onclick(); }); return; }
       K.k = null;
       $('cjContado').value = '';
       $('cjObs').value = '';
@@ -5753,14 +5838,11 @@
     /* SQL 212: cuando llegan las ventas hechas sin internet, la caja se vuelve a traer (y hay que contar de nuevo). */
     S.recargar = function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } };
     cargar();
-    /* El botón de actualizar (5/11): lo escrito en el efectivo queda; si ya habían visto la cuenta, se cuenta de nuevo
-       (los números pudieron cambiar y cada conteo queda anotado: no se cuenta solo). Mientras cierra, no hace nada. */
+    /* El botón de actualizar (5/11): lo escrito en el efectivo queda y la cuenta se rehace sola con los números nuevos
+       (desde el 7/11, sin «Ver la cuenta»; se anota de nuevo al cerrar). Mientras cierra, no hace nada. */
     actualizable(function () {
       if (S.guardando) return;
-      /* Un día anterior con lo que contaron esa noche (o sin contar) se vuelve a armar solo: no hay que contar (SQL 247). */
-      var habia = !!K.k && !K.k.guardado && !K.k.sin;
       cargar();
-      if (habia) avisar('info', 'Los números se trajeron de nuevo: tocá «Ver la cuenta» otra vez.');
     });
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var x = $('cjContado'); if (x) x.focus(); }, 0);
   }
