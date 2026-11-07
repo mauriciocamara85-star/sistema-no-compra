@@ -2641,10 +2641,12 @@
       S.prox = {};   // SQL 252: esta venta toma un número cuando llegue; el que se había traído ya no vale
       V = ventaNueva(V);
       guardarBorrador();
-      avisar('ok', 'Sin internet: la venta quedó guardada en esta compu y se manda sola cuando vuelva.' +
-        (socio && !p.prueba ? ' Los puntos de ' + String(socio.nombre || '').split(' ')[0] + ' se anotan cuando llegue.' : ''));
+      var pts = socio && !p.prueba ? 'Los puntos de ' + String(socio.nombre || '').split(' ')[0] + ' se anotan cuando llegue.' : '';
       pintarRed();
-      if (S.vista === 'venta') verVenta();
+      if (S.vista !== 'venta') { avisar('ok', 'Sin internet: la venta quedó guardada en esta compu y se manda sola cuando vuelva.' + (pts ? ' ' + pts : '')); return; }
+      verVenta();
+      ventanaGuardada('Venta guardada en esta compu', [S.ultimo.local, plata(c.total)],
+        ['Sin internet: se manda sola cuando vuelva y ahí toma su número.', pts], null, '', 'cola');
     }
     if (!conGc && redCaida()) { aLaFila(); return; }
     S.guardando = true;
@@ -2666,15 +2668,20 @@
       S.guardando = false;
       /* Los puntos del socio (SQL 171): sumados, o anotados para cargarlos en Cobrar mientras la regla esté apagada. */
       var n = Number(r.socio_puntos) || 0, quien = socio ? String(socio.nombre || '').split(' ')[0] : '';
-      var otroNum = dichoN && !r.ya && Number(r.numero) !== dichoN ? ' (el ' + ref({ serie: S.ultimo.serie, numero: dichoN }) + ' lo tomó otra venta)' : '';
-      avisar('ok', nombreVenta(S.ultimo) + ' guardada' + otroNum + '.' + (!socio || !n || p.prueba ? '' :
-        r.puntos_sumados ? ' Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : ' Los ' + miles(n) + ' puntos de ' + quien + ' se cargan en Cobrar.'));
-      if (S.vista !== 'venta') return;
-      if (!aTickets) { verVenta(); return; }
-      /* A Tickets, en "Hoy" (la venta recién hecha tiene que estar en la lista), con la venta marcada arriba. */
-      S.marcar = r.id;
-      guardarJSON('pos_tickets_periodo', { atajo: 'hoy' });
-      ir('tickets');
+      var otroNum = dichoN && !r.ya && Number(r.numero) !== dichoN ? 'El ' + ref({ serie: S.ultimo.serie, numero: dichoN }) + ' lo tomó otra venta.' : '';
+      var pts = !socio || !n || p.prueba ? '' :
+        r.puntos_sumados ? 'Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : 'Los ' + miles(n) + ' puntos de ' + quien + ' se cargan en Cobrar.';
+      /* Si se fue a otra pantalla mientras se guardaba, el cartelito de siempre: la ventana es para seguir vendiendo. */
+      if (S.vista !== 'venta') { avisar('ok', [nombreVenta(S.ultimo) + ' guardada.', otroNum, pts].filter(Boolean).join(' ')); return; }
+      if (!aTickets) verVenta();
+      else {
+        /* A Tickets, en "Hoy" (la venta recién hecha tiene que estar en la lista), con la venta marcada arriba. */
+        S.marcar = r.id;
+        guardarJSON('pos_tickets_periodo', { atajo: 'hoy' });
+        ir('tickets');
+      }
+      ventanaGuardada(nombreVenta(S.ultimo) + ' guardada', [S.ultimo.local, plata(c.total)],
+        [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], r.factura, r.factura_error, S.ultimo.serie === 'prueba' ? 'prueba' : '');
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -2685,6 +2692,48 @@
       avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : faltaInteres(e, c) || mensajeDe(e));
     });
   }
+  /* ── La venta guardada: UNA ventana (7/11/2026) ──
+     BlueSoft, al guardar, abre tres seguidas: «Factura Electrónica» (el CAE y su vencimiento), «¿Desea enviar el ticket por mail
+     al cliente?» y «El Ticket de Venta se guardó satisfactoriamente». Él eligió una sola con todo: un Enter por venta en vez de
+     tres. «Aceptar» queda elegido y, al cerrar, el foco vuelve a «Producto» para seguir con la venta nueva (mientras la ventana
+     está abierta la pistola y el F9 no hacen nada: ver el keydown de la venta).
+     ARCA (todavía no está conectado): cuando lo esté, pos_venta_guardar devuelve en `factura` lo mismo que guarda en
+     pos_ventas.factura —{ cae, cae_vence ('2026-11-17' o el '20261117' que da ARCA), tipo ('A' | 'B'), punto_venta, numero }— y,
+     si ARCA no la autorizó, `factura_error` con el porqué. Con eso esta ventana ya muestra el recuadro de la factura.
+     El ticket por mail va acá también, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, sólo si el cliente
+     tiene mail, y con Enter sigue siendo Aceptar (BlueSoft deja elegido el «No»). Hasta que exista el envío, no hay botón.
+     datos: lo que va con el título (la sucursal, el total); notas: los renglones de abajo (los vacíos no salen); tono: 'cola'
+     (sin internet, con la nube) o 'prueba', en el amarillo del cartel de arriba; si no, el tilde verde. */
+  function ventanaGuardada(titulo, datos, notas, f, fError, tono) {
+    var vence = fechaCae(f && f.cae_vence), comp = f && f.numero ? compArca(f) : '';
+    var fac = f && f.cae ?
+      '<div class="vg-fac"><b>Factura electrónica</b><span>Se creó correctamente la factura electrónica.</span><dl>' +
+        (comp ? '<dt>Comprobante</dt><dd>' + esc(comp) + '</dd>' : '') +
+        '<dt>CAE</dt><dd>' + esc(f.cae) + '</dd>' +
+        (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
+      fError ? '<div class="pos-cartel mal"><b>No se pudo crear la factura electrónica.</b> ' + esc(conPunto(fError)) +
+        ' La venta quedó guardada, todavía sin CAE.</div>' : '';
+    var caja = ventana('<div class="vg-cab">' + icono(tono === 'cola' ? 'nube' : 'ok') + '<div><h3 id="posVentTit">' + esc(titulo) + '</h3>' +
+        '<p class="vg-datos">' + datos.filter(Boolean).map(esc).join(' · ') + '</p></div></div>' +
+      notas.filter(Boolean).map(function (t) { return '<p class="pos-bajada">' + esc(t) + '</p>'; }).join('') + fac +
+      '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Aceptar</button></div>');
+    caja.classList.add('vg');
+    if (tono) caja.classList.add('vg-aviso');
+    return caja;
+  }
+  /** El vencimiento del CAE: '2026-11-17' o '20261117' (como lo da ARCA) → '17/11/2026'. */
+  function fechaCae(s) {
+    var d = String(s || '').replace(/\D/g, '');
+    return d.length === 8 ? d.slice(6, 8) + '/' + d.slice(4, 6) + '/' + d.slice(0, 4) : String(s || '');
+  }
+  /** El número de ARCA: «B 00005-00021628» (el punto de venta con 5 cifras y el número con 8). */
+  function compArca(f) {
+    var pv = String(f.punto_venta || '').replace(/\D/g, ''), nu = String(f.numero || '').replace(/\D/g, '');
+    if (!nu) return '';
+    return (f.tipo ? f.tipo + ' ' : '') + (pv ? ('0000' + pv).slice(-Math.max(5, pv.length)) + '-' : '') + ('0000000' + nu).slice(-Math.max(8, nu.length));
+  }
+  function conPunto(s) { s = String(s || '').trim(); return s && !/[.!?…]$/.test(s) ? s + '.' : s; }
+
   /** SQL 215: sin él, la base no conoce el interés y dice que los pagos no suman el total. */
   function faltaInteres(e, c) {
     return c.interes && /no suman el total/.test(mensajeDe(e)) ? 'Falta correr el SQL 215 en la base para cobrar con el interés de las cuotas. Mientras tanto, para guardarla sacale el tilde del interés.' : '';

@@ -494,6 +494,26 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 @media (max-width: 460px) { .pos-campos { grid-template-columns: 1fr; } }
 .pos-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .pos-pie .izq { margin-right: auto; }
+/* La venta guardada (v413): una sola ventana en vez de las tres de BlueSoft; con ARCA, el recuadro de la factura con el CAE. */
+.pos-caja.vg { width: min(460px, 100%); }
+.pos-caja .vg-cab { display: flex; align-items: flex-start; gap: 12px; margin: 0 40px 12px 0; }
+.pos-caja .vg-cab > svg {
+  width: 34px; height: 34px; flex: none; padding: 7px; border-radius: 50%;
+  background: var(--ok-soft); color: var(--ok-txt); stroke-width: 2.6;
+}
+.pos-caja.vg.vg-aviso .vg-cab > svg { background: var(--warn-soft); color: var(--warn-txt); stroke-width: 2.2; }   /* sin internet o modo prueba */
+.pos-caja .vg-cab h3 { margin: 0; }
+.pos-caja .vg-datos { margin: 3px 0 0; font-size: 14px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.pos-caja.vg .pos-bajada { margin-bottom: 8px; }
+.pos-caja .vg-fac {
+  display: grid; gap: 2px; margin-top: 4px; padding: 12px 14px; border-radius: 12px;
+  background: var(--ok-soft); border: 1px solid var(--ok-borde); font-size: 14px; color: var(--txt-2);
+}
+.pos-caja .vg-fac > b { color: var(--ok-txt); font-size: 14.5px; }
+.pos-caja .vg-fac dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 8px 0 0; }
+.pos-caja .vg-fac dt { color: var(--txt-2); }
+.pos-caja .vg-fac dd { margin: 0; color: var(--txt); font-weight: 700; font-variant-numeric: tabular-nums; }
+.pos-caja.vg .pos-cartel { margin: 4px 0 0; }
 .pos-error { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--bad-txt); }
 .pos-error:empty { display: none; }
 .pos-ayuda { font-size: 12px; color: var(--txt-3); line-height: 1.4; }
