@@ -1244,6 +1244,13 @@
   function localMio(id) { return esMio(id) ? localDe(id) : null; }
   /** La opción "Todas" de las sucursales, sólo con «Ver otros locales». */
   function todasLasSucursales() { return puede('locales') ? '<option value="">Todas</option>' : ''; }
+  /** Para un subtítulo: «todas las sucursales» con «Ver otros locales»; si no, la suya («Rivadavia») o «tus locales» (Mauricio,
+      7/11: en Rivadavia el POS muestra sólo Rivadavia; todas las sucursales, sólo la administración). */
+  function lasSucursales() {
+    if (puede('locales')) return 'todas las sucursales';
+    var ls = localesMios();
+    return ls.length === 1 ? nombreLocal(ls[0]) : 'tus locales';
+  }
   /* Sin «Ver otros días», el período queda en hoy y no se mueve (la base tampoco deja ver otros días). */
   function periodoPos(host, op) {
     if (puede('dias')) return Interfaz.periodo(host, op);
@@ -3286,7 +3293,7 @@
   function verTickets() {
     var c = $('cuerpo'), prueba = enPrueba(), vistos = {}, l = localListado();
     c.classList.add('lleno');
-    c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de todas las sucursales.',
+    c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de ' + esc(lasSucursales()) + '.',
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
@@ -5069,7 +5076,7 @@
   /* ── El listado de cambios ── */
   function verCambios() {
     var c = $('cuerpo'), prueba = enPrueba();
-    c.innerHTML = cabeza('Cambios' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Los cambios de todas las sucursales: lo que vuelve y lo que se lleva.',
+    c.innerHTML = cabeza('Cambios' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Los cambios de ' + esc(lasSucursales()) + ': lo que vuelve y lo que se lleva.',
         '<button type="button" class="btn btn-sec btn-chico" id="cmBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="cambio">Nuevo cambio</button>') +
       '<div class="pos-filtros"><div id="cmPer"></div>' +
@@ -5600,7 +5607,7 @@
       if (!S.guardando) bz.textContent = textoCerrar();
       var obsL = $('cjObsL').firstChild;
       if (!hay) {
-        var n = d ? Number(d.conteos) : 0, ya = n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.' : '';
+        /* Cuántas veces se contó no se muestra (Mauricio, 7/11: "no entiendo para qué sirve, que no esté"). */
         /* Lo de la caja fuerte se pasa antes de contar (SQL 180): si todavía no pasaron nada, se lo recuerda. */
         var antes = movsDe(true).length ? '' : 'Lo de la caja fuerte se pasa antes, en <a href="#salidas">Movimientos de salida</a>. ';
         /* Un día anterior que todavía se puede contar: la plata del cajón es la de ese día. */
@@ -5616,8 +5623,8 @@
           : p
           ? '<p class="pos-ayuda">Hoy todavía no se movió efectivo: la plata del cajón es la del ' + esc(dia) + '. Contala y escribila: en el momento te dice si cuadra.' + viejo + '</p>' + tendria()
           : aLaVista()
-          ? '<p class="pos-ayuda">Contá la plata del cajón y escribila: en el momento te dice si cuadra, si falta o si sobra. ' + antes + (ya || 'Cada conteo queda anotado.') + '</p>' + tendria()
-          : '<p class="pos-ayuda">' + (ya || 'Contá la plata del cajón, escribila y tocá Enter. Recién ahí se ve cuánto tendría que haber.') + '</p>';
+          ? '<p class="pos-ayuda">Contá la plata del cajón y escribila: en el momento te dice si cuadra, si falta o si sobra. ' + antes + '</p>' + tendria()
+          : '<p class="pos-ayuda">Contá la plata del cajón, escribila y tocá Enter. Recién ahí se ve cuánto tendría que haber.</p>';
         obsL.textContent = 'Observaciones';
         $('cjQueda').innerHTML = '';
       } else if (k.sin) {
@@ -5629,7 +5636,7 @@
         /* Un día anterior: lo que contaron esa noche (quién y cuándo). */
         var quien = k.guardado ? 'contaron ' + plata(cent(k.contado)) + ' (' + [d.conteo.persona, fechaHora(d.conteo.fecha)].filter(Boolean).join(', ') + ')' : 'contaste ' + plata(cent(k.contado));
         $('cjCuenta').innerHTML = '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + plata(cent(k.esperado)) +
-          ' y ' + esc(quien) + '.' + (!k.previa && k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + (k.guardado && cuenta ? ' Si querés, contá de nuevo.' : '') + '</span></div>';
+          ' y ' + esc(quien) + '.' + (k.guardado && cuenta ? ' Si querés, contá de nuevo.' : '') + '</span></div>';
         obsL.textContent = dv.cls === 'ok' ? 'Observaciones' : 'Observaciones: ¿por qué ' + (cent(k.desvio) > 0 ? 'falta' : 'sobra') + '?';
         /* Lo que contaron queda en la caja chica: lo de la caja fuerte ya salió antes. */
         $('cjQueda').innerHTML = 'Queda en la caja chica: <b>' + plata(cent(k.contado)) + '</b><small>Es el saldo inicial del próximo cierre.</small>';
@@ -6455,7 +6462,7 @@
       if (!_velo || !caja.isConnected) return;
       var an = c.estado === 'anulada', p = function (n) { return plata(cent(n || 0)); };
       var dv = desvioDe(cent(c.desvio), cent(c.tolerancia));
-      var movs = c.movimientos || [], conteos = c.conteos_detalle || [];
+      var movs = c.movimientos || [];
       /* SQL 246: los renglones de las ventas se tocan y muestran cada venta (un cierre anulado no tiene: lo suyo volvió a la caja abierta). */
       var con = !!c.detalle, fd = function (que, lbl, valor, cls) { return filaDetCaja(con, que, lbl, valor, cls); };
       /* SQL 247: el día que quedó abierto y se cerró después, y el que se cerró sin contar (nadie lo contó y ya se había movido efectivo). */
@@ -6499,8 +6506,6 @@
             /* Lo que pasaba a la caja fuerte al cerrar (el Paso 2, hasta el SQL 180): sólo en los cierres de antes. */
             '<div class="cj-res">' + filaRes('Contado', sin ? 'Sin contar' : p(c.contado)) + (Number(c.retiro) || c.a_caja_fuerte == null ? filaRes('A la caja fuerte al cerrar', p(c.retiro)) : '') +
               filaRes('Queda en la caja chica', p(c.queda), 'barra') + '</div>' +
-            (conteos.length > 1 ? '<p class="pos-lbl">Se contó ' + conteos.length + ' veces</p><ul class="cj-lista">' + conteos.map(function (k) {
-              return '<li>' + esc(fechaHora(k.fecha)) + ' — ' + p(k.contado) + (k.persona ? ' (' + esc(k.persona) + ')' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (movs.length ? '<p class="pos-lbl">Gastos y movimientos</p><ul class="cj-lista">' + movs.map(function (m) {
               var num = refGasto(m, c.prueba), det = [m.rubro, m.retira ? 'lo retiró ' + m.retira : '', m.descripcion].filter(Boolean).join(' · ');
               return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + (num ? '<b>' + esc(num) + '</b> ' : '') + esc(m.tipo === 'caja_fuerte' ? 'Movimiento de salida' : TIPOS_MOV[m.tipo] || m.tipo) + (det ? ': ' + esc(det) : '') +   // 6/11: como el renglón de arriba
@@ -6606,8 +6611,7 @@
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
             '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia) + Number(f.ventas_giftcard || 0)) + '</td>' +
             '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + (sin ? 'Sin contar' : p(f.contado)) + '</td>' +   // SQL 191; SQL 247
-            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
-              (f.conteos > 1 ? ' <small class="cj-veces" title="Contaron ' + f.conteos + ' veces">×' + f.conteos + '</small>' : '')) + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>') + '</td>' +
             '<td class="n tachar">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td></tr>';   // SQL 180: el Paso 2 de antes y los movimientos de salida
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');

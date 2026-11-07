@@ -722,7 +722,6 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
 .cj-tabla th, .cj-tabla td { padding-left: 7px; padding-right: 7px; }
 .cj-tabla td { white-space: nowrap; }
 .cj-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
-.cj-tabla td small.cj-veces { display: inline; }
 .cj-dv { font-weight: 700; white-space: nowrap; }
 .cj-dv.ok { color: var(--ok-txt); }
 .cj-dv.mal { color: var(--bad-txt); }
