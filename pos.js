@@ -4804,6 +4804,9 @@
      de lista; si sale más, se cobra la diferencia; si sale menos, no se
      guarda: se sube el precio de lo que se lleva hasta que da $0 ("y
      pierde la plata").
+     SQL 263 (7/11, "eso se puede editar"): el precio de lo que se lleva se
+     puede bajar de la lista; lo que se bajó se ve en «Descuentos». El cambio
+     igual no puede dar negativo.
      ════════════════════════════════════════════════════════════════════ */
   var SENTIDO = {
     vuelve: { campo: 'cbVuelve', sug: 'cbSugV', filas: 'cbFilasV', sub: 'cbSubV', icono: 'entra', titulo: 'Productos entrantes', ayuda: 'lo que vuelve',
@@ -4828,19 +4831,24 @@
   }
   function guardarBorradorCb() { guardarJSON(K_CAMBIO, CB); }
 
-  /** La cuenta del cambio, en centavos. dif = lo que se lleva − lo que vuelve: lo que se cobra (negativa, no se guarda). */
+  /** La cuenta del cambio, en centavos. dif = lo que se lleva − lo que vuelve: lo que se cobra (negativa, no se guarda).
+      rebaja = lo que se bajó de la lista en lo que se lleva (el «Descuentos» de la pantalla; ya está restado de dif). */
   function cuentaCambio(cb) {
-    var r = { vuelve: 0, sale: 0, cv: 0, cs: 0 };
+    var r = { vuelve: 0, sale: 0, cv: 0, cs: 0, rebaja: 0 };
     cb.vuelve.forEach(function (l) { r.vuelve += l.precio * l.cantidad; r.cv += l.cantidad; });
-    cb.sale.forEach(function (l) { r.sale += l.precio * l.cantidad; r.cs += l.cantidad; });
+    cb.sale.forEach(function (l) {
+      r.sale += l.precio * l.cantidad; r.cs += l.cantidad;
+      if (l.lista != null && l.precio < l.lista) r.rebaja += (l.lista - l.precio) * l.cantidad;
+    });
     r.dif = r.sale - r.vuelve;
     return r;
   }
-  /** Las reglas del precio (las mismas de la base): lo que vuelve, a lista o menos; lo que se lleva, a lista o más. */
+  /** Las reglas del precio (las mismas de la base): lo que vuelve, a lista o menos; lo que se lleva, con precio
+      (desde el SQL 263 puede ir más barato que la lista). */
   function precioMal(s, l, c) {
+    if (s === 'sale' && !c) return 'Lo que se lleva tiene que tener precio.';
     if (l.lista == null) return '';
     if (s === 'vuelve' && c > l.lista) return 'Lo que vuelve entra al precio de lista (' + plata(l.lista) + ') o menos.';
-    if (s === 'sale' && c < l.lista) return 'Lo que se lleva no puede ir más barato que la lista (' + plata(l.lista) + ').';
     return '';
   }
   function conSigno(c) { return (c < 0 ? '−' : '') + plata(Math.abs(c)); }
@@ -4886,7 +4894,7 @@
         '</div>' +
         '<div class="tk-tot">' +
           '<div class="tk-caja"><span>Neto</span><b id="cbNeto">$0</b></div>' +
-          '<div class="tk-caja"><span>Descuentos</span><b>$0</b></div>' +
+          '<div class="tk-caja" title="Lo que se bajó de la lista en el precio de lo que se lleva"><span>Descuentos</span><b id="cbDesc">$0</b></div>' +
           '<div class="tk-caja"><span>Productos</span><b id="cbCant">0</b></div>' +
           '<div class="tk-caja gordo" id="cbTotCaja"><span>' + (prueba ? 'Total · prueba' : 'Total a pagar') + '</span><b id="cbTotal">$0</b></div>' +
         '</div></section>' +
@@ -5026,7 +5034,9 @@
     var k = cuentaCambio(CB), l0 = localDe(CB.local_id), li = listaPorId(CB.lista_id), n = 0, cobra = k.dif > 0;
     $('cbSubt').textContent = nombreLocal(l0) + ' · ' + (li ? li.nombre : '');
     $('cbRef').value = 'Al guardar';
-    $('cbNeto').textContent = conSigno(k.dif);
+    /* Como la venta: Neto (a precio de lista) − Descuentos = Total a pagar. */
+    $('cbNeto').textContent = conSigno(k.dif + k.rebaja);
+    $('cbDesc').textContent = k.rebaja ? '−' + plata(k.rebaja) : '$0';
     $('cbCant').textContent = k.cs - k.cv;
     $('cbTotal').textContent = conSigno(k.dif);
     $('cbTotCaja').classList.toggle('neg', k.dif < 0);

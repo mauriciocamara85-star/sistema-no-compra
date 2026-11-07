@@ -1638,6 +1638,8 @@ grant execute on function pos_retiran(), pos_caja_mov_controlar(uuid, boolean) t
 --  lleva, a precio de lista o más. Así el ajuste para que dé cero sube lo
 --  que se lleva (lo que vuelve sigue figurando a precio de lista), y nunca
 --  se puede inventar plata a favor del cliente.
+--  SQL 263 (7/11): lo que se lleva ya PUEDE ir más barato que la lista
+--  ("eso se puede editar"); el cambio igual no puede dar negativo.
 --
 --  La cuenta (la de BlueSoft: Neto, Descuentos, Total a pagar):
 --    vuelve      = suma de lo que vuelve
@@ -1798,9 +1800,8 @@ begin
       v_vuelve := v_vuelve + pr * n;
       v_cv := v_cv + n;
     else
-      if pl is not null and pr < pl then
-        raise exception 'Lo que se lleva no puede ir más barato que la lista: % está a $%.', trim(x->>'descripcion'), to_char(pl, 'FM999G999G990D00');
-      end if;
+      -- SQL 263 (7/11): lo que se lleva puede ir más barato que la lista (el vendedor lo cambia en «Precio unit.»).
+      -- El cambio igual no puede dar negativo: no se devuelve plata.
       if pr = 0 then raise exception 'Hay una prenda que se lleva sin precio.'; end if;
       v_sale := v_sale + pr * n;
       v_cs := v_cs + n;
