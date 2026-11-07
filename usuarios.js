@@ -96,15 +96,26 @@ var usuarios = (function () {
   /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas (SQL 229: siete, con «Entra a Gestión»); cada rol arranca con las suyas
      (pos_permisos_lista trae las de cada rol y las de cada persona). null = no es Administración o falta el SQL. */
   var posLista = null;
-  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];
+  var POS_K = ['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];
   var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
                       ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
                       ['caja', 'Caja: gastos, movimientos de salida, retiros y cierre de caja', ''],
                       ['dias', 'Ver otros días', 'sin esto, sólo lo de hoy'],
                       ['locales', 'Ver otros locales', 'sin esto, sólo el suyo o los que supervisa'],
                       ['precios', 'Ver los precios y totales en remitos y envíos', ''],
-                      /* SQL 229. Mauricio (2/11): "Sí, gestión, dáselo también". */
-                      ['gestion', 'Entra a Gestión', 'precios, productos, stock y caja de todos los locales']];
+                      /* SQL 229. Mauricio (2/11): "Sí, gestión, dáselo también". 7/11: los precios y los productos pasaron a Fábrica. */
+                      ['gestion', 'Entra a Gestión', 'promociones, inventarios, ajustes de stock, la plata de las cajas y el registro de tiempos de todos los locales']];
+  /* SQL 262 (Mauricio, 7/11: "el fondo no es para cualquiera"): los retiros de fondos con su casilla, aparte de la caja (arrancan
+     como la caja de cada uno: nadie pierde nada). Sin el SQL 262 la lista no la trae: la casilla no sale y la caja dice «retiros». */
+  function conRetiros() { return !!posLista && !!posLista.roles && !!posLista.roles.vendedor && 'retiros' in posLista.roles.vendedor; }
+  function casillas() {
+    if (!conRetiros()) return POS_CASILLAS;
+    return POS_CASILLAS.reduce(function (t, c) {
+      if (c[0] !== 'caja') return t.concat([c]);
+      return t.concat([['caja', 'Caja: gastos, movimientos de salida y cierre de caja', ''],
+                       ['retiros', 'Retiros de fondos', 'sacar plata de la caja chica o de la caja fuerte del local']]);
+    }, []);
+  }
   /* SQL 236. Mauricio (3/11): el POS y la Gestión, "sólo los administradores: Anto, Daky y yo". Al administrador
      también se le prende o se le apaga, con una sola casilla (con el POS tiene todo, también la Gestión). Sin el SQL la
      lista no trae 'admin_elige' y el administrador tiene todo, como antes. */
@@ -131,19 +142,19 @@ var usuarios = (function () {
         '<span class="us-pos-usa-txt">' + esc(textoUsa(adm)) + '</span></label>' +
       '<div class="us-pos-casillas"' + (usa && !adm ? '' : ' hidden') + '>' +
         '<p class="us-pos-nota">Nueva venta, Tickets, Cambios, Venta fallida, recibir remitos y Stock los tiene todo el que usa el POS. Además:</p>' +
-        POS_CASILLAS.map(function (c) {
+        casillas().map(function (c) {
           return '<label class="us-pos-cas"><input type="checkbox" data-pos="' + c[0] + '"' + (e[c[0]] ? ' checked' : '') + '> <span>' + esc(c[1]) +
             (c[2] ? ' <small>(' + esc(c[2]) + ')</small>' : '') + '</span></label>';
         }).join('') + '</div>' +
       (conFabrica() ? '<label class="us-pos-fab"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="fabrica"' + (e.fabrica && !adm ? ' checked' : '') + '> ' +
-        '<span>Entra a Fábrica <small>(los remitos a los locales y sus diferencias; sin el POS no ve ventas, caja ni plata)</small></span></label>' : '') +
+        '<span>Entra a Fábrica <small>(los productos y sus precios, los remitos a los locales y sus diferencias; sin el POS no ve ventas, caja ni plata)</small></span></label>' : '') +
       '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>' + esc(textoAdmin()) + '</p>' +
     '</div>';
   }
   /** Cambió el rol en el editor: las casillas vuelven a las del rol nuevo («Usa el POS» queda como está). */
   function posRol(pb, rol) {
     var adm = rol === 'admin', def = posLista.roles[rol] || {};
-    POS_CASILLAS.forEach(function (c) { pb.querySelector('[data-pos="' + c[0] + '"]').checked = !!def[c[0]]; });
+    casillas().forEach(function (c) { pb.querySelector('[data-pos="' + c[0] + '"]').checked = !!def[c[0]]; });
     pb.querySelector('.us-pos-usa').hidden = adm && !adminElige();
     pb.querySelector('.us-pos-usa-txt').textContent = textoUsa(adm);
     pb.querySelector('.us-pos-admin').hidden = !adm;

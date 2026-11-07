@@ -10012,3 +10012,859 @@ begin
     )
   );
 end $function$;
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ─── SQL 262 (7/11/2026) · PRODUCTOS Y LISTAS DE PRECIOS EN FÁBRICA · «RETIROS DE FONDOS» CON SU CASILLA ───
+   Mauricio (7/11): Gestión sin lo repetido con el POS; Productos y Listas de precios pasan a Fábrica ("ellos se encargan de
+   subir el precio, de cargar los precios y que lo reciban los locales"; los precios los cambia Lucas). Y los retiros de fondos
+   aparte de la caja ("el fondo no es para cualquiera").
+   1. Productos y Listas de precios (crear, cambiar, subir la lista, aumentar, deshacer, dar de baja): también quien tiene
+      «Entra a Fábrica», aunque no use el POS. Quien tenía la Gestión sigue pudiendo. (15 funciones)
+   2. Una casilla nueva por persona, «Retiros de fondos» (clave 'retiros'), aparte de «Caja». Arranca como la caja de cada
+      uno: por rol, la misma regla; a quien ya le cambiaron la caja (Lautaro, Nano y Seba), se le copia. Nadie pierde nada.
+      El retiro (guardarlo, anularlo, la lista, quién retira) pide esa casilla; la caja, la suya. (9 funciones)
+   Sin tablas nuevas. Se puede correr dos veces. Se deshace con deshacer-262.sql. ═══════════════════════════════════════════════════════════════════════════ */
+
+CREATE OR REPLACE FUNCTION public.pos_lista_aumentar(p_lista integer, p_porcentaje numeric, p_rubro text, p_familia text, p_redondeo integer, p_aplicar boolean, p_clave text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_rubro  text := nullif(btrim(coalesce(p_rubro, '')), '');
+  v_fam    text := nullif(btrim(coalesce(p_familia, '')), '');
+  v_clave  text := nullif(btrim(coalesce(p_clave, '')), '');
+  v_cuantos int;
+  v_camb   jsonb;
+  v_n      int;
+  v_pct    text;
+  v_id     int;
+  c        pos_precios_cambios;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  perform pos_lista_propia(p_lista);
+  if p_porcentaje is null or p_porcentaje = 0 or p_porcentaje <= -90 or p_porcentaje > 200 then
+    raise exception 'El porcentaje va de −89 a 200, sin el 0 (para bajar, con el signo menos: −10).';
+  end if;
+  if p_redondeo is null or p_redondeo not in (1, 10, 50, 100, 500, 1000) then raise exception 'El redondeo no es válido.'; end if;
+  if v_fam is not null and v_rubro is null then raise exception 'Para elegir una familia, elegí primero el rubro.'; end if;
+  if coalesce(p_aplicar, false) then
+    if v_clave is null then raise exception 'Falta la clave del cambio.'; end if;
+    select * into c from pos_precios_cambios where clave = v_clave;
+    if found then return jsonb_build_object('ya', true, 'id', c.id, 'cambiaron', c.cambiaron); end if;
+  end if;
+
+  /* [código, precio de antes, precio nuevo, cuándo se había cambiado] de los que cambian. Si con el redondeo
+     quedara en $0, queda como está. */
+  select count(*)::int,
+         coalesce(jsonb_agg(jsonb_build_array(z.codigo, z.antes, z.despues, z.cuando) order by z.codigo)
+                    filter (where z.despues <> z.antes), '[]'::jsonb)
+    into v_cuantos, v_camb
+    from (select p.codigo, p.precio antes, p.actualizado_en cuando,
+                 case when y.r > 0 then least(y.r, 99999999) else p.precio end despues
+            from pos_precios p
+            left join pos_articulos a on a.codigo = p.codigo
+            cross join lateral (select round(p.precio * (1 + p_porcentaje / 100) / p_redondeo) * p_redondeo r) y
+           where p.lista_id = p_lista
+             and (v_rubro is null or a.rubro = v_rubro)
+             and (v_fam is null or a.familia = v_fam)) z;
+  v_n := jsonb_array_length(v_camb);
+
+  if not coalesce(p_aplicar, false) then
+    return jsonb_build_object(
+      'cuantos', v_cuantos,
+      'cambian', v_n,
+      'suma_antes', (select coalesce(sum((e->>1)::numeric), 0) from jsonb_array_elements(v_camb) e),
+      'suma_despues', (select coalesce(sum((e->>2)::numeric), 0) from jsonb_array_elements(v_camb) e),
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_array(q.e->>0, a.nombre, (q.e->>1)::numeric, (q.e->>2)::numeric) order by q.i)
+          from (select e, i from jsonb_array_elements(v_camb) with ordinality x(e, i) order by i limit 300) q
+          left join pos_articulos a on a.codigo = q.e->>0), '[]'::jsonb));
+  end if;
+
+  if v_n = 0 then raise exception 'Con ese porcentaje y ese redondeo no cambia ningún precio.'; end if;
+  v_pct := abs(p_porcentaje)::text;
+  if position('.' in v_pct) > 0 then v_pct := rtrim(rtrim(v_pct, '0'), '.'); end if;
+  insert into pos_precios_cambios (lista_id, tipo, detalle, cambiaron, antes, clave, creado_por, creado_nombre)
+  values (p_lista, 'aumentar',
+          case when p_porcentaje > 0 then 'Aumento del ' else 'Baja del ' end || replace(v_pct, '.', ',') || ' %' ||
+            case when v_rubro is null then ' · toda la lista' else ' · ' || v_rubro || coalesce(' · ' || v_fam, '') end ||
+            case p_redondeo when 1 then ' · sin redondear' when 1000 then ' · redondeo $1.000' else ' · redondeo $' || p_redondeo end,
+          v_n,
+          (select jsonb_agg(jsonb_build_array(e->0, e->1, e->3)) from jsonb_array_elements(v_camb) e),
+          v_clave, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+  returning id into v_id;
+  update pos_precios p set precio = (e->>2)::numeric, actualizado_en = now(), actualizado_por = orden_yo_id()
+    from jsonb_array_elements(v_camb) e
+   where p.lista_id = p_lista and p.codigo = e->>0;
+  return jsonb_build_object('id', v_id, 'cambiaron', v_n);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_baja(p_lista integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare l pos_listas; v text; k int;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  select * into l from pos_listas where id = p_lista and activo for update;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  select string_agg(o.nombre, ', ' order by o.nombre) into v
+    from pos_sucursales s join orden_locales o on o.id = s.local_id
+   where s.lista_id = p_lista;
+  if v is not null then raise exception 'La usan: %. Primero pasá esas sucursales a otra lista (en Sucursales).', v; end if;
+  select string_agg('«' || nombre || '»', ' y ' order by id), count(*) into v, k from pos_listas where base_id = p_lista and activo;
+  if k > 0 then
+    raise exception '% se calcula% de esta: primero da% de baja.', v, case when k > 1 then 'n' else '' end,
+      case when k > 1 then 'las' else 'la' end;
+  end if;
+  if not exists (select 1 from pos_listas where activo and id <> p_lista) then raise exception 'Tiene que quedar al menos una lista.'; end if;
+  update pos_listas set activo = false where id = p_lista;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_cambios(p_lista integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', c.id, 'fecha', c.creado_en, 'tipo', c.tipo, 'detalle', c.detalle,
+                                        'cambiaron', c.cambiaron, 'persona', c.creado_nombre, 'deshecho', c.deshecho_en,
+                                        'deshizo', c.deshecho_nombre, 'volvieron', c.volvieron,
+                                        'se_deshace', c.deshecho_en is null and not exists (
+                                          select 1 from pos_precios_cambios x where x.lista_id = c.lista_id and x.id > c.id and x.deshecho_en is null))
+                     order by c.id desc)
+      from (select * from pos_precios_cambios where lista_id = p_lista order by id desc limit 15) c), '[]'::jsonb);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_crear(p_nombre text, p_tipo text, p_de integer, p_ajuste numeric, p_redondeo integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare n text; d pos_listas; v_id int; v_n int := 0;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  n := pos_lista_nombre_(p_nombre, null);
+  if p_tipo is null or p_tipo not in ('calculada', 'copia', 'vacia') then raise exception 'Elegí de dónde salen los precios.'; end if;
+  if p_tipo <> 'vacia' then
+    select * into d from pos_listas where id = p_de and activo;
+    if not found then raise exception 'Elegí de qué lista salen los precios.'; end if;
+  end if;
+  if p_tipo = 'calculada' then
+    if d.base_id is not null then raise exception '«%» ya se calcula de otra: elegí una lista con precios propios.', d.nombre; end if;
+    if p_ajuste is null or p_ajuste <= -100 or p_ajuste > 300 then raise exception 'El porcentaje no es válido.'; end if;
+    if p_redondeo is null or p_redondeo < 1 or p_redondeo > 10000 then raise exception 'El redondeo no es válido.'; end if;
+  end if;
+  insert into pos_listas (nombre, base_id, ajuste, redondeo)
+  values (n, case when p_tipo = 'calculada' then d.id end,
+          case when p_tipo = 'calculada' then round(p_ajuste, 2) else 0 end,
+          case when p_tipo = 'calculada' then p_redondeo else 1 end)
+  returning id into v_id;
+  if p_tipo = 'copia' then
+    /* Los mismos precios que ve la venta en p_de (la cuenta de pos_precios). */
+    insert into pos_precios (lista_id, codigo, precio, actualizado_por)
+    select v_id, x.codigo, x.precio, orden_yo_id()
+      from (select coalesce(p.codigo, b.codigo) codigo,
+                   coalesce(p.precio, round(b.precio * (1 + d.ajuste / 100) / d.redondeo) * d.redondeo) precio
+              from (select codigo, precio from pos_precios where lista_id = d.id) p
+              full join (select codigo, precio from pos_precios where lista_id = d.base_id) b on b.codigo = p.codigo) x
+     where x.precio is not null;
+    get diagnostics v_n = row_count;
+  end if;
+  return jsonb_build_object('id', v_id, 'nombre', n, 'copiados', v_n);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_deshacer(p_id integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c    pos_precios_cambios;
+  v_n  int := 0;
+  v_b  int;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  select * into c from pos_precios_cambios where id = p_id for update;
+  if not found then raise exception 'Ese cambio no existe.'; end if;
+  if c.deshecho_en is not null then raise exception 'Ese cambio ya se deshizo.'; end if;
+  if exists (select 1 from pos_precios_cambios x where x.lista_id = c.lista_id and x.id > c.id and x.deshecho_en is null) then
+    raise exception 'Primero hay que deshacer los cambios que se hicieron después.';
+  end if;
+  /* Sólo los que siguen como los dejó el cambio (actualizado_en es el del cambio). */
+  delete from pos_precios p
+   using jsonb_array_elements(c.antes) e
+   where p.lista_id = c.lista_id and p.codigo = e->>0 and e->1 = 'null'::jsonb and p.actualizado_en <= c.creado_en;
+  get diagnostics v_b = row_count;
+  update pos_precios p set precio = (e->>1)::numeric, actualizado_en = coalesce((e->>2)::timestamptz, p.actualizado_en),
+                           actualizado_por = orden_yo_id()
+    from jsonb_array_elements(c.antes) e
+   where p.lista_id = c.lista_id and p.codigo = e->>0 and e->1 <> 'null'::jsonb and p.actualizado_en <= c.creado_en;
+  get diagnostics v_n = row_count;
+  update pos_precios_cambios set deshecho_en = now(), deshecho_por = orden_yo_id(), volvieron = v_n + v_b,
+         deshecho_nombre = (select pe.nombre from orden_personas pe where pe.id = orden_yo_id())
+   where id = c.id;
+  return jsonb_build_object('volvieron', v_n + v_b, 'quedaron', c.cambiaron - v_n - v_b);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_reactivar(p_lista integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare l pos_listas; b pos_listas;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  select * into l from pos_listas where id = p_lista and not activo for update;
+  if not found then raise exception 'Esa lista no está dada de baja.'; end if;
+  if l.base_id is not null then
+    select * into b from pos_listas where id = l.base_id;
+    if not b.activo then
+      raise exception '«%» se calcula de «%», que está dada de baja: primero volvé a usar esa.', l.nombre, b.nombre;
+    end if;
+  end if;
+  update pos_listas set activo = true where id = p_lista;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_renombrar(p_lista integer, p_nombre text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare n text;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  if not exists (select 1 from pos_listas where id = p_lista and activo) then raise exception 'No existe esa lista de precios.'; end if;
+  n := pos_lista_nombre_(p_nombre, p_lista);
+  update pos_listas set nombre = n where id = p_lista;
+  return n;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_rubros(p_lista integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  perform pos_lista_propia(p_lista);
+  return jsonb_build_object(
+    'rubros', coalesce((
+      select jsonb_agg(jsonb_build_array(z.rubro, z.familia, z.n) order by z.rubro, z.familia nulls last)
+        from (select a.rubro, a.familia, count(*)::int n
+                from pos_precios p join pos_articulos a on a.codigo = p.codigo
+               where p.lista_id = p_lista and a.rubro is not null
+               group by 1, 2) z), '[]'::jsonb),
+    'total', (select count(*)::int from pos_precios where lista_id = p_lista),
+    'sin_rubro', (select count(*)::int from pos_precios p left join pos_articulos a on a.codigo = p.codigo
+                   where p.lista_id = p_lista and a.rubro is null));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_subir(p_lista integer, p_filas jsonb, p_origen text, p_clave text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_clave  text := nullif(btrim(coalesce(p_clave, '')), '');
+  v_origen text := left(nullif(btrim(coalesce(p_origen, '')), ''), 120);
+  v_f      jsonb;
+  v_camb   jsonb;
+  v_mal    text;
+  v_n      int;
+  v_art    int;
+  v_id     int;
+  c        pos_precios_cambios;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  perform pos_lista_propia(p_lista);
+  if v_clave is null then raise exception 'Falta la clave del cambio.'; end if;
+  select * into c from pos_precios_cambios where clave = v_clave;
+  if found then return jsonb_build_object('ya', true, 'id', c.id, 'cambiaron', c.cambiaron); end if;
+  if jsonb_typeof(p_filas) is distinct from 'array' or jsonb_array_length(p_filas) = 0 then raise exception 'La lista está vacía.'; end if;
+  if jsonb_array_length(p_filas) > 30000 then raise exception 'La lista tiene demasiados renglones (hasta 30.000).'; end if;
+
+  begin
+    select jsonb_agg(jsonb_build_array(z.c, z.p, z.n, z.r, z.f, z.t) order by z.c) into v_f
+      from (select upper(btrim(coalesce(e->>0, ''))) c, round((e->>1)::numeric, 2) p,
+                   /* Los espacios de más, juntados en uno (como los guarda el SQL 202). */
+                   left(nullif(btrim(regexp_replace(coalesce(e->>2, ''), '\s+', ' ', 'g')), ''), 120) n, left(nullif(btrim(regexp_replace(coalesce(e->>3, ''), '\s+', ' ', 'g')), ''), 60) r,
+                   left(nullif(btrim(regexp_replace(coalesce(e->>4, ''), '\s+', ' ', 'g')), ''), 60) f, left(nullif(btrim(regexp_replace(coalesce(e->>5, ''), '\s+', ' ', 'g')), ''), 60) t
+              from jsonb_array_elements(p_filas) e) z;
+  exception when others then raise exception 'Hay un precio que no es un número.';
+  end;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e where length(e->>0) not between 1 and 30 limit 1;
+  if found then raise exception 'Hay un código vacío o demasiado largo: «%».', left(v_mal, 40); end if;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e where (e->>1) is null or (e->>1)::numeric <= 0 or (e->>1)::numeric >= 100000000 limit 1;
+  if found then raise exception 'El precio de % no es válido.', v_mal; end if;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e group by e->>0 having count(*) > 1 limit 1;
+  if found then raise exception 'El código % está dos veces.', v_mal; end if;
+
+  /* Los productos: sólo el nombre, el rubro, la familia y la temporada que trae el Excel (los talles, los
+     colores y si está activo son de Gestión → Productos, SQL 202). Los nuevos entran si traen el nombre. */
+  update pos_articulos a
+     set nombre = coalesce(z.n, a.nombre), rubro = coalesce(z.r, a.rubro), familia = coalesce(z.f, a.familia),
+         temporada = coalesce(z.t, a.temporada), actualizado_en = now()
+    from (select e->>0 c, e->>2 n, e->>3 r, e->>4 f, e->>5 t from jsonb_array_elements(v_f) e) z
+   where a.codigo = z.c
+     and (a.nombre, a.rubro, a.familia, a.temporada) is distinct from
+         (coalesce(z.n, a.nombre), coalesce(z.r, a.rubro), coalesce(z.f, a.familia), coalesce(z.t, a.temporada));
+  get diagnostics v_art = row_count;
+  insert into pos_articulos (codigo, nombre, rubro, familia, temporada)
+  select e->>0, e->>2, e->>3, e->>4, e->>5 from jsonb_array_elements(v_f) e
+   where e->>2 is not null and not exists (select 1 from pos_articulos a where a.codigo = e->>0);
+  get diagnostics v_n = row_count;
+  v_art := v_art + v_n;
+
+  /* [código, precio de antes (null si es nuevo), precio nuevo, cuándo se había cambiado] de los que cambian. */
+  select coalesce(jsonb_agg(jsonb_build_array(e->>0, p.precio, (e->>1)::numeric, p.actualizado_en) order by e->>0), '[]'::jsonb)
+    into v_camb
+    from jsonb_array_elements(v_f) e
+    left join pos_precios p on p.lista_id = p_lista and p.codigo = e->>0
+   where p.precio is distinct from (e->>1)::numeric;
+  v_n := jsonb_array_length(v_camb);
+  if v_n > 0 then
+    insert into pos_precios_cambios (lista_id, tipo, detalle, cambiaron, antes, clave, creado_por, creado_nombre)
+    values (p_lista, 'subir', 'Lista subida' || coalesce(' · ' || v_origen, ''), v_n,
+            (select jsonb_agg(jsonb_build_array(e->0, e->1, e->3)) from jsonb_array_elements(v_camb) e),
+            v_clave, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+    returning id into v_id;
+    insert into pos_precios (lista_id, codigo, precio, actualizado_por)
+    select p_lista, e->>0, (e->>2)::numeric, orden_yo_id() from jsonb_array_elements(v_camb) e
+    on conflict (lista_id, codigo) do update set precio = excluded.precio, actualizado_en = now(), actualizado_por = excluded.actualizado_por;
+  end if;
+  return jsonb_build_object('id', v_id, 'cambiaron', v_n,
+                            'nuevos', (select count(*)::int from jsonb_array_elements(v_camb) e where e->1 = 'null'::jsonb),
+                            'iguales', jsonb_array_length(v_f) - v_n, 'articulos', v_art);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_listas_bajas()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', x.id, 'nombre', x.nombre, 'base_id', x.base_id,
+                                        'propios', (select count(*) from pos_precios p where p.lista_id = x.id)) order by x.nombre)
+      from pos_listas x where not x.activo), '[]'::jsonb);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_articulo_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_nuevo   boolean := coalesce((p->>'nuevo')::boolean, false);
+  v_cod     text := btrim(coalesce(p->>'codigo', ''));
+  v_nom     text := nullif(regexp_replace(btrim(coalesce(p->>'nombre', '')), '\s+', ' ', 'g'), '');
+  v_rubro   text := nullif(regexp_replace(btrim(coalesce(p->>'rubro', '')), '\s+', ' ', 'g'), '');
+  v_familia text := nullif(regexp_replace(btrim(coalesce(p->>'familia', '')), '\s+', ' ', 'g'), '');
+  v_temp    text := nullif(regexp_replace(btrim(coalesce(p->>'temporada', '')), '\s+', ' ', 'g'), '');
+  v_marca   text := nullif(regexp_replace(btrim(coalesce(p->>'marca', '')), '\s+', ' ', 'g'), '');
+  v_activo  boolean := coalesce((p->>'activo')::boolean, true);
+  v_talles  text;
+  v_colores text;
+  r         pos_articulos;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  v_cod := upper(v_cod);
+  if v_cod = '' or length(v_cod) > 30 or v_cod !~ '^[A-Za-z0-9][A-Za-z0-9._/-]*$' then
+    raise exception 'El código va con letras y números, sin espacios (hasta 30).';
+  end if;
+  if v_nom is null or length(v_nom) > 120 then raise exception 'Falta el nombre del producto (hasta 120 letras).'; end if;
+  if length(coalesce(v_rubro, '')) > 60 or length(coalesce(v_familia, '')) > 60 or length(coalesce(v_temp, '')) > 60 or length(coalesce(v_marca, '')) > 60 then
+    raise exception 'El rubro, la familia, la temporada y la marca van con hasta 60 letras.';
+  end if;
+
+  /* Los talles: "s, M ,m,L" → "S,M,L" (en mayúsculas, sin repetidos, en el orden en que los escribieron). */
+  select string_agg(t, ',' order by o) into v_talles
+    from (select upper(btrim(x)) t, min(n) o
+            from unnest(string_to_array(coalesce(p->>'talles', ''), ',')) with ordinality u(x, n)
+           where btrim(x) <> '' group by upper(btrim(x))) z;
+  if exists (select 1 from unnest(string_to_array(coalesce(v_talles, ''), ',')) t where length(t) > 10) then
+    raise exception 'Cada talle va con hasta 10 letras.';
+  end if;
+
+  /* Los colores: [{cod: "ne", nom: "negro"}] → "NE:NEGRO" (el primero de cada código). */
+  if jsonb_typeof(coalesce(p->'colores', '[]'::jsonb)) <> 'array' then raise exception 'Los colores no se entienden.'; end if;
+  select string_agg(c || ':' || coalesce(nullif(n, ''), c), '|' order by o) into v_colores
+    from (select distinct on (c) c, n, o
+            from (select upper(btrim(coalesce(e->>'cod', ''))) c, upper(regexp_replace(btrim(coalesce(e->>'nom', '')), '\s+', ' ', 'g')) n, o
+                    from jsonb_array_elements(coalesce(p->'colores', '[]'::jsonb)) with ordinality a(e, o)) y
+           where c <> '' order by c, o) z;
+  if exists (select 1 from unnest(string_to_array(coalesce(v_colores, ''), '|')) x
+              where split_part(x, ':', 1) !~ '^[A-Z0-9]{1,6}$' or length(substr(x, length(split_part(x, ':', 1)) + 2)) > 40
+                 or substr(x, length(split_part(x, ':', 1)) + 2) ~ '[:|]') then
+    raise exception 'Cada color va con un código de hasta 6 letras o números y un nombre de hasta 40.';
+  end if;
+
+  if v_nuevo then
+    if exists (select 1 from pos_articulos where codigo = v_cod) then
+      raise exception 'Ya hay un producto con el código %.', v_cod;
+    end if;
+    insert into pos_articulos (codigo, nombre, rubro, familia, temporada, marca, talles, colores, activo, actualizado_en, actualizado_por)
+    values (v_cod, v_nom, v_rubro, v_familia, v_temp, v_marca, v_talles, v_colores, v_activo, now(), orden_yo_id())
+    returning * into r;
+  else
+    update pos_articulos
+       set nombre = v_nom, rubro = v_rubro, familia = v_familia, temporada = v_temp, marca = v_marca,
+           talles = v_talles, colores = v_colores, activo = v_activo, actualizado_en = now(), actualizado_por = orden_yo_id()
+     where codigo = v_cod
+    returning * into r;
+    if not found then raise exception 'No existe el producto %.', v_cod; end if;
+  end if;
+  return pos_art_fila(r);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_lista_guardar(p_lista integer, p_ajuste numeric, p_redondeo integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  if p_ajuste is null or p_ajuste <= -100 or p_ajuste > 300 then raise exception 'El porcentaje no es válido.'; end if;
+  if p_redondeo is null or p_redondeo < 1 or p_redondeo > 10000 then raise exception 'El redondeo no es válido.'; end if;
+  update pos_listas set ajuste = p_ajuste, redondeo = p_redondeo where id = p_lista and base_id is not null;
+  if not found then raise exception 'Esa lista no se calcula de otra.'; end if;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_precio_guardar(p_lista integer, p_codigo text, p_precio numeric)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare c text := upper(trim(coalesce(p_codigo, '')));
+begin
+  if not pos_puede('fabrica') then perform pos_permiso('gestion'); end if;   -- SQL 262: también la Fábrica (Productos y Listas de precios)
+  if not exists (select 1 from pos_listas where id = p_lista) then raise exception 'No existe esa lista de precios.'; end if;
+  if c = '' or length(c) > 30 then raise exception 'Falta el código del producto.'; end if;
+  if p_precio is null then
+    delete from pos_precios where lista_id = p_lista and codigo = c;
+    return true;
+  end if;
+  if p_precio < 0 or p_precio >= 100000000 then raise exception 'El precio no es válido.'; end if;
+  insert into pos_precios (lista_id, codigo, precio, actualizado_por)
+  values (p_lista, c, round(p_precio, 2), orden_yo_id())
+  on conflict (lista_id, codigo) do update set precio = excluded.precio, actualizado_en = now(), actualizado_por = excluded.actualizado_por;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_precios(p_lista integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare l pos_listas;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso(); end if;   -- SQL 262: también quien tiene sólo la Fábrica (Listas de precios)
+  select * into l from pos_listas where id = p_lista;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_array(x.codigo, x.precio, x.propio) order by x.codigo)
+      from (
+        select coalesce(p.codigo, b.codigo) codigo,
+               coalesce(p.precio, round(b.precio * (1 + l.ajuste / 100) / l.redondeo) * l.redondeo) precio,
+               p.codigo is not null propio
+          from (select codigo, precio from pos_precios where lista_id = p_lista) p
+          full join (select codigo, precio from pos_precios where lista_id = l.base_id) b on b.codigo = p.codigo
+      ) x
+     where x.precio is not null), '[]'::jsonb);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_precios_version(p_lista integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare l pos_listas;
+begin
+  if not pos_puede('fabrica') then perform pos_permiso(); end if;   -- SQL 262: también quien tiene sólo la Fábrica (Listas de precios)
+  select * into l from pos_listas where id = p_lista;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  return concat_ws('|', l.ajuste, l.redondeo, l.base_id,
+           (select count(*) || '/' || coalesce(sum(precio), 0) || '/' || coalesce(max(actualizado_en)::text, '')
+              from pos_precios where lista_id in (l.id, l.base_id)));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_mis_permisos()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select jsonb_build_object('usa', pos_puede('usa'), 'anular', pos_puede('anular'), 'envios', pos_puede('envios'),
+           'caja', pos_puede('caja'), 'retiros', pos_puede('retiros'), 'dias', pos_puede('dias'), 'locales', pos_puede('locales'), 'precios', pos_puede('precios'),
+           'gestion', pos_puede('gestion'),
+           'fabrica', pos_puede('fabrica'),   -- SQL 256
+           'mios', coalesce((select jsonb_agg(l.id) from orden_locales l where l.activo and pos_local_mio(l.id)), '[]'::jsonb))
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_lista()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare k text[] := array['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];   -- SQL 256: «Entra a Fábrica»; SQL 262: «Retiros de fondos»
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'admin_elige', true,
+    'roles', (select jsonb_object_agg(r.ed, (select jsonb_object_agg(c, pos_permiso_del_rol(r.rol, r.con_local, c)) from unnest(k) c))
+                from (values ('vendedor', 'vendedor', true), ('supervisor', 'supervisor', true), ('zona', 'supervisor', false),
+                             ('atencion', 'atencion', false), ('admin', 'admin', false)) r(ed, rol, con_local)),
+    'personas', coalesce((
+      select jsonb_object_agg(p.id, (select jsonb_object_agg(c, case when p.rol = 'admin' then coalesce((x.cambios ->> 'usa')::boolean, false)
+                                                                     else coalesce((x.cambios ->> c)::boolean, pos_permiso_del_rol(p.rol::text, p.local_id is not null, c)) end)
+                                       from unnest(k) c) || jsonb_build_object('propios', coalesce(x.cambios, '{}'::jsonb)))
+        from orden_personas p left join pos_permisos x on x.persona_id = p.id), '{}'::jsonb));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_guardar(p_persona uuid, p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  k text[] := array['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];   -- SQL 256: «Entra a Fábrica»; SQL 262: «Retiros de fondos»
+  q orden_personas;
+  c text;
+  v_cambios jsonb;
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  select * into q from orden_personas where id = p_persona;
+  if not found then raise exception 'No existe esa persona.'; end if;
+  if jsonb_typeof(p) is distinct from 'object' then raise exception 'Faltan los permisos.'; end if;
+  /* SQL 236: al administrador, sólo «Usa el POS» (con eso tiene todo, también la Gestión). El suyo no se lo saca él. */
+  if q.rol = 'admin' then
+    if jsonb_typeof(p->'usa') is distinct from 'boolean' then raise exception 'Falta si usa el POS.'; end if;
+    if q.id = orden_yo_id() and not (p->>'usa')::boolean then
+      raise exception 'Tu POS no te lo podés sacar vos: te lo saca otro administrador.';
+    end if;
+    p := jsonb_build_object('usa', p->'usa');
+  end if;
+  select x.cambios into v_cambios from pos_permisos x where x.persona_id = p_persona for update;
+  v_cambios := coalesce(v_cambios, '{}'::jsonb);
+  foreach c in array k loop
+    if p ? c then
+      if jsonb_typeof(p->c) is distinct from 'boolean' then raise exception 'El permiso % no es válido.', c; end if;
+      if (p->>c)::boolean = pos_permiso_del_rol(q.rol::text, q.local_id is not null, c) then v_cambios := v_cambios - c;
+      else v_cambios := v_cambios || jsonb_build_object(c, (p->>c)::boolean); end if;
+    end if;
+  end loop;
+  if v_cambios = '{}'::jsonb then
+    delete from pos_permisos where persona_id = p_persona;
+  else
+    insert into pos_permisos (persona_id, cambios, cambiado_por, cambiado_en) values (p_persona, v_cambios, orden_yo_id(), now())
+    on conflict (persona_id) do update set cambios = excluded.cambios, cambiado_por = excluded.cambiado_por, cambiado_en = now();
+  end if;
+  return (select jsonb_object_agg(c2, pos_puede_persona(q, c2)) from unnest(k) c2) || jsonb_build_object('propios', v_cambios);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permiso(p_que text)
+ RETURNS void
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso();
+  if not pos_puede(p_que) then
+    raise exception '%', case p_que
+      when 'gestion' then 'Esto es de la oficina: lo hace Administración.'
+      when 'anular'  then 'No tenés permiso para anular ventas ni cambios. Lo da la oficina en Config → Usuarios.'
+      when 'envios'  then 'No tenés permiso para los envíos internos ni las devoluciones a fábrica. Lo da la oficina en Config → Usuarios.'
+      when 'caja'    then 'No tenés permiso para la caja (gastos, movimientos de salida y cierre). Lo da la oficina en Config → Usuarios.'
+      when 'retiros' then 'No tenés permiso para los retiros de fondos. Lo da la oficina en Config → Usuarios.'   -- SQL 262
+      when 'dias'    then 'Sólo podés ver lo de hoy. Para otros días, el permiso lo da la oficina en Config → Usuarios.'
+      when 'locales' then 'Sólo podés usar el POS de tu local. Para otros, el permiso lo da la oficina en Config → Usuarios.'
+      else 'No tenés permiso para esto en el POS.' end using errcode = '42501';
+  end if;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_mov_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_tipo    text := coalesce(p->>'tipo', '');
+  v_rubro   text := nullif(trim(coalesce(p->>'rubro', '')), '');
+  v_desc    text := nullif(trim(coalesce(p->>'descripcion', '')), '');
+  v_monto   numeric := round(nullif(p->>'monto', '')::numeric, 2);
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_caja    text := nullif(trim(coalesce(p->>'caja', '')), '');     -- SQL 191
+  v_retira  text := nullif(trim(coalesce(p->>'retira', '')), '');   -- SQL 191
+  v_id      uuid;
+  v_num     int;
+  v_ya      pos_caja_movimientos;
+begin
+  perform pos_permiso(case when v_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: el retiro, con su casilla
+  perform pos_local_ok(v_local);
+  if v_clave is not null then
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
+  end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte', 'retiro') then
+    raise exception 'El movimiento tiene que ser un gasto, otra salida, otro ingreso, un pase a la caja fuerte o un retiro de fondos.';
+  end if;
+  /* SQL 191: el retiro dice de qué caja sale la plata y quién se la lleva. */
+  if v_tipo = 'retiro' then
+    if v_caja is null or v_caja not in ('chica', 'fuerte') then raise exception 'Elegí de qué caja sale la plata.'; end if;
+    if v_retira is null then raise exception 'Elegí quién retira la plata.'; end if;
+    if length(v_retira) > 80 then raise exception 'El nombre de quien retira es demasiado largo.'; end if;
+  end if;
+  if v_tipo = 'gasto' and v_rubro is null then raise exception 'Elegí el tipo de gasto.'; end if;
+  if v_tipo in ('salida', 'ingreso') and v_desc is null then raise exception 'Escribí de qué es.'; end if;
+  if length(v_rubro) > 60 or length(v_desc) > 200 then raise exception 'El texto es demasiado largo.'; end if;
+  if v_monto is null or v_monto <= 0 or v_monto >= 100000000 then raise exception 'Escribí el monto.'; end if;
+  /* SQL 179: un número por vez en cada local: si dos guardan al mismo tiempo, el segundo espera (como los cambios). */
+  perform pg_advisory_xact_lock(hashtext('pos_gasto:' || v_local::text || ':' || v_prueba::text));
+  if v_clave is not null then
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
+  end if;
+  select coalesce(max(m.numero), 0) + 1 into v_num from pos_caja_movimientos m
+   where m.local_id = v_local and m.prueba = v_prueba   -- SQL 180: dos talonarios; SQL 191: tres
+     and (case m.tipo when 'caja_fuerte' then 'MS' when 'retiro' then 'RF' else 'G' end) = (case v_tipo when 'caja_fuerte' then 'MS' when 'retiro' then 'RF' else 'G' end);
+  insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave, numero, caja, retira)
+  values (v_local, v_prueba, orden_dia_caja(v_local), v_tipo, case when v_tipo = 'gasto' then v_rubro end, v_desc, v_monto,
+          orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave, v_num,
+          case when v_tipo = 'retiro' then v_caja end, case when v_tipo = 'retiro' then v_retira end)   -- SQL 191
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v_prueba, 'ya', false);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_mov_anular(p_id uuid, p_motivo text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare m pos_caja_movimientos;
+begin
+  /* SQL 262: el retiro de fondos se anula con su casilla; lo demás, con la de la caja. */
+  perform pos_permiso(case when (select x.tipo from pos_caja_movimientos x where x.id = p_id) = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into m from pos_caja_movimientos where id = p_id for update;
+  if not found then raise exception 'No existe ese movimiento.'; end if;
+  perform pos_local_ok(m.local_id);
+  if m.estado = 'anulado' then raise exception 'Ese movimiento ya está anulado.'; end if;
+  if m.controlado_en is not null then   -- SQL 191
+    raise exception 'Ese movimiento ya lo controló la oficina: para anularlo, primero hay que sacarle el tilde de «Controlado».';
+  end if;
+  if m.cierre_id is not null then
+    raise exception 'Ese movimiento ya entró en el cierre %: para cambiarlo, hay que anular el cierre.',
+      (select case when c.prueba then 'P-' else 'Nº ' end || c.numero from pos_cierres c where c.id = m.cierre_id);
+  end if;
+  update pos_caja_movimientos set estado = 'anulado', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
+   where id = p_id;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_movimientos(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_tipo text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso(case when p_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: la lista de los retiros, con su casilla
+  perform pos_local_ok(p_local);
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_tipo is not null and p_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte', 'retiro') then raise exception 'Ese tipo de movimiento no existe.'; end if;
+  return (
+    with t as (
+      select m.id, 'mov'::text as origen, m.fecha, m.local_id, m.tipo, m.rubro, m.descripcion, m.monto, m.persona_nombre as persona,
+             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo, m.numero,   -- SQL 179: el número del gasto
+             m.caja, m.retira, m.controlado_en, m.controlado_por   -- SQL 191
+        from pos_caja_movimientos m
+       where m.dia between p_desde and p_hasta and m.prueba = coalesce(p_prueba, false) and (p_local is null or m.local_id = p_local)
+      union all
+      select c.id, 'cierre', c.fecha, c.local_id, 'caja_fuerte', null, null, c.retiro, c.responsable_nombre,
+             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo, null::int,
+             null::text, null::text, null::timestamptz, null::uuid
+        from pos_cierres c
+       where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
+         and (p_local is null or c.local_id = p_local)
+    ), f as (
+      select * from t where p_tipo is null or t.tipo = p_tipo
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'origen', z.origen, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id, 'tipo', z.tipo,
+                 'rubro', z.rubro, 'descripcion', z.descripcion, 'monto', z.monto, 'persona', z.persona, 'estado', z.estado,
+                 'motivo', z.anulado_motivo, 'numero', z.numero,
+                 'caja', z.caja, 'retira', z.retira, 'controlado', z.controlado_en is not null, 'controlado_en', z.controlado_en,   -- SQL 191
+                 'controlado_por', (select pe.nombre from orden_personas pe where pe.id = z.controlado_por),
+                 'cierre', (select jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'estado', c.estado)
+                              from pos_cierres c where c.id = z.cierre_id)) order by z.fecha desc)
+          from (select * from f order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'gasto',       coalesce(sum(monto) filter (where vale and tipo = 'gasto'), 0),
+                    'salida',      coalesce(sum(monto) filter (where vale and tipo = 'salida'), 0),
+                    'ingreso',     coalesce(sum(monto) filter (where vale and tipo = 'ingreso'), 0),
+                    'caja_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'caja_fuerte'), 0),
+                    'retiro',      coalesce(sum(monto) filter (where vale and tipo = 'retiro'), 0),   -- SQL 191
+                    'controlado',  coalesce(sum(monto) filter (where vale and controlado_en is not null), 0),
+                    'cantidad',    count(*) filter (where vale)) from f),
+      'mas', (select count(*) > 500 from f)
+    )
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_retiran()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso('retiros');   -- SQL 262
+  return coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial)) order by p.nombre, p.inicial)
+                     from orden_personas p where p.rol = 'admin' and p.activo and p.aprobado), '[]'::jsonb);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja(p_local uuid, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  a          jsonb;
+  t          jsonb;
+  v_prueba   boolean := coalesce(p_prueba, false);
+  v_hoy      date;
+  v_dia      date;
+  v_hasta    timestamptz;
+  v_corte    timestamptz;
+  u          pos_cierres;
+  k          pos_caja_conteos;
+  v_valido   boolean := false;
+  v_por      text;
+  v_saldo    numeric;
+  v_esp      numeric;
+  v_en_caja  numeric;
+begin
+  /* SQL 262: también quien hace retiros sin la caja (el retiro muestra cuánto hay en cada caja). */
+  perform pos_permiso(case when pos_puede('caja') then 'caja' else 'retiros' end);   -- SQL 190
+  perform pos_local_ok(p_local);
+  if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  v_hoy := pos_caja_dia_de(p_local);
+  v_dia := pos_caja_a_cerrar(p_local, v_prueba);
+  v_hasta := pos_caja_dia_fin(p_local, v_dia);
+  a := pos_caja_dia(p_local, v_prueba, v_dia);
+  select * into u from pos_cierres c
+   where c.local_id = p_local and c.prueba = v_prueba and c.estado = 'cerrada'
+   order by c.fecha desc limit 1;
+  v_corte := coalesce((select min(c.desde) from pos_cierres c
+                        where c.local_id = p_local and c.prueba = v_prueba and c.estado = 'cerrada'), '-infinity'::timestamptz);
+  if v_dia < v_hoy then
+    /* Lo que contaron ese día sirve si después no entró ni salió efectivo de ese día. */
+    select * into k from pos_caja_conteos x
+     where x.local_id = p_local and x.prueba = v_prueba and x.dia = v_dia and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+     order by x.fecha desc, x.id desc limit 1;
+    if k.id is not null then
+      v_por := pos_caja_efectivo_entre(p_local, v_prueba, k.fecha, v_hasta);
+      v_valido := v_por is null;
+    end if;
+  end if;
+  v_saldo := case when u.id is not null then u.queda when v_valido then k.saldo_inicial end;
+  v_esp := v_saldo + (a->'ventas'->>'efectivo')::numeric + (a->>'otros_ingresos')::numeric
+         - (a->>'gastos')::numeric - (a->>'otras_salidas')::numeric - (a->>'a_caja_fuerte')::numeric
+         - (a->>'retiros_fondos')::numeric;
+  if v_dia < v_hoy then
+    t := pos_caja_dia(p_local, v_prueba, null);
+    v_en_caja := u.queda + (t->'ventas'->>'efectivo')::numeric + (t->>'otros_ingresos')::numeric
+               - (t->>'gastos')::numeric - (t->>'otras_salidas')::numeric - (t->>'a_caja_fuerte')::numeric
+               - (t->>'retiros_fondos')::numeric;
+  else
+    v_en_caja := v_esp;
+  end if;
+  return a || jsonb_build_object(
+    'numero', (select coalesce(max(c.numero), 0) + 1 from pos_cierres c where c.local_id = p_local and c.prueba = v_prueba),
+    'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
+    'movimientos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro,
+                                          'descripcion', m.descripcion, 'monto', m.monto, 'persona', m.persona_nombre,
+                                          'numero', m.numero,   -- SQL 179
+                                          'retira', m.retira) order by m.fecha)   -- SQL 191
+        from pos_caja_movimientos m
+       where m.local_id = p_local and m.prueba = v_prueba and m.cierre_id is null and m.estado = 'ok'
+         and coalesce(m.caja, 'chica') = 'chica'   -- SQL 191: sin los retiros de la caja fuerte
+         and m.fecha < v_hasta), '[]'::jsonb),   -- SQL 247: los de ese día
+    'detalle', pos_caja_detalle(p_local, v_prueba, null, v_dia),   -- SQL 246 (y 247: de ese día)
+    'hoy', v_hoy,
+    'pendiente', v_dia < v_hoy,
+    'esperado', v_esp,
+    'en_caja', v_en_caja,
+    'conteo', case when v_valido then jsonb_build_object(
+                'contado', k.contado, 'esperado', k.esperado, 'saldo_inicial', k.saldo_inicial, 'fecha', k.fecha,
+                'persona', (select pe.nombre from orden_personas pe where pe.id = k.persona)) end,
+    'conteo_viejo', case when k.id is not null and not v_valido then jsonb_build_object('fecha', k.fecha, 'contado', k.contado, 'por', v_por) end,
+    'efectivo_despues', case when v_dia < v_hoy then pos_caja_efectivo_entre(p_local, v_prueba, v_hasta, 'infinity'::timestamptz) end,
+    'dias_despues', case when v_dia < v_hoy then (
+      select coalesce(jsonb_agg(z.d order by z.d), '[]'::jsonb) from (
+        select distinct pos_caja_dia_de(p_local, w.fecha) d from (
+          select x.fecha from pos_ventas x
+           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'cobrada' and x.fecha >= v_hasta
+          union all
+          select x.fecha from pos_cambios x
+           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'hecho' and x.fecha >= v_hasta
+          union all
+          select x.fecha from pos_caja_movimientos x
+           where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'ok'
+             and coalesce(x.caja, 'chica') = 'chica' and x.fecha >= v_hasta) w) z) end,
+    'tickets_despues', case when v_dia < v_hoy then (
+      select count(*) from pos_ventas x
+       where x.local_id = p_local and x.prueba = v_prueba and x.cierre_id is null and x.estado = 'cobrada'
+         and x.fecha >= v_hasta and x.fecha >= v_corte) end);
+end $function$;
+
+/* La casilla nueva arranca como la caja de cada uno: a quien le cambiaron la caja, se le copia. */
+update pos_permisos set cambios = cambios || jsonb_build_object('retiros', cambios -> 'caja')
+ where cambios ? 'caja' and not cambios ? 'retiros';

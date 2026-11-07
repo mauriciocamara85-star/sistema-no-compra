@@ -134,14 +134,20 @@
          Los cierres (Mauricio, 5/11): como en BlueSoft, primero la lista de los cierres y ahí «Nuevo cierre de caja», como un ticket. */
       ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierres', 'Cierres de caja', 'caja']]]
     ],
+    /* Gestión, sin lo repetido (Mauricio, 7/11: "hay muchas cosas que ya están repetidas… simplifiquemos"; es para los
+       administradores, los supervisores y los encargados). Lo que era la misma pantalla que el POS se usa desde el POS (con
+       «Ver otros locales» ofrece «Todas», y el Stock trae «Ajustar…» a quien tiene la Gestión): Stock, Stock general,
+       Depósitos, Cierres de caja, Clientes, Ventas por vendedor y Ventas por productos. Productos y Listas de precios se
+       mudaron a Fábrica ("ellos se encargan de subir el precio, de cargar los precios"). IVA Ventas queda acá (se le manda a la
+       fábrica el 1.º de cada mes; después, por mail solo). Las direcciones viejas van solas a la pantalla nueva (OTRAS). */
     gestion: [
-      ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      /* Los remitos de la fábrica y sus diferencias se mudaron a Fábrica (6/11): acá queda lo de los locales. */
-      ['Stock', [['stock', 'Stock', 'stock'], ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
-      /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
-      ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
-      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
-                                ['iva', 'IVA Ventas', 'iva'], ['reportes', 'Reportes', 'reportes']]],
+      ['Artículos', [['promos', 'Promociones', 'promo']]],
+      /* El inventario pisa el stock con lo contado: queda acá, para pocos. */
+      ['Stock', [['inventario', 'Inventario', 'inventario']]],
+      /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft).
+         Los movimientos: los gastos, las salidas, la caja fuerte y los retiros de todos los locales juntos (el control). */
+      ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['movimientos', 'Movimientos', 'movs']]],
+      ['Reportes', [['iva', 'IVA Ventas', 'iva'], ['reportes', 'Reportes', 'reportes']]],
       /* El registro de tiempos (SQL 206): las entradas y salidas de cada uno, como el "Registro de tiempos" de BlueSoft (la huella viene después). */
       ['Personal', [['tiempos', 'Registro de tiempos', 'reloj']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
@@ -150,8 +156,11 @@
        dentro de la fábrica, no en gestión"): lo que sale del depósito de la fábrica a los locales y lo que llegó mal.
        SQL 258 (Lucas, 6/11: "tenés que tener dos funcionalidades: el depósito donde pongo mercadería y una que sea
        remito para moverla"): el depósito de la fábrica con su stock, como el «Stock talles en columnas» de BlueSoft.
-       Después, los clientes, los transportes y la producción. */
+       Después, los clientes, los transportes y la producción.
+       Los productos y las listas de precios (7/11, de Gestión: "ahí es como que creás productos… ellos se encargan de subir el
+       precio, de cargar los precios y que lo reciban los locales"; los precios los cambia Lucas). SQL 262: con «Entra a Fábrica». */
     fabrica: [
+      ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista']]],
       ['Depósito', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
       /* SQL 259: los transportes (los expresos) y adónde se le manda a cada local. */
       ['Remitos', [['remitos', 'Remitos', 'envio'], ['transportes', 'Transportes', 'ruta'], ['diferencias', 'Diferencias', 'dif']]]
@@ -160,20 +169,25 @@
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general', cierre: 'cierres' },
-                 gestion: { general_modulo: 'general' },
+                 gestion: {},
                  fabrica: { remito_nuevo: 'remitos' } };
-  var INICIO = { mostrador: 'venta', gestion: 'listas', fabrica: 'remitos' };
-  /* Una dirección que es de otra pantalla (gestion.html#remitos, de antes del 6/11): adónde se busca primero. La oficina,
-     en la otra de la oficina (los Remitos de Gestión son los de la fábrica, no los que recibe el local). */
-  var OTRAS = { mostrador: ['gestion', 'fabrica'], gestion: ['fabrica', 'mostrador'], fabrica: ['gestion', 'mostrador'] };
-  /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
-  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
+  var INICIO = { mostrador: 'venta', gestion: 'promos', fabrica: 'remitos' };
+  /* Una dirección que es de otra pantalla (gestion.html#listas, de antes del 7/11): adónde se busca primero. Desde Gestión,
+     el POS: el Stock, Stock general y Depósitos de Gestión eran los de los locales, no los de la Fábrica (7/11). */
+  var OTRAS = { mostrador: ['gestion', 'fabrica'], gestion: ['mostrador', 'fabrica'], fabrica: ['gestion', 'mostrador'] };
+  /* Menos los Remitos de Gestión (gestion.html#remitos, de antes del 6/11): eran los de la fábrica, no los que recibe el local. */
+  var OTRA_VISTA = { gestion: { remitos: 'fabrica' } };
+  /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú.
+     SQL 262: los retiros de fondos, con su casilla (Mauricio, 7/11: "el fondo no es para cualquiera"; hasta el 7/11 iban con la
+     de la caja). Sin el SQL 262 la base no la trae y siguen a la de la caja (SIGUE, en puede). */
+  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'retiros', cierre: 'caja' };
   /* Los cierres del mostrador son de la caja; los de Gestión, de la oficina (entra quien tiene la Gestión). */
   if (MODO === 'mostrador') REQUIERE.cierres = 'caja';
   /* SQL 258: los depósitos de la Fábrica son de quien entra a Fábrica (no piden el permiso de los envíos del POS). */
   if (MODO === 'fabrica') delete REQUIERE.depositos;
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
-                      caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
+                      caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).',
+                      retiros: 'No tenés permiso para los retiros de fondos.' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
@@ -518,7 +532,7 @@
     try { localStorage.setItem(K_ART, JSON.stringify(d)); } catch (e) { /* sin lugar en la compu: queda en la memoria */ }
     armarCatalogo(d.filas);
   }
-  /** Se guardó uno en Gestión → Productos: se cambia en la copia, y la próxima vez que abra se baja todo de nuevo. */
+  /** Se guardó uno en Fábrica → Productos (hasta el 7/11, en Gestión): se cambia en la copia, y la próxima vez que abra se baja todo de nuevo. */
   function cambiarArticulo(fila) {
     if (!ART) return traerArticulos(true);
     var filas = ART.filas.filter(function (a) { return a[0] !== fila[0]; });
@@ -712,8 +726,8 @@
 
   function pantallaPorton(y) {
     app.innerHTML = '<section class="pos-porton"><h2>' + NOMBRE + '</h2>' +
-      '<p>' + ({ gestion: 'La parte de atrás del POS: precios, promociones, stock y sucursales.',
-                 fabrica: 'La fábrica: el stock de sus depósitos, los remitos que les manda a los locales y lo que llegó con diferencias.' }[MODO] ||
+      '<p>' + ({ gestion: 'La parte de atrás del POS: promociones, inventario, la plata de las cajas, el IVA Ventas, el registro de tiempos y las sucursales.',
+                 fabrica: 'La fábrica: los productos y sus precios, el stock de sus depósitos, los remitos que les manda a los locales y lo que llegó con diferencias.' }[MODO] ||
                 'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
       '<div id="posPorton"></div>' +
       /* No hay barra (en Gestión, desde el 31/10): el camino de vuelta va acá. */
@@ -737,7 +751,7 @@
 
   function ir(v) {
     /* Una dirección vieja (pos.html#listas, gestion.html#remitos) o un enlace a otra pantalla: se va para allá. */
-    var otro = esDe(MODO, v) ? null : OTRAS[MODO].filter(function (m) { return esDe(m, v); })[0];
+    var otro = esDe(MODO, v) ? null : (OTRA_VISTA[MODO] || {})[v] || OTRAS[MODO].filter(function (m) { return esDe(m, v); })[0];
     if (otro) { location.replace(PAGINA[otro] + '#' + v); return; }
     if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
@@ -1160,7 +1174,9 @@
     guardarJSON(K_RECUERDO, r);
   }
   /* SQL 190: lo que puede la persona que entró. Sin el SQL 190 la base no lo manda: entonces es Administración y puede todo. */
-  function puede(k) { var p = S.ini && S.ini.puede; return !p || p[k] !== false; }
+  function puede(k) { var p = S.ini && S.ini.puede; return !p || (p[k] === undefined && SIGUE[k] ? puede(SIGUE[k]) : p[k] !== false); }
+  /* Una casilla nueva que la base todavía no trae (sin su SQL): sigue a la de antes. SQL 262: los retiros, a la caja. */
+  var SIGUE = { retiros: 'caja' };
   /* Los locales con los que trabaja: el suyo (y los que supervisa); con «Ver otros locales», todos. */
   function esMio(id) { var p = S.ini && S.ini.puede; return !!id && (!p || p.locales !== false || (p.mios || []).indexOf(id) >= 0); }
   function localesMios() { return S.ini.locales.filter(function (l) { return esMio(l.id); }); }
@@ -7213,12 +7229,12 @@
     if (!li) { c.innerHTML = cabeza('Listas de precios', '') + '<div class="pos-cartel">No hay listas de precios.</div>'; return; }
     var base = li.base_id ? listaPorId(li.base_id) : null;
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
-    var quien = usan.length ? 'La usan: ' + esc(usan.join(', ')) + '.' : 'Ninguna sucursal la usa todavía: se elige en Sucursales.';
+    var quien = usan.length ? 'La usan: ' + esc(usan.join(', ')) + '.' : 'Ninguna sucursal la usa todavía: se elige en Gestión → Sucursales.';
     /* SQL 226: cambiarle el nombre y darla de baja (crear una nueva, «+ Nueva lista», va con las listas). */
     var acc = '<div class="ls-acc"><button type="button" class="pos-link" id="lsRenombrar">Cambiar el nombre</button>' +
               '<button type="button" class="pos-link" id="lsBaja">Dar de baja</button></div>';
     if (S.subida && S.subida.li !== li.id) S.subida = null;
-    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Sucursales). Un precio cambiado acá vale desde la próxima venta.',
+    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Gestión → Sucursales). Un precio cambiado acá vale desde la próxima venta.',
         base ? '' : '<label class="btn btn-sec btn-chico">Subir lista de BlueSoft…<input type="file" id="lsArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
                     '<button type="button" class="btn btn-sec btn-chico" id="lsAumentar">Aumentar precios…</button>') +
       '<div class="pos-listas-elegir" role="group" aria-label="Lista">' + S.ini.listas.map(function (l) {
@@ -7359,7 +7375,7 @@
                ['copia', 'Copia de otra', 'Arranca con los mismos precios y después va por su cuenta: se cambia con «Aumentar precios» o a mano.'],
                ['vacia', 'Vacía', 'Sin precios: se llena con «Subir lista de BlueSoft» o a mano.']];
     var caja = ventana('<h3 id="posVentTit">Nueva lista de precios</h3>' +
-      '<p class="pos-bajada">No cambia ningún precio de venta hasta que una sucursal la use (se elige en Sucursales).</p>' +
+      '<p class="pos-bajada">No cambia ningún precio de venta hasta que una sucursal la use (se elige en Gestión → Sucursales).</p>' +
       campo('ancho ls-nombre', 'Nombre', '<input type="text" id="nlNombre" maxlength="60" autocomplete="off" placeholder="Por ejemplo: Outlet" autofocus>') +
       '<p class="ls-tit">¿De dónde salen los precios?</p>' +
       '<div class="df-ops" role="radiogroup" aria-label="De dónde salen los precios">' + OPS.map(function (o, i) {
@@ -7406,7 +7422,7 @@
           S.listaSel = r.id;
           verListas();
           avisar('ok', 'Listo: «' + r.nombre + '» creada' + (r.copiados ? ' con ' + (r.copiados === 1 ? '1 precio' : num(r.copiados) + ' precios') : '') +
-                       '. Para usarla, elegila en Sucursales.');
+                       '. Para usarla, elegila en Gestión → Sucursales.');
         });
       }).catch(function (e) {
         bt.disabled = false;
@@ -7455,13 +7471,13 @@
   function bajaLista(li) {
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
     var hijas = S.ini.listas.filter(function (l) { return l.base_id === li.id; }), n = hijas.length;
-    if (usan.length) { avisar('err', 'No se puede dar de baja: la usan ' + usan.join(', ') + '. Primero pasá esas sucursales a otra lista en Sucursales.'); return; }
+    if (usan.length) { avisar('err', 'No se puede dar de baja: la usan ' + usan.join(', ') + '. Primero pasá esas sucursales a otra lista en Gestión → Sucursales.'); return; }
     if (n) {
       avisar('err', '«' + hijas.map(function (l) { return l.nombre; }).join('» y «') + '» se calcula' + (n > 1 ? 'n' : '') + ' de esta: primero da' + (n > 1 ? 'las' : 'la') + ' de baja.');
       return;
     }
     if (S.ini.listas.length < 2) { avisar('err', 'Tiene que quedar al menos una lista.'); return; }
-    if (!confirm('¿Dar de baja «' + li.nombre + '»? Deja de aparecer acá y en Sucursales, pero no se borra nada: se puede volver a usar desde «Dadas de baja».')) return;
+    if (!confirm('¿Dar de baja «' + li.nombre + '»? Deja de aparecer acá y en Gestión → Sucursales, pero no se borra nada: se puede volver a usar desde «Dadas de baja».')) return;
     llamar('pos_lista_baja', { p_lista: li.id }).then(function () { return recargarListas(); }).then(function () {
       S.listaSel = null;
       verListas();
@@ -7473,7 +7489,7 @@
     var todas = S.ini.listas.concat(S.listasBajas || []);
     function nombreDe(id) { var l = todas.filter(function (x) { return x.id === id; })[0]; return l ? l.nombre : ''; }
     var caja = ventana('<h3 id="posVentTit">Listas dadas de baja</h3>' +
-      '<p class="pos-bajada">No aparecen en Sucursales. Al volver a usarla, la lista sigue con los precios que tenía.</p>' +
+      '<p class="pos-bajada">No aparecen en Gestión → Sucursales. Al volver a usarla, la lista sigue con los precios que tenía.</p>' +
       '<div class="pos-marco-tabla"><table class="pos-tabla"><tbody>' + (S.listasBajas || []).map(function (l) {
         return '<tr data-id="' + l.id + '"><td><b>' + esc(l.nombre) + '</b></td><td class="apagado">' +
           (l.base_id ? 'Calculada de «' + esc(nombreDe(l.base_id)) + '»' : l.propios === 1 ? '1 precio' : num(l.propios) + ' precios') + '</td>' +
@@ -7489,7 +7505,7 @@
         cerrarVentana();
         S.listaSel = id;
         verListas();
-        avisar('ok', 'Listo: «' + nom + '» se puede usar de nuevo. Para que la use una sucursal, elegila en Sucursales.');
+        avisar('ok', 'Listo: «' + nom + '» se puede usar de nuevo. Para que la use una sucursal, elegila en Gestión → Sucursales.');
       }).catch(function (er) { b.disabled = false; avisar('err', mensajeDe(er)); });
     };
   }
@@ -8144,18 +8160,20 @@
 
   function verStock() {
     if (MODO === 'fabrica') { verStockFabrica(); return; }   // SQL 258: el de la Fábrica, con los talles en columnas
-    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
-    var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false, dep: '' };
-    if (!gestion && !localDe(F.local)) F.local = l.id;
+    /* Desde el 7/11 el Stock es sólo el del POS (Gestión → Stock era la misma pantalla): «Todas» con «Ver otros locales» y,
+       a quien tiene la Gestión, «Ajustar…» y «Cargar un inventario». Arranca en el local de la compu, como los listados. */
+    var c = $('cuerpo'), todas = puede('locales'), ajusta = ajustaStock(), l = localStock();
+    var F = S.stF = S.stF || { local: l.id, q: '', rubro: '', cero: false, neg: false, dep: '' };
+    if (F.local ? !localMio(F.local) : !todas) F.local = l.id;
     var vista = leerJSON('pos_stock_vista', 'producto');
     if (!ST_VISTAS.some(function (v) { return v[0] === vista; })) vista = 'producto';
     c.classList.add('lleno');
-    c.innerHTML = cabeza('Stock', gestion ? 'Lo que hay en cada sucursal, por talle y color. Se mueve solo con las ventas, los cambios y los remitos. Tocá un número para ver sus movimientos o ajustarlo.'
-                                          : 'Lo que hay en la sucursal según el sistema, por talle y color. Tocá un número para ver de dónde sale.',
-        gestion ? '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>'
-                : '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">Remitos</button>') +
+    c.innerHTML = cabeza('Stock', ajusta ? 'Lo que hay en cada sucursal según el sistema, por talle y color. Se mueve solo con las ventas, los cambios y los remitos. Tocá un número para ver sus movimientos o ajustarlo.'
+                                         : 'Lo que hay en la sucursal según el sistema, por talle y color. Tocá un número para ver de dónde sale.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">Remitos</button>' +
+        (ajusta ? '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>' : '')) +
       '<div class="pos-filtros">' +
-        campo('', 'Sucursal', '<select id="stLocal" class="desplegable">' + (gestion ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
+        campo('', 'Sucursal', '<select id="stLocal" class="desplegable">' + (todas ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
         '<div id="stDepZona" class="st-dep-zona"></div>' +
         campo('ancho', 'Buscar', '<input type="search" id="stBuscar" placeholder="Código o nombre del producto" autocomplete="off" spellcheck="false">') +
         campo('', 'Rubro', '<select id="stRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro) + '</select>') +
@@ -8252,7 +8270,7 @@
         $('stPie').innerHTML = '';
         z.innerHTML = '<div class="pos-cartel"><b>Todavía no hay stock cargado' + (lo ? ' en ' + esc(nombreLocal(lo)) : '') + '.</b> Se carga una vez con un inventario ' +
           '(Gestión → Inventario: el Excel de «Consulta de stock» de BlueSoft) y desde ahí se mueve solo: las ventas y los cambios lo descuentan, y los remitos lo suman al recibirlos.' +
-          (gestion ? ' <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>' : '') + '</div>';
+          (ajusta ? ' <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>' : '') + '</div>';
         engancharIr(z);
         return;
       }
@@ -8443,7 +8461,10 @@
     return [m.detalle, quien].filter(Boolean).join(' · ');
   }
 
-  /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, en Gestión, el ajuste.
+  /** Quién ajusta el stock (falla, robo, error de carga) y carga inventarios: la Fábrica, lo suyo; en el POS, quien tiene la
+      Gestión (desde el 7/11, sin Gestión → Stock; la base pide lo mismo: pos_stock_ajustar y pos_inventario_cargar). */
+  function ajustaStock() { return MODO === 'fabrica' || puede('gestion'); }
+  /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, a quien ajusta, el ajuste.
       SQL 193: dep, la de un depósito solo; sin dep, la suma de los que cuentan para la consulta y cuánto hay en cada depósito.
       El ajuste va al depósito elegido o, sin elegir, al predeterminado: "hay en realidad" es contra lo que tiene ése. */
   function abrirVariante(localId, cod, talle, color, alCambiar, dep) {
@@ -8480,7 +8501,7 @@
             }).join('') + '</tbody></table></div>' + (movs.length >= 200 ? '<p class="pos-mas">Se ven los últimos 200 movimientos.</p>' : '')
           : '<div class="pos-cartel">Todavía no tuvo movimientos ' + (dep ? 'en este depósito.' : 'en esta sucursal.') + '</div>') +
         '<div id="vaAjuste"></div><div class="pos-pie">' +
-          (OFICINA ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) se hacen en Gestión → Stock.</span>') +
+          (ajustaStock() ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) los hace la oficina.</span>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       dentro.querySelectorAll('.va-deps tr[data-dep]').forEach(function (tr) {
         tr.onclick = function () { abrirVariante(localId, cod, talle, color, alCambiar, tr.getAttribute('data-dep')); };
@@ -8534,14 +8555,15 @@
      ════════════════════════════════════════════════════════════════════ */
   function verDepositos() {
     if (MODO === 'fabrica') { verDepositosFabrica(); return; }   // SQL 258
-    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
-    var F = S.dpF = S.dpF || { local: gestion && puede('locales') ? '' : l.id, q: '', activos: true };
+    /* Desde el 7/11 sólo en el POS (Gestión → Depósitos era la misma): «Todas» con «Ver otros locales»; arranca en el local de la compu. */
+    var c = $('cuerpo'), l = localStock();
+    var F = S.dpF = S.dpF || { local: l.id, q: '', activos: true };
     if (F.local && !localMio(F.local)) F.local = l.id;
     c.innerHTML = cabeza('Depósitos', 'Dónde está la mercadería de cada sucursal. Las ventas, los cambios y los remitos van al predeterminado. Tocá uno para verlo o cambiarlo.',
         '<button type="button" class="btn btn-sec btn-chico" id="depBajar" disabled>Bajar para Excel</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="depNuevo">Nuevo depósito</button>') +
       '<div class="pos-filtros">' +
-        campo('', 'Sucursal', '<select id="depLocal" class="desplegable">' + (gestion ? todasLasSucursales() : '') + opcionesLocales(F.local) + '</select>') +
+        campo('', 'Sucursal', '<select id="depLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(F.local) + '</select>') +
         campo('ancho', 'Filtrar', '<input type="search" id="depBuscar" placeholder="Nombre o código" autocomplete="off" spellcheck="false">') +
         '<label class="pos-check"><input type="checkbox" id="depActivos"' + (F.activos ? ' checked' : '') + '> Activos</label>' +
       '</div>' +
@@ -11438,11 +11460,12 @@
   function claveSg(g) { return K_SG + ':' + g.local + ':' + (g.mod.otro ? 'otro' : g.mod.id); }
 
   function verStockGeneral() {
-    var c = $('cuerpo'), gestion = OFICINA, l = localStock();
-    var F = S.sgF = S.sgF || { local: gestion && puede('locales') ? '' : l.id };
+    /* Desde el 7/11 sólo en el POS (Gestión → Stock general era la misma): «Todas» con «Ver otros locales»; arranca en el local de la compu. */
+    var c = $('cuerpo'), l = localStock();
+    var F = S.sgF = S.sgF || { local: l.id };
     if (F.local && !localMio(F.local)) F.local = l.id;
     c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero al depósito de la temporada nueva y se controla con dos productos testigo. Mientras tanto se sigue vendiendo del de antes.') +   // el «Actualizar» con letras es ahora el botón común (5/11)
-      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="sgLocal" class="desplegable">' + (gestion ? todasLasSucursales() : '') + opcionesLocales(F.local) + '</select>') + '</div>' +
+      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="sgLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(F.local) + '</select>') + '</div>' +
       '<div id="sgCuerpo"><p class="cargando">Cargando…</p></div>';
     F.local = $('sgLocal').value;
     var pedido = 0, D = null;
