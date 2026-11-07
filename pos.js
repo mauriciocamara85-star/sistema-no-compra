@@ -869,7 +869,8 @@
   /* ── El menú de la izquierda ── */
   /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. Tickets también
      (SQL 171): con el panel de la derecha, la lista entra entera en la PC del local. */
-  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets' || S.vista === 'remito_nuevo' || (S.vista === 'remitos' && OFICINA); }   // el remito nuevo y la lista de la Fábrica (7/11): como la venta y Tickets
+  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets' || S.vista === 'remito_nuevo' || (S.vista === 'remitos' && OFICINA) ||
+                                 S.vista === 'devolucion_nueva'; }   // el remito nuevo, la lista de la Fábrica y la devolución nueva (7/11): como la venta y Tickets
   function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : leer(K_FIJO) !== '1'; }
   function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else guardar(K_FIJO, ch ? '0' : '1'); }
 
@@ -9919,15 +9920,22 @@
   /** El total de una devolución: sin el SQL 189 no hay precios ("—"). */
   function totalDev(f) { return f.sin_precio === undefined ? '—' : plata(cent(f.total || 0)); }
 
+  /* 7/11 (Mauricio: «hagámoslo igual que BlueSoft»): como la lista «Devoluciones a Fábrica y Proveedores» de BlueSoft, en
+     las mismas posiciones. Arriba a la derecha Nueva devolución y Exportar (con Actualizar); el período y la Sucursal; la
+     lista a todo el alto, que se desliza adentro con los títulos fijos, un renglón por devolución, con las columnas de
+     BlueSoft (Fecha, Comprobante, Referencia, Estado, Depósito, Cantidad, Total y Observaciones; quién la cargó, al pasar el
+     mouse por el número) y abajo la cantidad de devoluciones, de productos y el monto total (con «Ver precios»). */
   function verDevoluciones() {
     var c = $('cuerpo'), l = localStock(), prueba = enPrueba();
-    c.innerHTML = cabeza('Devolución a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+    c.classList.add('lleno');
+    c.innerHTML = cabeza('Devoluciones a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que el local le devuelve a la fábrica (fallados, sobrantes). Sale del stock al guardarla; cuando llega, la oficina la da por recibida.',
-        '<button type="button" class="btn btn-sec btn-chico" id="dvBajar" disabled>Bajar para Excel</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" data-ir="devolucion_nueva">Nueva devolución</button>') +
+        '<button type="button" class="btn btn-pri btn-chico" data-ir="devolucion_nueva">Nueva devolución</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="dvBajar" disabled title="Las devoluciones que se ven, para abrirlas en Excel">Exportar</button>') +
       '<div class="pos-filtros"><div id="dvPer"></div>' + campo('', 'Sucursal', '<select id="dvLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') + '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan devoluciones: el stock es de verdad. Apagalo (abajo, en el menú) para hacer una.</div>' : '') +
-      '<div id="dvLista"><p class="cargando">Cargando…</p></div>';
+      '<div id="dvLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="dvPie"></div>';
     engancharIr(c);
     var per = periodoPos($('dvPer'), { inicial: 'mes', guardar: 'pos_devoluciones_periodo', hastaHoy: true, alCambiar: cargar });
     $('dvLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
@@ -9936,36 +9944,44 @@
       var r = per.rango(), n = ++pedido, loc = $('dvLocal').value;
       $('dvLista').innerHTML = '<p class="cargando">Cargando…</p>';
       $('dvBajar').disabled = true;
-      llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
+      return llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
         if (n !== pedido || !$('dvLista')) return;
         /* De todos los remitos del local, los que salen de él y vuelven a la fábrica. */
         filas = (d.filas || []).filter(function (f) { return f.origen_local_id === loc && !f.destino_local_id; });
         pintar(d.mas);
-      }).catch(function (e) { if ($('dvLista')) $('dvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+      }).catch(function (e) {
+        if (n !== pedido || !$('dvLista')) return;
+        $('dvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('dvPie').innerHTML = '';
+      });
     }
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
     function pintar(mas) {
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
       var con189 = !filas.length || filas[0].sin_precio !== undefined, vp = puede('precios');   // SQL 190: sin «Ver precios», sin el monto
-      /* Los totales de abajo de BlueSoft: cantidad de devoluciones, de productos (unidades) y el monto. */
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Devoluciones</span><b>' + miles(vivas.length) + '</b></div>' +
-        '<div class="pos-kpi"><span>Enviadas, sin llegar</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div>' +
-        '<div class="pos-kpi"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
-        (vp ? '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div>' : '') + '</div>';
+      /* Abajo, como BlueSoft: la cantidad de devoluciones (sus «líneas»), de productos y el monto total; y lo nuestro en un
+         renglón chico: cuántas viajan todavía. Sin las anuladas. */
+      var viajan = vivas.filter(function (f) { return f.estado === 'pendiente'; }).length;
+      $('dvPie').innerHTML = caja('Devoluciones', miles(vivas.length)) + caja('Productos', num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)), vp ? '' : 'fuerte') +
+        (vp ? caja('Monto total', con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—', 'fuerte') : '') +
+        '<p class="pos-por-letra"><span>Enviadas, sin llegar a la fábrica <b>' + num(viajan) + '</b></span></p>';
       if (!filas.length) {
-        $('dvLista').innerHTML = kpis + '<div class="pos-cartel">No hay devoluciones de ' + esc(nombreLocal(localDe($('dvLocal').value))) + ' en ese período. Se hacen con «Nueva devolución».</div>';
+        $('dvLista').innerHTML = '<div class="pos-cartel">No hay devoluciones de ' + esc(nombreLocal(localDe($('dvLocal').value))) + ' en ese período. Se hacen con «Nueva devolución».</div>';
         return;
       }
-      /* Las columnas de BlueSoft (Fecha, Comprobante, Estado, Cantidad, Total, Observaciones), con quién la cargó. */
-      $('dvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Estado</th><th>Cargó</th>' +
-          '<th class="n">Unidades</th>' + (vp ? '<th class="n">Total</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
+      /* Las columnas de BlueSoft. «Tercero» (siempre la fábrica) y «Nombre» (vacío allá) no van. */
+      $('dvLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla rg-tabla dv-lista"><thead><tr><th>Fecha</th><th>Comprobante</th><th>Referencia</th>' +
+          '<th>Estado</th><th>Depósito</th><th class="n">Cantidad</th>' + (vp ? '<th class="n">Total</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           return '<tr data-dev="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.dvMarcar ? 'recien' : '') + '">' +
-            '<td><b>' + esc(refRemito(f)) + '</b></td><td>' + esc(fechaHora(f.fecha)) + '<small class="st-chico">' + esc(diaSemana(f.fecha)) + '</small></td>' +
-            '<td>' + pillDev(f.estado) + (f.recibido_en ? '<small class="st-chico">' + esc(fechaHora(f.recibido_en)) + '</small>' : '') + '</td>' +
-            '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + num(f.unidades) + '</td>' +
-            (vp ? '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
-            '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
+            '<td class="rg-nw">' + esc(fechaHora(f.fecha)) + '</td>' +
+            '<td class="rg-nw"' + (f.creado_nombre ? ' title="' + esc('La cargó ' + f.creado_nombre) + '"' : '') + '><b>' + esc(refRemito(f)) + '</b></td>' +
+            '<td>' + esc(f.referencia || '—') + '</td>' +
+            '<td class="rg-nw">' + pillDev(f.estado) + (f.recibido_en && f.estado !== 'anulado' ? '<small>' + esc(fechaHora(f.recibido_en)) + '</small>' : '') + '</td>' +
+            '<td>' + esc(f.origen_deposito || '—') + '</td>' +
+            '<td class="n tachar">' + num(f.unidades) + '</td>' +
+            (vp ? '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small title="Sin precio en la lista de la sucursal: no suman">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
+            '<td class="cb-que rg-obs" title="' + esc(f.observaciones || '') + '">' + esc(f.observaciones || '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
       $('dvLista').querySelectorAll('tr[data-dev]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-dev'))];
@@ -9980,10 +9996,11 @@
     $('dvBajar').onclick = function () {
       var loc = nombreLocal(localDe($('dvLocal').value)), r = per.rango();
       var vp = puede('precios');
-      bajarCsv('Devoluciones a fábrica ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sucursal', 'Estado', 'Cargó', 'Unidades'].concat(vp ? ['Total'] : [], ['Observaciones']),
+      bajarCsv('Devoluciones a fábrica ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv',
+        ['Fecha', 'Comprobante', 'Referencia', 'Estado', 'Sucursal', 'Depósito', 'Cantidad'].concat(vp ? ['Total'] : [], ['Observaciones', 'Cargó']),
         filas.map(function (f) {
-          return [refRemito(f), fechaHora(f.fecha), loc, (ESTADO_DEV[f.estado] || [f.estado])[0], f.creado_nombre || '', Number(f.unidades || 0)]
-            .concat(vp ? [f.total == null ? '' : String(Number(f.total)).replace('.', ',')] : [], [f.observaciones || '']);   // la coma decimal, para el Excel en castellano
+          return [fechaHora(f.fecha), refRemito(f), f.referencia || '', (ESTADO_DEV[f.estado] || [f.estado])[0], loc, f.origen_deposito || '', Number(f.unidades || 0)]
+            .concat(vp ? [f.total == null ? '' : String(Number(f.total)).replace('.', ',')] : [], [f.observaciones || '', f.creado_nombre || '']);   // la coma decimal, para el Excel en castellano
         }));
     };
     cargar();
@@ -10371,6 +10388,97 @@
         '</aside>' +
       '</div>';
   }
+  /* 7/11 (Mauricio: «hagámoslo igual que BlueSoft»): la devolución a fábrica guardada, como la «Devolución a Fábrica» de
+     BlueSoft: arriba el título con la sucursal, el número con la fecha y los botones (Anular, donde BlueSoft dice
+     Eliminar; Imprimir; Exportar; Cerrar); los datos en dos columnas (Comprobante, Responsable, Fecha, Referencia y
+     Depósito; Proveedor, Estado, Llegó a la fábrica, el depósito de la fábrica al que entró y la Lista de precios); la grilla
+     con un renglón por talle y color (Código, Descripción, Cantidad, Talle, Color, Razón y, con «Ver precios», el precio
+     unitario y el total) y abajo, a la izquierda las observaciones y a la derecha la cantidad y el total, con «Llegó a la
+     fábrica» para la oficina. Los mismos id de la ventana de antes (rmAnularBtn, rmFabrica, #rmAnular): abrirRemito les
+     pone lo que hacen. Sin lo que acá no existe (Vencimiento, Estado impresión, Moneda, Plazo y Forma de pago, Condición
+     frente al IVA, Neto, Recargos y Descuentos, los conceptos, Asociar pedido, Documentos asociados). */
+  function devolucionBsHtml(r, o) {
+    var an = r.estado === 'anulado', fs = renglonesRemito(r), vp = puede('precios') && r.total !== undefined, unid = 0;
+    var porCod = {}, sinPrecio = 0;
+    (r.productos || []).forEach(function (p) { porCod[p.codigo] = p; if (p.precio == null) sinPrecio++; });
+    fs.forEach(function (f) { unid += f.cantidad; });
+    var lst = vp && r.origen_local_id ? listaPorId(listaDe(localDe(r.origen_local_id))) : null;
+    var dato = function (l, v) { return '<div><span>' + l + '</span><b>' + v + '</b></div>'; };
+    return '<div class="rm-bs-cab">' +
+        '<div class="rm-bs-tit"><h3 id="posVentTit">Devolución a fábrica</h3><small>' + esc(bonito(r.origen)) + '</small></div>' +
+        '<div class="rm-bs-num"><b>' + esc(refRemito(r)) + '</b><span>' + esc(fechaDe(r.fecha)) + '</span></div>' +
+        '<div class="rm-bs-acc">' +
+          (o.anular ? '<button type="button" class="btn btn-sec btn-chico" id="rmAnularBtn">Anular</button>' : '') +
+          (an ? '' : '<button type="button" class="btn btn-sec btn-chico" id="rmImpRem" title="Para mandarla con la mercadería">Imprimir</button>') +
+          '<button type="button" class="btn btn-sec btn-chico" id="rmExcel" title="Los renglones de la devolución, para abrirlos en Excel">Exportar</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button></div>' +
+      '</div>' +
+      '<div id="rmAnular"></div>' +
+      '<div class="rm-bs-datos">' +
+        '<div>' + dato('Comprobante', esc(refRemito(r))) + dato('Responsable', esc(r.creado_nombre || '—')) + dato('Fecha', esc(fechaHora(r.fecha))) +
+          dato('Referencia', esc(r.referencia || '—')) + dato('Depósito', esc(r.origen_deposito || '—')) + '</div>' +
+        '<div>' + dato('Proveedor', 'Fábrica') + dato('Estado', pillDev(r.estado)) +
+          dato('Llegó a la fábrica', r.recibido_en ? esc(fechaHora(r.recibido_en)) : an ? '—' : 'Todavía no') +
+          (r.destino_deposito ? dato('Entró a', esc(r.destino_deposito)) : '') +   // SQL 259: el depósito de la fábrica
+          (lst ? dato('Lista de precios', esc(lst.nombre)) : '') + '</div>' +
+      '</div>' + o.carteles +
+      '<div class="rm-bs-cuerpo">' +
+        '<div class="tk-grilla rm-bs-grilla"><table class="tk-tabla"><thead><tr><th>Código</th><th>Descripción</th><th class="n">Cantidad</th><th class="c">Talle</th><th>Color</th>' +
+          '<th>Razón</th>' + (vp ? '<th class="n">Precio unit.</th><th class="n">Precio total</th>' : '') + '</tr></thead><tbody>' +
+          (fs.length ? fs.map(function (f) {
+            var pr = vp && f.p.precio != null ? cent(f.p.precio) : null;
+            return '<tr><td class="tk-cod">' + esc(f.p.codigo) + '</td><td class="tk-desc">' + esc(nombreProd(f.p.codigo, f.p.descripcion)) + '</td><td class="n">' + num(f.cantidad) + '</td>' +
+              '<td class="c">' + esc(f.talle || '') + '</td><td>' + esc(f.color ? nombreCol(f.color, f.p.codigo) : '') + '</td><td>' + esc(f.p.razon || '') + '</td>' +
+              (vp ? '<td class="n">' + (pr == null ? '<span class="apagado" title="No tenía precio en la lista de la sucursal">—</span>' : plata(pr)) + '</td>' +
+                    '<td class="n">' + (pr == null ? '<span class="apagado">—</span>' : plata(pr * f.cantidad)) + '</td>' : '') + '</tr>';
+          }).join('') : '<tr class="tk-vacia"><td colspan="' + (vp ? 8 : 6) + '">Esta devolución no tiene productos.</td></tr>') +
+        '</tbody></table></div>' +
+        '<div class="dv-bs-pie">' +
+          '<div class="rm-bs-nota dv-bs-obs"><span>Observaciones</span><p>' + (r.observaciones ? esc(r.observaciones) : '<span class="apagado">Sin observaciones.</span>') + '</p></div>' +
+          '<div class="rm-bs-fin"><dl class="rm-bs-tots"><div><dt>Cantidad total:</dt><dd>' + num(unid) + '</dd></div>' +
+            (vp ? '<div><dt>Total:</dt><dd>' + plata(cent(r.total || 0)) + '</dd></div>' : '') + '</dl>' +
+            (vp && sinPrecio ? '<p class="pos-ayuda">' + (sinPrecio === 1 ? 'Un producto no tenía precio en la lista: no suma.' : sinPrecio + ' productos no tenían precio en la lista: no suman.') + '</p>' : '') +
+            (o.recibir ? '<button type="button" class="btn btn-pri" id="rmFabrica">Llegó a la fábrica</button>' : '') + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+  /** «Exportar» de la devolución guardada: los renglones con la razón (y el precio, con «Ver precios»). */
+  function bajarDevolucion(r) {
+    var fs = renglonesRemito(r), vp = puede('precios') && r.total !== undefined, coma = function (x) { return x == null ? '' : String(Number(x)).replace('.', ','); };
+    bajarCsv('devolucion-' + refRemito(r) + '-' + normal(bonito(r.origen)).split(/[^a-z0-9]+/).filter(Boolean).join('-') + '.csv',
+      ['Ítem', 'Código', 'Descripción', 'Talle', 'Color', 'Descripción color', 'Cantidad'].concat(vp ? ['Precio unitario', 'Precio total'] : [], ['Razón']),
+      fs.map(function (f, i) {
+        var pr = vp ? f.p.precio : null;
+        return [i + 1, f.p.codigo, nombreProd(f.p.codigo, f.p.descripcion), f.talle || '', f.color || '', f.color ? nombreCol(f.color, f.p.codigo) : '', f.cantidad]
+          .concat(vp ? [coma(pr), pr == null ? '' : coma(Math.round(Number(pr) * f.cantidad * 100) / 100)] : [], [f.p.razon || '']);   // la coma decimal, para el Excel en castellano
+      }));
+  }
+  /** «Imprimir» la devolución: la hoja para mandar con la mercadería (lo que va, por producto y color con sus talles, y la
+      razón), sin precios. */
+  function imprimirDevolucion(r) {
+    var total = 0, filas = [];
+    (r.productos || []).forEach(function (p) {
+      var porColor = {};
+      (p.celdas || []).forEach(function (x) { if (Number(x.cantidad) > 0) (porColor[x.color] = porColor[x.color] || []).push(x); });
+      ordenarColores(Object.keys(porColor), p.codigo).forEach(function (c) {
+        var cs = porColor[c], ts = ordenarTalles(cs.map(function (x) { return x.talle; }), p.codigo);
+        var n = cs.reduce(function (s, x) { return s + Number(x.cantidad); }, 0);
+        total += n;
+        filas.push('<tr><td><b>' + esc(p.codigo) + '</b></td><td>' + esc(nombreProd(p.codigo, p.descripcion)) + '</td><td>' + esc(c ? nombreCol(c, p.codigo) : '—') + '</td><td>' +
+          ts.map(function (t) { var x = cs.filter(function (y) { return y.talle === t; })[0]; return (t ? esc(t) + ' ' : '') + num(x.cantidad); }).join(' · ') +
+          '</td><td class="n">' + num(n) + '</td><td>' + esc(p.razon || '') + '</td></tr>');
+      });
+    });
+    var hoja = '<div class="hoja"><div class="cab"><div><h1>DEVOLUCIÓN A FÁBRICA</h1><div class="chico">Salida de mercadería · no válido como factura</div></div>' +
+        '<div class="der"><div class="num">' + esc(refRemito(r)) + '</div><div>' + esc(fechaDe(r.fecha)) + '</div>' + (r.referencia ? '<div class="chico">Ref. ' + esc(r.referencia) + '</div>' : '') + '</div></div>' +
+      '<div class="datos"><div><h2>Sale de</h2><b>VDH ' + esc(bonito(r.origen)) + '</b>' + (r.origen_deposito ? '<br><span class="chico">Depósito: ' + esc(r.origen_deposito) + '</span>' : '') + '</div>' +
+        '<div><h2>Para</h2><b>Fábrica</b></div><div><h2>La cargó</h2>' + esc(r.creado_nombre || '—') + '</div>' +
+        (r.observaciones ? '<div class="ancho"><h2>Observaciones</h2>' + esc(r.observaciones) + '</div>' : '') + '</div>' +
+      '<table><thead><tr><th>Código</th><th>Producto</th><th>Color</th><th>Talles</th><th class="n">Cantidad</th><th>Razón</th></tr></thead><tbody>' + filas.join('') + '</tbody>' +
+        '<tfoot><tr><td colspan="4">' + num(filas.length) + (filas.length === 1 ? ' renglón' : ' renglones') + '</td><td class="n">' + num(total) + (total === 1 ? ' unidad' : ' unidades') + '</td><td></td></tr></tfoot></table>' +
+      '<div class="firmas"><div>Entregó (el local)</div><div>Lo retira (firma y aclaración)</div><div>Recibió la fábrica (fecha y firma)</div></div></div>';
+    imprimirHoja('Devolución ' + refRemito(r), hoja);
+  }
   /** «Exportar» del remito guardado: los renglones, con las columnas que lee «Importar». */
   function bajarRemito(r) {
     var fs = renglonesRemito(r), llego = fs.some(function (f) { return f.contado != null; });
@@ -10433,6 +10541,13 @@
         caja.classList.add('rm-bs');
         dentro.innerHTML = remitoBsHtml(r, { anular: puedeAnular, carteles: cartelGestion + cartelDifs + (an ? cartelAn.replace(' style="margin-top:12px"', '') : '') });
         dentro.querySelector('#rmExcel').onclick = function () { bajarRemito(r); };
+      } else if (aFabrica) {
+        /* 7/11: la devolución, como la «Devolución a Fábrica» guardada de BlueSoft (devolucionBsHtml). */
+        caja.classList.add('rm-bs', 'dv-bs');
+        dentro.innerHTML = devolucionBsHtml(r, { anular: puedeAnular, recibir: gestion && pend,
+          carteles: cartelGestion + cartelDifs + (!gestion && pend ? '<div class="pos-cartel">Ya salió del stock de ' + esc(bonito(r.origen)) + '. Cuando llegue a la fábrica, la oficina la da por recibida.</div>' : '') +
+                    (an ? cartelAn.replace(' style="margin-top:12px"', '') : '') });
+        dentro.querySelector('#rmExcel').onclick = function () { bajarDevolucion(r); };
       } else
       dentro.innerHTML = (aFabrica ? '<h3 id="posVentTit">Devolución a fábrica ' + esc(refRemito(r)) + ' ' + pillDev(r.estado) + '</h3>' :
                        envio ? '<h3 id="posVentTit">Envío interno ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado) + '</h3>' :
@@ -10481,7 +10596,7 @@
       var re = dentro.querySelector('#rmEnviar');
       if (re) re.onclick = function () { re.disabled = true; enviarRemitos([r], volverAca).then(function () { if (re.isConnected) re.disabled = false; }); };
       var ip = dentro.querySelector('#rmImpRem');
-      if (ip) ip.onclick = function () { imprimirRemitos([r]); };
+      if (ip) ip.onclick = function () { if (aFabrica) imprimirDevolucion(r); else imprimirRemitos([r]); };
       var ie = dentro.querySelector('#rmImpExp');
       if (ie) ie.onclick = function () { pedirEnvio('expreso', [r]); };
       var it = dentro.querySelector('#rmImpRot');
@@ -11654,36 +11769,91 @@
 
   /* ════════════════════════════════════════════════════════════════════
      NUEVA DEVOLUCIÓN A FÁBRICA (el mostrador, SQL 189)
-     La "Devolución de Mercadería" de BlueSoft, con sus campos arriba
-     (Fecha, Letra X, Estado "Enviado", Proveedor, Sucursal) y los productos
-     abajo, con su precio y su razón. Es el mismo remito de Gestión, siempre
-     del local a la fábrica: sale del stock al guardarla (del depósito
-     predeterminado, SQL 193).
+     Es el mismo remito de Gestión, siempre del local a la fábrica: sale del
+     stock al guardarla y la oficina la da por recibida cuando llega.
+     7/11 (Mauricio, con la foto de la pantalla: «no está con el formato de
+     BlueSoft; hagámoslo igual»): como la «Devolución de Mercadería» de
+     BlueSoft, en las mismas posiciones, con el molde de la venta y del
+     remito nuevo (.tk .rn-bs): a la izquierda Fecha, Letra y Referencia;
+     Estado; Proveedor; Sucursal; Depósito (de cuál sale: el predeterminado
+     si no se elige otro, SQL 193) y abajo el Total y la Cantidad de
+     productos. A la derecha el Producto con «Importar productos…», la
+     grilla (un renglón por talle y color numerado, con el precio unitario,
+     el total y la razón) y abajo las Observaciones con «Exportar detalle a
+     Excel». La razón es del producto (así la guarda y la devuelve la
+     base): escrita en un renglón, vale para todos sus talles y colores.
      ════════════════════════════════════════════════════════════════════ */
   function verDevolucionNueva() {
     RN_DEV = true; RN_ENV = false; RN_SG = false;
     RN = cargarRemitoNuevo();
-    var c = $('cuerpo'), prueba = enPrueba();
+    var c = $('cuerpo'), prueba = enPrueba(), vp = puede('precios');   // SQL 190: los precios, con «Ver precios en remitos y envíos»
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Nueva devolución a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que el local le devuelve a la fábrica. Al guardarla sale del stock; cuando llega, la oficina la da por recibida.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="devoluciones">‹ Devoluciones</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar"' + (prueba ? ' disabled' : '') + '>Guardar la devolución</button>') +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan devoluciones: el stock es de verdad. Apagalo (abajo, en el menú) para guardarla.</div>' : '') +
-      '<div class="tk-datos rn-datos dv-datos">' +
-        campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
-        campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
-        campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
-        campo('', 'Proveedor', '<input type="text" value="Fábrica" readonly tabindex="-1">') +
-        campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: fallas, la retira Daki" autocomplete="off">') +
-      '</div>' + htmlProdRn();
+      '<div class="tk rn-bs dv-bs">' +
+        '<section class="tk-izq" aria-label="Los datos de la devolución"><div class="tk-datos">' +
+          campo('c4 rn-fecha', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
+          campo('c2', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
+          /* BlueSoft pone acá el número que va a tener; el nuestro (R-…) lo da la base al guardarla. */
+          campo('c6 rn-ref', 'Referencia', '<input type="text" value="" placeholder="Al guardarla" readonly tabindex="-1" title="El número (R-…) lo pone el sistema al guardarla">') +
+          campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1" title="Sale del stock al guardarla; cuando llega, la oficina la da por recibida">') +
+          campo('', 'Proveedor', '<input type="text" value="Fábrica" readonly tabindex="-1">') +
+          campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+          campo('', 'Depósito', '<select id="rnDepO" class="desplegable" title="De qué depósito de la sucursal sale"><option value="">El predeterminado</option></select>') +
+        '</div>' +
+        '<div class="tk-tot">' +
+          (vp ? '<div class="tk-caja" title="Con el precio de la lista de la sucursal"><span>Total</span><b id="rnPlata">$0</b></div>' : '') +
+          '<div class="tk-caja"><span>Cantidad de productos</span><b id="rnCant">0</b></div>' +
+        '</div></section>' +
+        '<section class="tk-der" aria-label="Los productos">' +
+          '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel o un TXT: Código, Talle, Color y Cantidad">Importar productos…</button>' +
+            '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+          '<div class="tk-grilla"><table class="tk-tabla dv-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
+            '<th class="c">Cant.</th>' + (vp ? '<th class="n">Precio unit.</th><th class="n">Precio total</th>' : '') + '<th>Razón</th><th><span class="sr">Quitar</span></th></tr></thead>' +
+            '<tbody id="rnFilas"></tbody></table></div>' +
+          '<div class="rn-pie"><div class="rn-pie-cab"><label class="pos-lbl" for="rnObs">Observaciones</label><div class="rn-pie-bts">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnExcel" title="Los renglones de la devolución, para abrirlos en Excel">Exportar detalle a Excel</button></div></div>' +
+            '<textarea id="rnObs" maxlength="300" placeholder="Ej.: fallas, la retira Daki"></textarea><p class="rn-tot" id="rnTot"></p></div>' +
+        '</section>' +
+      '</div>';
     engancharIr(c);
+    c.querySelector('.pos-cab').classList.add('pos-cab-act');   // la bajada al lado de los botones, arriba a la derecha como en BlueSoft
     $('rnObs').value = RN.observaciones || '';
-    $('rnOrigen').onchange = function () { RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value); guardarBorradorRn(); preciosRn(); };
+    $('rnExcel').onclick = bajarRn;
+    $('rnOrigen').onchange = function () {
+      RN.origen = this.value; RN.dep_o = ''; S.stLocal = this.value; recordarLocal(this.value); guardarBorradorRn();
+      depositosDevRn(); preciosRn();
+    };
+    $('rnDepO').onchange = function () { RN.dep_o = this.value; guardarBorradorRn(); pintarRn(); };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
     engancharRn(verDevolucionNueva);
+    depositosDevRn();
     preciosRn();
+  }
+  /** SQL 193: los depósitos activos de la sucursal de la devolución; sin elegir, el predeterminado (como antes). */
+  function depositosDevRn() {
+    var loc = RN.origen, s = $('rnDepO');
+    if (!s) return;
+    if (S.dep[loc]) llenar(S.dep[loc]); else { s.disabled = true; traerDepositos(loc).then(llenar); }
+    function llenar(ds) {
+      s = $('rnDepO');
+      if (!s || !RN || !RN_DEV || RN.origen !== loc) return;
+      var act = (ds || []).filter(function (x) { return x.activo; }), d = depDevRn();
+      if (RN.dep_o && !depDe(act, RN.dep_o)) { RN.dep_o = ''; guardarBorradorRn(); }
+      s.innerHTML = act.length ? opciones(act.map(function (x) { return [x.id, nombreDep(x)]; }), d ? d.id : '') : '<option value="">El predeterminado</option>';
+      s.disabled = act.length < 2;   // con uno solo (o sin el SQL 193), sale de ése: no hay qué elegir
+      pintarRn();
+    }
+  }
+  /** El depósito de donde sale la devolución: el elegido, si no el predeterminado de los activos (null sin depósitos). */
+  function depDevRn() {
+    var act = (S.dep[RN.origen] || []).filter(function (x) { return x.activo; });
+    return depDe(act, RN.dep_o) || depPredeterminado(act) || act[0] || null;
   }
   /* ════════════════════════════════════════════════════════════════════
      NUEVO ENVÍO INTERNO (el mostrador, 28/10)
@@ -11927,25 +12097,36 @@
 
   /** El remito nuevo (7/11): la grilla del «Remito de Venta» de BlueSoft, un renglón por talle y color numerado como en la
       venta, con la cantidad para cambiar ahí mismo y la ✕ para quitarlo. A la izquierda, abajo, la cantidad de productos
-      (las unidades) y los diferentes (los renglones). */
+      (las unidades) y los diferentes (los renglones).
+      La devolución a fábrica (7/11) usa la misma grilla con el precio unitario y el total de cada renglón (con «Ver precios»)
+      y la razón; a la izquierda, abajo, el Total y la cantidad de productos. */
   function pintarRnBs(marcar) {
-    var t = $('rnFilas'), n = 0;
+    var t = $('rnFilas'), n = 0, dev = RN_DEV, vp = dev && puede('precios'), lista = vp ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = {};
     RN.lineas.forEach(function (l) { n += l.cantidad; });
     $('rnCant').textContent = num(n);
-    $('rnDif').textContent = num(RN.lineas.length);
+    if ($('rnDif')) $('rnDif').textContent = num(RN.lineas.length);
     t.innerHTML = RN.lineas.length ? RN.lineas.map(function (l, i) {
-      var nom = nombreProd(l.codigo, l.descripcion);
+      var nom = nombreProd(l.codigo, l.descripcion), pr = vp ? precioDe(l.codigo, lista) : null;
+      if (vp && pr == null) sinPrecio[l.codigo] = 1; else if (vp) plataTot += pr * l.cantidad;
       return '<tr data-i="' + i + '"' + (l.codigo === marcar ? ' class="rn-marca"' : '') + '><td class="pos-num">' + ('00' + (i + 1)).slice(-3) + '</td>' +
         '<td class="tk-cod">' + esc(l.codigo) + '</td><td class="tk-desc">' + esc(nom) +
           (PROD[l.codigo] ? '' : ' <span class="pill pill-warn" title="No está en el catálogo">Fuera del catálogo</span>') + '</td>' +
         '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color ? nombreCol(l.color, l.codigo) : '') + '</td>' +
         '<td class="c"><input type="number" class="tk-cant" min="1" max="9999" value="' + l.cantidad + '" aria-label="' + esc('Cantidad de ' + nom + ' ' + [l.talle, l.color].filter(Boolean).join(' ')) + '"></td>' +
+        (vp ? '<td class="n">' + (pr == null ? '<span class="apagado" title="No tiene precio en la lista de la sucursal">—</span>' : plata(pr)) + '</td>' +
+              '<td class="n">' + (pr == null ? '<span class="apagado">—</span>' : '<b>' + plata(pr * l.cantidad) + '</b>') + '</td>' : '') +
+        (dev ? '<td><input type="text" class="dv-razon" data-razon="' + esc(l.codigo) + '" maxlength="60" placeholder="Ej.: fallada" autocomplete="off" value="' + esc(RN.razon[l.codigo] || '') + '"' +
+                 ' title="La razón es del producto: vale para todos sus talles y colores" aria-label="' + esc('Razón de ' + l.codigo) + '"></td>' : '') +
         '<td><button type="button" class="tk-quitar" data-quitar="' + i + '" title="Quitar" aria-label="' + esc('Quitar ' + nom + ' ' + [l.talle, l.color].filter(Boolean).join(' ')) + '">' + icono('x') + '</button></td></tr>';
     }).join('') :
-      '<tr class="tk-vacia"><td colspan="7"><b>Todavía no hay productos</b>Dispará la pistola a las etiquetas (suma de a una), buscá el producto arriba y escribí cuántas van de cada talle y color, ' +
+      '<tr class="tk-vacia"><td colspan="' + (dev ? (vp ? 10 : 8) : 7) + '"><b>Todavía no hay productos</b>Dispará la pistola a las etiquetas (suma de a una), buscá el producto arriba y escribí cuántas van de cada talle y color, ' +
       'o importá un Excel (Código, Talle, Color y Cantidad).</td></tr>';
-    var d = rnFab() && depFabRn();   // SQL 259
-    $('rnTot').innerHTML = !RN.lineas.length ? '' : RN.origen ? 'Salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' + (RN.destino === A_FABRICA ? ' y vuelven a la fábrica.' : '.') :
+    if ($('rnPlata')) $('rnPlata').textContent = plata(plataTot);
+    var d = rnFab() && depFabRn(), dd = dev && depDevRn(), ns = Object.keys(sinPrecio).length;   // SQL 259; la devolución, de su depósito (SQL 193)
+    $('rnTot').innerHTML = !RN.lineas.length ? '' :
+      dev ? 'Salen del ' + (dd ? 'depósito «' + esc(dd.nombre) + '» de ' : 'stock de ') + esc(nombreLocal(localDe(RN.origen))) + ' al guardar y vuelven a la fábrica.' +
+            (ns ? ' ' + (ns === 1 ? 'Un producto no tiene precio en la lista: no suma al total.' : ns + ' productos no tienen precio en la lista: no suman al total.') : '') :
+      RN.origen ? 'Salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' + (RN.destino === A_FABRICA ? ' y vuelven a la fábrica.' : '.') :
                            d ? 'Salen del depósito «' + esc(d.nombre) + '» de la fábrica al guardar.' : '';
     /* Los cambios de la grilla, una sola vez (la tabla queda; se rehacen sólo sus renglones). */
     if (!t.dataset.enganchado) {
@@ -11958,7 +12139,15 @@
         pintarRn();
       });
       t.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && e.target.matches('.tk-cant')) { e.preventDefault(); e.target.blur(); $('rnProd').focus(); }
+        if (e.key === 'Enter' && e.target.matches('.tk-cant, .dv-razon')) { e.preventDefault(); e.target.blur(); $('rnProd').focus(); }
+      });
+      /* La razón de la devolución es del producto: la de un renglón se ve también en los otros talles y colores. */
+      t.addEventListener('input', function (e) {
+        if (!e.target.matches('.dv-razon')) return;
+        var cod = e.target.getAttribute('data-razon'), v = e.target.value;
+        RN.razon[cod] = v;
+        t.querySelectorAll('.dv-razon').forEach(function (x) { if (x !== e.target && x.getAttribute('data-razon') === cod) x.value = v; });
+        guardarBorradorRn();
       });
       t.addEventListener('click', function (e) {
         var b = e.target.closest('button[data-quitar]');
@@ -11975,11 +12164,24 @@
   }
   /** «Exportar detalle a Excel» de BlueSoft: los renglones del remito, con las columnas que lee «Importar» (Código, Talle, Color y Cantidad). */
   function bajarRn() {
+    if (RN_DEV) { bajarDevRn(); return; }
     if (!RN || !RN.lineas.length) { avisar('err', 'El remito todavía no tiene productos.'); return; }
     var ld = localDe(RN.destino), a = RN.destino === A_FABRICA ? 'fabrica' : ld ? normal(nombreLocal(ld)).split(/[^a-z0-9]+/).filter(Boolean).join('-') : '';
     bajarCsv('remito' + (a ? '-' + a : '') + '-' + Interfaz.fecha.hoy() + '.csv', ['Ítem', 'Código', 'Descripción', 'Talle', 'Color', 'Descripción color', 'Cantidad'],
       RN.lineas.map(function (l, i) {
         return [i + 1, l.codigo, nombreProd(l.codigo, l.descripcion), l.talle || '', l.color || '', l.color ? nombreCol(l.color, l.codigo) : '', l.cantidad];
+      }));
+  }
+  /** La devolución (7/11): lo mismo, con el precio (con «Ver precios») y la razón. «Importar» lee Código, Talle, Color y Cantidad. */
+  function bajarDevRn() {
+    if (!RN || !RN.lineas.length) { avisar('err', 'La devolución todavía no tiene productos.'); return; }
+    var vp = puede('precios'), lista = vp ? listaDe(localDe(RN.origen)) : null, coma = function (c) { return c == null ? '' : String(c / 100).replace('.', ','); };
+    bajarCsv('devolucion-' + normal(nombreLocal(localDe(RN.origen))).split(/[^a-z0-9]+/).filter(Boolean).join('-') + '-' + Interfaz.fecha.hoy() + '.csv',
+      ['Ítem', 'Código', 'Descripción', 'Talle', 'Color', 'Descripción color', 'Cantidad'].concat(vp ? ['Precio unitario', 'Precio total'] : [], ['Razón']),
+      RN.lineas.map(function (l, i) {
+        var pr = vp ? precioDe(l.codigo, lista) : null;
+        return [i + 1, l.codigo, nombreProd(l.codigo, l.descripcion), l.talle || '', l.color || '', l.color ? nombreCol(l.color, l.codigo) : '', l.cantidad]
+          .concat(vp ? [coma(pr), coma(pr == null ? null : pr * l.cantidad)] : [], [String(RN.razon[l.codigo] || '').trim()]);   // la coma decimal, para el Excel en castellano
       }));
   }
 
@@ -12059,11 +12261,17 @@
         return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', mandás ' + l.cantidad; }).join('; ') +
         (faltan.length > 4 ? '…' : '') + '). Si lo mandás igual, queda en negativo.' : '';
     }, function () { return ''; });
+    /* La devolución sale del depósito elegido (7/11; sin elegir, el predeterminado): ése es el que se revisa y el que se manda. */
+    var dD = dev ? depDevRn() : null;
     /* Un envío entre locales: si el que lo manda no tiene todo según el sistema, que lo sepa (no frena). */
-    if (lo) aviso = traerStock(lo.id, true).then(function (x) {
+    if (lo) aviso = (dD ? llamarCorto('pos_stock_local', { p_local: lo.id, p_deposito: dD.id }, 8000).then(function (d) {
+      var m = {};
+      (d.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
+      return { con: !!d.con_stock, m: m };
+    }, function () { return null; }) : traerStock(lo.id, true)).then(function (x) {
       if (!x || !x.con) return '';
       var faltan = RN.lineas.filter(function (l) { return (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) < l.cantidad; });
-      return faltan.length ? '\n\nOjo: según el sistema, ' + nombreLocal(lo) + ' no tiene todo (' + faltan.slice(0, 4).map(function (l) {
+      return faltan.length ? '\n\nOjo: según el sistema, ' + (dD ? 'el depósito «' + dD.nombre + '» de ' : '') + nombreLocal(lo) + ' no tiene todo (' + faltan.slice(0, 4).map(function (l) {
         return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) + (dev ? ', devolvés ' : ', mandás ') + l.cantidad; }).join('; ') +
         (faltan.length > 4 ? '…' : '') + (dev ? '). Si la guardás igual, queda en negativo.' : '). Si lo mandás igual, queda en negativo.') : '';
     });
@@ -12071,7 +12279,7 @@
       if (!confirm((env ? '¿Guardar el envío de ' + nombreLocal(lo) + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
                           ' Salen del stock ahora. ' + aDonde + ' lo recibe contándolo en POS → Remitos.' :
                     dev ? '¿Guardar la devolución a la fábrica de ' + nombreLocal(lo) + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
-                          ' Salen del stock ahora. Cuando llegue, la oficina la da por recibida.' :
+                          ' Salen ' + (dD && !dD.predeterminado ? 'del depósito «' + dD.nombre + '» ' : 'del stock ') + 'ahora. Cuando llegue, la oficina la da por recibida.' :
                    '¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
                    (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') +
                    (fab ? ' Cuando llegue, se da por recibido en Fábrica → Remitos.' :
@@ -12085,6 +12293,7 @@
       var items = !dev ? RN.lineas : RN.lineas.map(function (l) { return Object.assign({}, l, { razon: String(RN.razon[l.codigo] || '').trim() }); });
       var pl = { clave: RN.clave, origen_local_id: RN.origen || null, destino_local_id: fab ? null : RN.destino, a_fabrica: fab,
                  referencia: RN.referencia || '', observaciones: RN.observaciones || '', items: items };
+      if (dD) pl.origen_deposito_id = dD.id;   // la base revisa que sea de la sucursal y esté activo (SQL 193)
       /* SQL 259: lo que se ve en pantalla (el transporte también: «Sin transporte» va vacío). */
       if (conDatos) Object.assign(pl, { origen_deposito_id: dF ? dF.id : null, transporte_id: transpRn() || null, bultos: bu,
                                         asegurado: ac == null ? '' : String(aPesos(ac)), temporada: RN.temp || '' });

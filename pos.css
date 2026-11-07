@@ -1038,6 +1038,13 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .tk-datos.ev-datos > :nth-child(5), .tk-datos.ev-datos > :last-child { grid-column: span 12; }
 }
 .pos input.dv-razon { min-width: 170px; }
+/* La devolución nueva como la «Devolución de Mercadería» de BlueSoft (7/11): el molde del remito nuevo (.rn-bs). Abajo a la
+   izquierda el Total y la cantidad (sin «Ver precios», la cantidad sola, a lo ancho); en la grilla, la razón chica. */
+.dv-bs .tk-tot > :only-child { grid-column: 1 / -1; }
+.pos .tk-tabla input.dv-razon { width: 100%; min-width: 96px; padding: 4px 8px; }
+.dv-tabla td.tk-desc { min-width: 100px; }
+/* La lista como «Devoluciones a Fábrica y Proveedores» de BlueSoft: a todo el alto (.rgl) con el pie de Tickets abajo. */
+.dv-lista td.rg-obs { max-width: 320px; }
 .dv-prec { margin: 6px 0 0; }
 .pos-pie.rn-imp { justify-content: flex-start; align-items: center; margin-top: 8px; }
 .pos-caja textarea#imTexto, .pos-caja textarea#ipTexto { font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; }
@@ -1143,6 +1150,20 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .rm-bs-datos > div > .rm-bs-hueco { display: none; }
   .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr); }
   .rm-bs-acc { margin-left: 0; }
+}
+/* La devolución guardada como la de BlueSoft (7/11): más angosta que el remito (allá ocupa media pantalla), los datos en dos
+   columnas, la grilla a lo ancho y abajo las observaciones (donde BlueSoft tiene los conceptos) y los totales. */
+.pos-caja.ancha.rm-bs.dv-bs { width: min(1080px, 100%); }
+.dv-bs .rm-bs-datos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.dv-bs .rm-bs-cuerpo { display: flex; flex-direction: column; gap: 10px; }
+.dv-bs-pie { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: stretch; }
+.dv-bs-obs { display: flex; flex-direction: column; gap: 3px; min-height: 64px; }
+.dv-bs-obs > span { font-size: 12px; font-weight: 600; color: var(--txt-3); }
+.dv-bs-obs p { overflow-wrap: anywhere; }
+.dv-bs-pie .rm-bs-fin { margin-top: 0; justify-content: flex-end; }
+.dv-bs-pie .rm-bs-fin .pos-ayuda { margin: 0; text-align: right; }
+@media (max-width: 860px) {
+  .dv-bs .rm-bs-datos, .dv-bs-pie { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* La planilla. */
