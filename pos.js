@@ -6605,6 +6605,7 @@
     /* El local: el del cierre que se acaba de hacer (o el que eligieron en el cierre); si no, el de la compu. En Gestión, todas. */
     var lid = pos ? (localMio(S.cajaLocal) || localListado() || {}).id || '' : '';
     if (pos && lid) S.cajaLocal = lid;
+    c.classList.add('lleno');   // 7/11: en la compu la lista llega hasta abajo y se desliza adentro (como Tickets), también a lo ancho
     c.innerHTML = cabeza('Cierres de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), pos
         ? 'Los cierres de la caja chica. Para cerrar la de hoy, «Nuevo cierre de caja».'
         : 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierres de caja.',
@@ -6613,7 +6614,7 @@
       '<div class="pos-filtros"><div id="ciPer"></div>' +
         campo('', 'Sucursal', '<select id="ciLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(lid) + '</select>') +
         campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="ciLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="ciLista" class="ci-zona"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
     /* El cierre recién hecho tiene que verse: si el período guardado no llega a su día, va su mes. */
     if (marcar && marcar.dia && puede('dias')) {
@@ -6650,16 +6651,27 @@
         '<div class="pos-kpi"><span>Gastos</span><b>' + p(t.gastos) + '</b></div>' +
         '<div class="pos-kpi fuerte"><span>Movimientos de salida</span><b>' + p(t.retiro) + '</b></div>' +
         (Number(t.retiros_fondos) ? '<div class="pos-kpi"><span>Retiros de la caja chica</span><b>' + p(t.retiros_fondos) + '</b></div>' : '') +   // SQL 191
-        (t.cierres ? '<div class="pos-kpi"><span>Diferencias</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') + '</div>' +
+        (t.cierres ? '<div class="pos-kpi"><span>Ajustes</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') + '</div>' +   // 7/11: la columna se llama «Ajuste», como en BlueSoft
         ($('ciPrueba').value === '1' ? '<div class="pos-cartel prueba">Los cierres de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en POS → Tickets.</div>' : '');
       if (!d.filas || !d.filas.length) { $('ciLista').innerHTML = kpis + '<div class="pos-cartel">No hay cierres en ese período.</div>'; return; }
-      /* Las columnas de BlueSoft, apretadas para que entren en 1366: el número con la fecha, la sucursal
-         con quién cerró, y "Anulado" en la diferencia. Lo que queda en la caja chica está en el detalle. */
-      $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
+      /* Las columnas de BlueSoft. Mauricio (7/11, con la foto de los cierres de BlueSoft): "Saldo final, retiro de fondos,
+         nuevo saldo, esas tres agregaría… y ajuste también… vamos a poder desplazarnos hacia la derecha". Cada fila se lee
+         como la cuenta del cierre: el inicial y el efectivo, menos los gastos, los movimientos de salida y los retiros de
+         fondos de la caja chica, da el Saldo final (el «Saldo final en efectivo» del detalle: lo que tendría que haber); el
+         Ajuste es lo contado menos eso (lo que antes decía «Diferencia») y el Nuevo saldo lo que quedó en la caja chica, el
+         saldo inicial del cierre siguiente. Acá el retiro va antes del Saldo final y no después como en BlueSoft (allá se
+         retira al cerrar, en el Paso 2): el nuestro se hace antes de cerrar y el cierre ya lo descuenta. «Contado» se fue:
+         desde el SQL 180 es siempre el Nuevo saldo. Si no entra (montos grandes, el celular), se desliza adentro con el cierre quieto a la izquierda. */
+      $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla ci-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
         '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
-        '<th class="n" title="MODO, Go Cuotas, transferencias y gift cards">Otros</th><th class="n" title="Gastos, otras salidas y retiros de fondos de la caja chica">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n" title="Movimientos de salida: lo que pasó de la caja chica a la caja fuerte">Mov. de salida</th></tr></thead><tbody>' +
+        '<th class="n" title="MODO, Go Cuotas, transferencias y gift cards">Otros</th><th class="n" title="Gastos y otras salidas de la caja chica">Gastos</th>' +
+        '<th class="n" title="Movimientos de salida: lo que pasó de la caja chica a la caja fuerte">Mov. de salida</th>' +
+        '<th class="n" title="Los retiros de fondos de la caja chica (los de la caja fuerte no entran en el cierre)">Retiro de fondos</th>' +
+        '<th class="n" title="Lo que tendría que haber en la caja chica: el inicial y el efectivo, menos los gastos, los movimientos de salida y los retiros de fondos">Saldo final</th>' +
+        '<th title="Lo contado menos el saldo final: cuánto faltó o sobró">Ajuste</th>' +
+        '<th class="n" title="Lo que quedó en la caja chica: el saldo inicial del cierre siguiente">Nuevo saldo</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
-          var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia)), sin = !!f.sin_contar;
+          var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia)), sin = !!f.sin_contar, ing = Number(f.otros_ingresos || 0);
           /* SQL 247: el cierre de un día que quedó abierto dice de qué día es (la fecha es cuando se cerró). */
           var cuando = cierreTarde(f) ? '<small title="' + esc('El ' + diaCaja(f.dia) + ' quedó abierto y se cerró el ' + fechaHora(f.fecha)) + '">Del ' + esc(diaCaja(f.dia).split(' ')[1]) +
                                           ', cerró ' + esc(fechaHora(f.fecha)) + '</small>' : '<small>' + esc(fechaHora(f.fecha)) + '</small>';
@@ -6669,9 +6681,13 @@
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
             '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia) + Number(f.ventas_giftcard || 0)) + '</td>' +
-            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + (sin ? 'Sin contar' : p(f.contado)) + '</td>' +   // SQL 191; SQL 247
-            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>') + '</td>' +
-            '<td class="n tachar">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td></tr>';   // SQL 180: el Paso 2 de antes y los movimientos de salida
+            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas)) + '</td>' +
+            '<td class="n">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td>' +   // SQL 180: el Paso 2 de antes y los movimientos de salida
+            '<td class="n">' + p(f.retiros_fondos) + '</td>' +   // SQL 191
+            /* Los otros ingresos (casi nunca) no tienen columna: van debajo, así la cuenta de la fila sigue dando. */
+            '<td class="n tachar"><b>' + p(f.esperado) + '</b>' + (ing ? '<small title="Otros ingresos a la caja chica: ya están sumados">con ' + esc(importeConSigno(ing)) + ' de otros ingresos</small>' : '') + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '" title="' + esc(dv.txt) + '">' + esc(dv.corto) + '</span>') + '</td>' +   // SQL 247
+            '<td class="n tachar"><b>' + p(f.queda) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
       $('ciLista').querySelectorAll('tr[data-cierre]').forEach(function (tr) {
