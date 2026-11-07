@@ -306,7 +306,7 @@
   function plataCampo(c) { return c ? plata(c).slice(1) : ''; }
   /** Lo que escriben: "20.000", "20000", "16.333,33", "$ 1500" → centavos (NaN si no es un número). */
   function leerPlata(s) {
-    s = String(s == null ? '' : s).replace(/[$\s]/g, '');
+    s = String(s == null ? '' : s).replace(/[$\s]/g, '').replace(/,$/, '');   // "$1.500," (a medio escribir los centavos) = 1500
     if (!s) return NaN;
     if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
     else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
@@ -314,6 +314,52 @@
     return Math.round(parseFloat(s) * 100);
   }
   function aPesos(c) { return Math.round(c) / 100; }
+  /** El importe se ve con su formato mientras se escribe (Mauricio, 7/11, en la Transferencia de fondos: "no hay símbolo
+      de peso, no hay punto"): "100000" se ve "$100.000". Los puntos los pone el campo (un punto tipeado no hace nada);
+      la coma es para los centavos, hasta 2. El cursor queda donde estaba, contando sólo los números. Lo escrito se
+      sigue leyendo con leerPlata. Borrar parado detrás de un punto borra el número de antes. Al pegar un importe
+      ("1500.50", "$ 150.000") entra como lo lee leerPlata. */
+  function plataEnVivo(inp) {
+    if (!inp) return inp;
+    function cuenta(x) { return x === ',' || (x >= '0' && x <= '9'); }
+    function formatear() {
+      var v = inp.value, pos = typeof inp.selectionStart === 'number' ? inp.selectionStart : v.length;
+      var ent = '', dec = null, k = 0, i, x;
+      for (i = 0; i < v.length; i++) {
+        x = v.charAt(i);
+        var toma = false;
+        if (x >= '0' && x <= '9') {
+          if (dec === null) { ent += x; toma = true; } else if (dec.length < 2) { dec += x; toma = true; }
+        } else if (x === ',' && dec === null) { dec = ''; toma = true; }
+        if (toma && i < pos) k++;
+      }
+      var ceros = ent.length - ent.replace(/^0+/, '').length;
+      if (ceros) { ent = ent.slice(ceros) || '0'; if (ent === '0') ceros--; k = Math.max(0, k - ceros); }
+      if (ent === '' && dec !== null) { ent = '0'; if (k) k++; }
+      var s = ent === '' ? '' : '$' + miles(ent) + (dec !== null ? ',' + dec : '');
+      if (s === v) return;
+      var p = k ? s.length : (s ? 1 : 0), c = 0;
+      if (k) for (i = 0; i < s.length; i++) if (cuenta(s.charAt(i)) && ++c === k) { p = i + 1; break; }
+      inp.value = s;
+      if (document.activeElement === inp) try { inp.setSelectionRange(p, p); } catch (e) { /* sin cursor, igual */ }
+    }
+    inp.addEventListener('input', formatear);
+    inp.addEventListener('keydown', function (e) {
+      var a = inp.selectionStart, b = inp.selectionEnd;
+      if (a == null || a !== b) return;
+      if (e.key === 'Backspace' && inp.value.charAt(a - 1) === '.') inp.setSelectionRange(a - 1, a - 1);
+      else if (e.key === 'Delete' && inp.value.charAt(a) === '.') inp.setSelectionRange(a + 1, a + 1);
+    });
+    inp.addEventListener('paste', function (e) {
+      var t = e.clipboardData && e.clipboardData.getData('text'), c = leerPlata(t);
+      if (isNaN(c) || (inp.value && (inp.selectionStart !== 0 || inp.selectionEnd !== inp.value.length))) return;
+      e.preventDefault();
+      inp.value = c ? plata(c) : '';
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    if (inp.value) formatear();
+    return inp;
+  }
   /** 1.8333 → "1,8"; 0.375 (una proporción) → "37,5 %". */
   function decimal(n) { return String(Math.round(Number(n) * 10) / 10).replace('.', ','); }
   function porcentaje(x) { return decimal(Number(x) * 100) + ' %'; }
@@ -5971,7 +6017,7 @@
     }
     verHay();
     caja.querySelector('#tfLocal').onchange = verHay;
-    caja.querySelector('#tfMonto').oninput = function () { errorEn(caja, 'tfError', ''); };
+    plataEnVivo(caja.querySelector('#tfMonto')).oninput = function () { errorEn(caja, 'tfError', ''); };
     setTimeout(function () { caja.querySelector('#tfMonto').focus(); }, 0);
     function guardarSalida() {
       var bt = caja.querySelector('#tfGuardar');
