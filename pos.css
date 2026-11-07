@@ -1093,6 +1093,14 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .tk-lista td.c { font-variant-numeric: tabular-nums; }
 /* El cliente, cortado con "…" si es largo (en una celda, max-width no corta: va en un span). */
 .tk-cli-n { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+/* 7/11, las pantallas de 1280 (17" 5:4) de algunos locales: que entre todo también ahí, y con las sucursales de nombre largo
+   cuando se elija «Todas». Con 1366 o más, igual que siempre salvo el cliente, que se corta con «…» un poco antes. */
+@media (max-width: 1599px) { .tk-cli-n { max-width: 136px; } }
+@media (max-width: 1365px) {
+  .tkl .pos-tabla { font-size: 13px; }
+  .tkl .pos-tabla td, .tkl .pos-tabla th { padding-left: 5px; padding-right: 5px; }
+  .tk-cli-n { max-width: 116px; }
+}
 
 .tkl-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .tkl-nueva, .tkl-fallida {

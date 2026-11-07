@@ -3366,7 +3366,7 @@
         (d.filas || []).map(function (f) {
           var an = f.estado === 'anulada', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
           return { fecha: f.fecha, h: '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="c">' + esc(refCorta(f)) + '</td>' +
-            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
+            '<td class="tk-dos">' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
               '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
             '<td class="c">' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
             '<td class="c tk-dos">' + mediosTk(f.medios) + '</td>' +
@@ -3397,7 +3397,8 @@
        ticket que anula. No suma en los totales de abajo: la venta anulada ya no cuenta. Tocarla abre la nota. */
     /* Mauricio (6/11): "prefiero tenerlo fijo que entre todo". En 1366 no entraba la venta con dos formas de pago (se
        cortaba ARCA) y menos la nota de crédito (se cortaba el Total): esas dos celdas, sólo si hace falta, van en dos
-       renglones («Efectivo +» / «Mercado Pago», «Nota de» / «crédito B»); en una pantalla grande, en uno. */
+       renglones («Efectivo +» / «Mercado Pago», «Nota de» / «crédito B»); en una pantalla grande, en uno. También la
+       sucursal larga («San Justo» / «Shopping»), para las pantallas de 1280 de algunos locales (7/11: "arreglalo por las dudas"). */
     function mediosTk(ms) {
       ms = (ms || []).map(function (m) { return MEDIOS_VENTA[m] || m; });
       return ms.length ? ms.map(function (x, i) { return '<span class="tk-nw">' + esc(x) + (i < ms.length - 1 ? ' +' : '') + '</span>'; }).join(' ') : '—';
@@ -3405,7 +3406,7 @@
     function filaNotaTk(n) {
       var anula = refEnCaja({ serie: n.venta_serie, letra: n.letra, numero: n.venta_numero });
       return '<tr data-nota="' + esc(n.venta_id) + '" tabindex="0" class="tk-nc' + (n.prueba ? ' prueba' : '') + '"><td>' + esc(fechaHora(n.fecha)) + '</td>' +
-        '<td class="c"><b>' + esc(refNota(n)) + '</b></td><td>' + esc(bonito(n.local)) + '</td><td>' + esc(n.vendedor) + '</td>' +
+        '<td class="c"><b>' + esc(refNota(n)) + '</b></td><td class="tk-dos">' + esc(bonito(n.local)) + '</td><td>' + esc(n.vendedor) + '</td>' +
         '<td class="tk-cli">' + (n.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') + '<span class="tk-cli-n">' + esc(n.cliente) + '</span></td>' +
         '<td class="c tk-dos"><span class="tk-nw">Nota de</span> <span class="tk-nw">crédito ' + esc(n.letra) + '</span></td>' +
         '<td class="c tk-dos">' + mediosTk(n.medios) + '</td>' +
