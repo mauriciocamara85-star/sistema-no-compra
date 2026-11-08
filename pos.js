@@ -7005,28 +7005,85 @@
     actualizable(cargar);
   }
 
-  /* El "Retiro de Fondos" de BlueSoft: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo.
-     La caja no viene elegida (cambia el cierre). Del de la caja chica dice cuánto tendría que haber y pregunta si sacan más
-     (un cero de más); el de la caja fuerte no toca el cierre (cuánto hay en la caja fuerte lo va a decir Disponibilidad). */
-  function abrirRetiro(localId, prueba, alGuardar) {
-    var clave = nuevaClave(), hay = null, pedido = 0, deCaja = '';
-    var caja = ventana('<h3 id="posVentTit">' + (prueba ? 'Retiro de prueba' : 'Retiro de fondos') + '</h3>' +
-      '<p class="pos-bajada">Plata que sale del local, en efectivo: para la fábrica, un depósito o un pago.</p>' +
-      '<div class="pos-campos">' +
-        campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly>') +
-        campo('ancho', 'Sucursal', '<select id="rtLocal" class="desplegable">' + opcionesLocales(localId) + '</select>') +
+  /* El nuevo "Retiro de Fondos" de BlueSoft, en sus mismas posiciones (Mauricio, 8/11: «sí, hacé todo»): arriba el título
+     con los botones a la derecha; un renglón con Fecha, Sucursal, Número y Letra (sin la Referencia de BlueSoft: repite el
+     número; su lugar queda libre); debajo, quién lo retira (el «Socio» de BlueSoft) bajo la Fecha y la Sucursal, el Estado
+     bajo el Número y la Letra, y el Responsable bajo el lugar de la Referencia; la grilla de Valores, donde en el renglón
+     de Efectivo se elige la caja (en BlueSoft, al agregar el efectivo; en el guardado es la primera columna) y se escribe
+     el importe; debajo, lo de la caja (si lo resta el cierre y cuánto tendría que haber); y abajo las Observaciones a la
+     izquierda y el Monto total a la derecha. Sin el «Agregar valor…»: lo nuestro es sólo efectivo en pesos. */
+  function retiroHtml(o) {
+    var ro = function (cls, lbl, v, t) { return campo(cls, lbl, '<input type="text" value="' + esc(v) + '" readonly tabindex="-1"' + (t ? ' title="' + esc(t) + '"' : '') + '>'); };
+    return '<div class="tf-cab"><h3 id="posVentTit">' + o.titulo + '</h3><div class="tf-acc">' + o.acciones + '</div></div>' +
+      '<div class="tf-datos rt-datos">' +
+        ro('rt-fecha', 'Fecha', o.fecha) +
+        campo('rt-suc', 'Sucursal', '<select id="rtLocal" class="desplegable">' + opcionesLocales(o.local) + '</select>') +
+        campo('rt-num', 'Número', '<input type="text" value="" placeholder="Al guardarlo" readonly tabindex="-1" title="El número (RF-…) lo pone el sistema al guardarlo">') +
+        ro('rt-letra', 'Letra', 'X') +
+        campo('rt-quien', 'Lo retira', '<select id="rtQuien" class="desplegable"></select>') +
+        ro('rt-est', 'Estado', 'Realizado') +
+        ro('rt-resp', 'Responsable', o.responsable || '—', 'Quien entró: queda como el que lo cargó') +
+        campo('rt-otro', 'Nombre de quien lo retira', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off">', ' id="rtOtroL" hidden') +
       '</div>' +
-      '<p class="pos-lbl rt-lbl">¿De qué caja sale?</p>' +
-      '<div class="chips" id="rtCaja" role="group" aria-label="De qué caja sale">' +
-        '<button type="button" class="chip" data-caja="chica">Caja chica</button><button type="button" class="chip" data-caja="fuerte">Caja fuerte</button></div>' +
-      '<div class="pos-campos" style="margin-top:10px">' +
-        campo('ancho', 'Lo retira', '<select id="rtQuien" class="desplegable"></select>') +
-        campo('ancho', 'Nombre de quien lo retira', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off">', ' id="rtOtroL" hidden') +
-        campo('', 'Importe en efectivo', '<input type="text" inputmode="decimal" id="rtMonto" autocomplete="off" placeholder="$0">') +
-        campo('ancho', 'Observaciones', '<input type="text" id="rtObs" maxlength="200" autocomplete="off" placeholder="Para qué es: un depósito, un pago…">') +
-      '</div><p class="pos-ayuda" id="rtHay">El de la caja chica lo resta el próximo cierre; el de la caja fuerte no toca el cierre.</p><div class="pos-error" id="rtError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="rtGuardar">Guardar</button></div>');
+      '<div class="tf-valores"><span class="pos-lbl">Valores</span>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla rt-tabla"><thead><tr><th>Caja</th><th>Tipo de valor</th><th class="n">Importe</th><th>Moneda</th></tr></thead>' +
+          '<tbody><tr><td><div class="chips rt-cajas" id="rtCaja" role="group" aria-label="De qué caja sale">' +
+            '<button type="button" class="chip" data-caja="chica">Caja chica</button><button type="button" class="chip" data-caja="fuerte">Caja fuerte</button></div></td>' +
+            '<td>Efectivo</td>' +
+            '<td class="n"><input type="text" inputmode="decimal" id="rtMonto" data-plata autocomplete="off" placeholder="$0" aria-label="Importe en efectivo"></td><td>Pesos</td></tr></tbody></table></div>' +
+        '<p class="pos-ayuda tf-nota rt-nota" id="rtHay">' + (o.nota || '') + '</p>' +
+      '</div>' +
+      '<div class="rt-pie">' +
+        campo('tf-obs', 'Observaciones', '<textarea id="rtObs" maxlength="200" rows="3" placeholder="Para qué es: un depósito, un pago…"></textarea>') +
+        '<div class="rt-total"><b id="rtTotal">' + plata(0) + '</b><span>Monto total</span></div>' +
+      '</div>' + (o.despues || '');
+  }
+  /* El retiro guardado, como el «Retiro de Fondos» guardado de BlueSoft (Mauricio, 8/11), que no es la ventana del nuevo sino
+     el documento: arriba el título con la sucursal, el número con la fecha y los botones (Anular, donde BlueSoft dice
+     Eliminar; el tilde de la oficina; Cerrar); los datos en dos columnas (Comprobante, Responsable y quién lo retiró;
+     Estado, Controlado —donde BlueSoft tiene «Estado impresión»— y el cierre); la grilla Caja · Tipo valor · Importe ·
+     Moneda y, a la derecha, Concepto · Valor con el Total valores; y abajo las observaciones. Sin lo que acá no existe
+     (Editar, Exportar, Imprimir, Banco, Fecha cobro, el adjunto). Los mismos id de antes (mdAnularBtn, mdCtlBtn, #mdAnular):
+     abrirMovDetalle les pone lo que hacen. */
+  function retiroBsHtml(f, o) {
+    var an = f.estado !== 'ok', num = refGasto(f), m = plata(cent(f.monto));
+    var dato = function (l, v, t) { return '<div' + (t ? ' title="' + esc(t) + '"' : '') + '><span>' + l + '</span><b>' + v + '</b></div>'; };
+    var cierre = f.caja === 'fuerte' ? 'No entra: sale de la caja fuerte' : f.cierre ? refCierre(f.cierre) : an ? '—' : 'Entra en el próximo';
+    return '<div class="rm-bs-cab">' +
+        '<div class="rm-bs-tit"><h3 id="posVentTit">Retiro de fondos</h3><small>' + esc(bonito(f.local)) + '</small></div>' +
+        '<div class="rm-bs-num"><b>' + esc(num || '—') + '</b><span>' + esc(fechaHora(f.fecha)) + '</span></div>' +
+        '<div class="rm-bs-acc">' + o.acciones + '</div>' +
+      '</div>' +
+      '<div id="mdAnular"></div>' +
+      '<div class="rm-bs-datos">' +
+        '<div>' + dato('Comprobante', esc(num || '—')) + dato('Responsable', esc(f.persona || '—'), 'Quien lo cargó') + dato('Lo retiró', esc(f.retira || '—')) + '</div>' +
+        '<div>' + dato('Estado', an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Realizado</span>') +
+          (o.ctl ? dato('Controlado', f.controlado ? 'Sí' + (f.controlado_por ? ', ' + esc(f.controlado_por) : '') : 'Todavía no',
+                        f.controlado && f.controlado_en ? 'El ' + fechaHora(f.controlado_en) : 'Lo tilda la oficina cuando ve que la plata llegó') : '') +
+          dato('Cierre de caja', esc(cierre)) + '</div>' +
+      '</div>' + (o.carteles || '') +
+      '<div class="rm-bs-cuerpo rt-bs-cuerpo">' +
+        '<div class="tk-grilla rm-bs-grilla"><table class="tk-tabla"><thead><tr><th>Caja</th><th>Tipo valor</th><th class="n">Importe</th><th>Moneda</th></tr></thead><tbody>' +
+          '<tr><td>' + esc(CAJAS[f.caja] || '—') + '</td><td>Efectivo</td><td class="n' + (an ? ' rt-bs-tachado' : '') + '">' + m + '</td><td>Pesos</td></tr></tbody></table></div>' +
+        '<div class="tk-grilla rm-bs-grilla rt-bs-conc"><table class="tk-tabla"><thead><tr><th>Concepto</th><th class="n">Valor</th></tr></thead><tbody>' +
+          '<tr><td><b>Total valores:</b></td><td class="n' + (an ? ' rt-bs-tachado' : '') + '"><b id="rtTotal">' + m + '</b></td></tr></tbody></table></div>' +
+      '</div>' +
+      '<div class="rm-bs-nota dv-bs-obs rt-bs-obs"><span>Observaciones</span><p>' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">Sin observaciones.</span>') + '</p></div>' +
+      (o.despues || '');
+  }
+  /* El nuevo: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo. La caja no viene
+     elegida (cambia el cierre). Del de la caja chica dice cuánto tendría que haber y pregunta si sacan más (un cero de
+     más); el de la caja fuerte no toca el cierre (cuánto hay en la caja fuerte lo dice Disponibilidad). A la base va lo
+     mismo que antes. */
+  function abrirRetiro(localId, prueba, alGuardar) {
+    var clave = nuevaClave(), hay = null, pedido = 0, deCaja = '', yo = String((S.ini.yo && S.ini.yo.nombre) || '').trim();
+    var caja = ventana(retiroHtml({ local: localId, fecha: fechaCorta(S.ini.hoy), responsable: yo,
+      titulo: (prueba ? 'Retiro de prueba' : 'Retiro de fondos') + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+      nota: 'El de la caja chica lo resta el próximo cierre; el de la caja fuerte no toca el cierre.',
+      acciones: '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rtGuardar">Guardar</button>',
+      despues: '<div class="pos-error" id="rtError"></div>' }), true);
+    caja.classList.add('tf');
     /* Quién se lleva la plata: la gente del local elegido, la misma lista del «Vendedor» de la venta (el equipo de «Lo atendió»),
        u «Otro…», escrito a mano (quien vino de otro local). Antes era la oficina (pos_retiran, que ya no se usa). Mauricio (6/11):
        "tienen que estar las personas que trabajan en el local. No pueden estar Cintia, Antonella, los administradores … para
@@ -7076,7 +7133,11 @@
       verHay();
     };
     caja.querySelector('#rtLocal').onchange = function () { pintarQuien(); errorEn(caja, 'rtError', ''); verHay(); };
-    plataEnVivo(caja.querySelector('#rtMonto')).oninput = function () { errorEn(caja, 'rtError', ''); };
+    caja.querySelector('#rtMonto').oninput = function () {
+      var m = leerPlata(this.value);
+      caja.querySelector('#rtTotal').textContent = plata(isNaN(m) ? 0 : m);
+      errorEn(caja, 'rtError', '');
+    };
     setTimeout(function () { var b = caja.querySelector('[data-caja]'); if (b) b.focus(); }, 0);
     function guardarRetiro() {
       var bt = caja.querySelector('#rtGuardar');
@@ -7513,6 +7574,16 @@
         antes: '<div id="mdAnular"></div>' + (an ? '<div class="pos-cartel mal">Anulada' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' : ''),
         despues: !an && abierto && f.controlado ? '<p class="pos-ayuda">Ya la controló la oficina: para anularla, primero hay que sacarle el tilde de «Controlado».</p>' : '' }), true);
       caja.classList.add('tf');
+    } else if (f.tipo === 'retiro') {
+      /* El retiro de fondos guardado, como el documento guardado de BlueSoft (retiroBsHtml). */
+      caja = ventana(retiroBsHtml(f, { ctl: ctl,
+        acciones: (!an && abierto && !f.controlado ? '<button type="button" class="btn btn-sec btn-chico" id="mdAnularBtn">Anular</button>' : '') +
+          (ctl && puede('gestion') && !an ? '<button type="button" class="btn btn-sec btn-chico" id="mdCtlBtn">' + (f.controlado ? 'Sacarle el tilde' : 'Marcar como controlado') + '</button>' : '') +
+          '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button>',
+        carteles: an ? '<div class="pos-cartel mal">Anulado' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' :
+          !abierto && !deFuerte ? '<p class="pos-ayuda rt-bs-ayuda">Ya entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarlo, hay que anular ese cierre.</p>' :
+          f.controlado ? '<p class="pos-ayuda rt-bs-ayuda">Ya lo controló la oficina: para anularlo, primero hay que sacarle el tilde de «Controlado».</p>' : '' }), true);
+      caja.classList.add('rm-bs', 'rt-bs');
     } else
     caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
         (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +

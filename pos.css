@@ -1393,6 +1393,57 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .pos-tabla.tf-tabla td.n { width: auto; }
   .pos-tabla.tf-tabla input { width: 130px; }
 }
+/* El nuevo Retiro de fondos como el de BlueSoft (v443): Fecha · Sucursal · Número · Letra (el lugar de la Referencia, libre);
+   debajo Lo retira (bajo la Fecha y la Sucursal) · Estado (bajo el Número y la Letra) · Responsable (bajo la Referencia);
+   la grilla con la caja de donde sale; abajo las Observaciones a la izquierda y el Monto total a la derecha. */
+.tf-datos.rt-datos > .rt-fecha, .tf-datos.rt-datos > .rt-num { grid-column: span 2; }
+.tf-datos.rt-datos > .rt-suc { grid-column: span 4; }
+.tf-datos.rt-datos > .rt-letra { grid-column: span 1; }
+.tf-datos.rt-datos > .rt-quien, .tf-datos.rt-datos > .rt-otro { grid-column: 1 / span 6; }
+.tf-datos.rt-datos > .rt-est, .tf-datos.rt-datos > .rt-resp { grid-column: span 3; }
+.pos-tabla.rt-tabla td.n { width: 210px; }
+.pos-tabla.rt-tabla input { width: 180px; }
+.rt-cajas { flex-wrap: nowrap; }
+.rt-cajas .chip { white-space: nowrap; }
+.pos-caja .rt-nota { margin: 8px 0 0; }
+.rt-pie { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 28px; align-items: end; margin-top: 10px; }
+.pos-caja .rt-pie .tf-obs { margin-top: 0; }
+.rt-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 180px; padding-bottom: 2px; }
+.rt-total b { font: 700 24px/1.15 var(--display); font-variant-numeric: tabular-nums; }
+.rt-total span { font: 600 12px var(--sans); color: var(--txt-2); }
+@media (max-width: 760px) {
+  .pos-caja .tf-datos.rt-datos > .pos-f { grid-column: span 6; }
+  .pos-caja .tf-datos.rt-datos > .rt-otro { grid-column: 1 / -1; }
+  .rt-pie { grid-template-columns: minmax(0, 1fr); }
+  .rt-total { align-items: flex-start; }
+  .rt-cajas { flex-wrap: wrap; }
+  .pos-tabla.rt-tabla td.n { width: auto; }
+  .pos-tabla.rt-tabla input { width: 120px; }
+  /* En el celular no entran las cuatro: Efectivo y Pesos son siempre los mismos; quedan la caja y el importe. */
+  .pos-tabla.rt-tabla th:nth-child(2), .pos-tabla.rt-tabla td:nth-child(2), .pos-tabla.rt-tabla th:nth-child(4), .pos-tabla.rt-tabla td:nth-child(4) { display: none; }
+}
+/* El retiro guardado como el documento de BlueSoft (v443), con el molde del remito guardado (.rm-bs): más angosto y con
+   el alto justo (allá es una ventana mediana con la grilla vacía abajo); la grilla de valores a la izquierda y
+   Concepto · Valor a la derecha; abajo las observaciones. */
+.pos-caja.ancha.rm-bs.rt-bs { width: min(980px, 100%); }
+.rt-bs .rm-bs-datos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.rt-bs .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr) 280px; }
+.rt-bs .rm-bs-grilla { min-height: 150px; }
+.rt-bs .tk-tabla td { height: 34px; }
+.rt-bs-conc .tk-tabla td { font-size: 14.5px; }
+.rt-bs .rt-bs-tachado { text-decoration: line-through; color: var(--txt-3); }
+.rt-bs .pos-cartel, .pos-caja .rt-bs-ayuda { margin: 0 0 10px; }
+.rt-bs-obs { margin-top: 10px; }
+@media (min-width: 1000px) and (min-height: 560px) {
+  .pos-caja.ancha.rm-bs.rt-bs { height: auto; display: block; }
+  .rt-bs > .pos-caja-in { display: block; }
+  .rt-bs .rm-bs-cuerpo { min-height: 0; grid-template-rows: auto; }
+  .rt-bs .rm-bs-grilla { height: auto; min-height: 150px; }
+}
+@media (max-width: 860px) {
+  .rt-bs .rm-bs-datos, .rt-bs .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .rt-bs .rm-bs-grilla { min-height: 0; }
+}
 
 /* ── Ventas por vendedor (SQL 192) ──────────────────────────────────────
    A la izquierda las columnas de BlueSoft; a la derecha, donde BlueSoft
