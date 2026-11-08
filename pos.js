@@ -10227,93 +10227,125 @@
     ir('remito');
   }
 
+  /* v448 (8/11, Mauricio: «sigamos con 3 y 4»): como los «Remitos de Compra» de BlueSoft (la foto de Remitos del 28/10),
+     en las mismas posiciones. Arriba a la derecha Ver el stock y Exportar; los filtros en su orden: la fecha, la Sucursal,
+     el Estado y Producto (sus «Palabras clave»); UNA lista a todo el alto, un renglón por remito, con los que faltan
+     recibir arriba (de cualquier día) y después los del período: Fecha, Remito, Referencia, Estado, Viene de, Recibido,
+     Llegaron y Observaciones (sin Precio unitario ni Total: el remito no lleva precios). Abajo a la izquierda los
+     Productos que llegaron y los Remitos (sus «Cantidad de productos» y «Cantidad de líneas»); a la derecha, donde
+     BlueSoft dice «Tenés 10 remitos para descargar» con DESCARGAR, cuántos hay por recibir y el botón para recibir el
+     más viejo. Antes eran dos listas, «Por recibir» y «Recibidos». */
   function verRemitosLocal() {
     var c = $('cuerpo'), l = localStock(), prueba = enPrueba();
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Remitos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que llega de la fábrica o de otro local. Se cuenta producto por producto y, si coincide con el remito, entra al stock.',
-        '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
-      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rmExcel" disabled title="Los remitos que se ven, para abrirlos en Excel">Exportar</button>') +
+      '<div class="pos-filtros"><div id="rmPer"></div>' + campo('', 'Sucursal', '<select id="rmLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
+        campo('', 'Estado', '<select id="rmEstado">' + opciones([['', 'Todos'], ['pendiente', 'Por recibir'], ['recibido', 'Recibidos'],
+                                                                ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']], '') + '</select>') +
         campo('rm-buscar', 'Producto', '<input type="search" id="rmBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" ' +
               'title="En qué remitos vino un producto y cuántas llegaron. El código o el nombre; o escaneá la etiqueta">') + '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Apagalo (abajo, en el menú) para recibir.</div>' : '') +
-      '<div id="rmPendSec"><h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div></div>' +
-      '<div class="st-tit-fila"><h3 class="st-tit" id="rmTitH">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
+      '<div id="rmLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
+      '<div class="rg-pie"><div class="tkl-pie" id="rmPie"></div><div id="rmAviso" class="rm-aviso"></div></div>';
     engancharIr(c);
-    var per = periodoPos($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true,
-                                       alCambiar: function () { if (buscado()) buscar(); else cargarHechos(); } });
+    var per = periodoPos($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true, alCambiar: cargar });
     $('rmLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
-    /* SQL 204: con «Producto», en vez de las dos listas, los remitos que lo trajeron. Mientras escriben busca solo; con la pistola, enseguida. */
+    $('rmEstado').onchange = function () { if (buscado()) cargar(); else pintar(); };
+    /* SQL 204: con «Producto», en vez de la lista, los remitos que lo trajeron. Mientras escriben busca solo; con la pistola, enseguida. */
     var tBus = null;
     $('rmBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
     $('rmBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
     function buscado() { return productoBuscado($('rmBuscar').value); }
-    var pedido = 0, pedidoH = 0;
+    var pedido = 0, pend = [], hechos = [], mas = false, vistas = [];
     function cargar() {
       clearTimeout(tBus);
-      var q = buscado();
-      $('rmPendSec').hidden = !!q;
-      $('rmTitH').textContent = q ? 'Remitos con «' + q + '»' : 'Recibidos';
-      if (q) { buscar(); return; }
-      cargarPend(); cargarHechos();
+      var q = buscado(), n = ++pedido, loc = $('rmLocal').value, r = per.rango();
+      $('rmLista').innerHTML = '<p class="cargando">' + (q ? 'Buscando…' : 'Cargando…') + '</p>';
+      $('rmPie').innerHTML = ''; $('rmAviso').innerHTML = ''; $('rmExcel').disabled = true; vistas = [];
+      if (q) { buscar(q, n); return; }
+      /* Los que faltan recibir son de cualquier día; los demás, del período. */
+      Promise.all([llamar('pos_remitos', { p_desde: null, p_hasta: null, p_local: loc, p_estado: 'pendiente' }),
+                   llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null })]).then(function (x) {
+        if (n !== pedido || !$('rmLista')) return;
+        pend = (x[0].filas || []).filter(function (f) { return f.destino_local_id === loc && !f.entre_depositos; });
+        hechos = (x[1].filas || []).filter(function (f) { return f.destino_local_id === loc && f.estado !== 'pendiente' && !f.entre_depositos; });
+        mas = x[1].mas;
+        pintar();
+      }).catch(function (e) { if (n === pedido && $('rmLista')) $('rmLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
-    var pedidoB = 0;
-    function buscar() {
-      var r = per.rango(), n = ++pedidoB, loc = $('rmLocal').value, q = buscado();
-      ++pedido; ++pedidoH;   // lo que estaba cargando de las otras dos listas ya no se pinta
-      $('rmHechos').innerHTML = '<p class="cargando">Buscando…</p>';
+    function buscar(q, n) {
+      var r = per.rango(), loc = $('rmLocal').value, est = $('rmEstado').value;
       llamar('pos_remitos_producto', { p_buscar: q, p_desde: r.desde, p_hasta: r.hasta, p_local: loc }).then(function (d) {
-        if (n !== pedidoB || !$('rmHechos') || buscado() !== q) return;
+        if (n !== pedido || !$('rmLista') || buscado() !== q) return;
         /* Lo que llegó a este local (lo que salió de acá está en Envíos internos y Devolución a fábrica). */
-        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc; });
-        $('rmHechos').innerHTML = tablaRemitosProducto(fs, d.mas, q, false);
-        $('rmHechos').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && (!est || f.estado === est); });
+        $('rmLista').innerHTML = tablaRemitosProducto(fs, d.mas, q, false);
+        $('rmLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
           var id = tr.getAttribute('data-ticket');
           tr.onclick = function () { if (tr.getAttribute('data-pend') && !prueba) abrirRecepcion(id); else abrirRemito(id, cargar); };
           tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
         });
-      }).catch(function (e) { if (n === pedidoB && $('rmHechos')) $('rmHechos').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+      }).catch(function (e) { if (n === pedido && $('rmLista')) $('rmLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
-    function cargarPend() {
-      var n = ++pedido, loc = $('rmLocal').value;
-      llamar('pos_remitos', { p_desde: null, p_hasta: null, p_local: loc, p_estado: 'pendiente' }).then(function (d) {
-        if (n !== pedido || !$('rmPend')) return;
-        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && !f.entre_depositos; });
-        $('rmPend').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos por recibir en ' + esc(nombreLocal(localDe(loc))) + '.</div>' :
-          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Productos</th><th></th></tr></thead><tbody>' +
-          fs.map(function (f) {
-            return '<tr data-rec="' + esc(f.id) + '" tabindex="0"><td><b>' + esc(refRemito(f)) + '</b><small class="st-chico">' + esc(fechaHora(f.fecha)) + '</small></td>' +
-              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
-              '<td>' + (f.recibidos ? f.recibidos + ' de ' + f.productos + ' recibidos' : f.productos + (f.productos === 1 ? ' producto' : ' productos')) + '</td>' +
-              '<td class="pos-acc"><button type="button" class="btn btn-pri btn-chico" data-recibir="' + esc(f.id) + '"' + (prueba ? ' disabled title="Con el modo prueba no se reciben remitos"' : '') + '>' +
-                (f.recibidos ? 'Seguir' : 'Recibir') + '</button></td></tr>';
-          }).join('') + '</tbody></table></div>';
-        $('rmPend').querySelectorAll('tr[data-rec]').forEach(function (tr) {
-          var id = tr.getAttribute('data-rec');
-          tr.onclick = function () { if (prueba) abrirRemito(id, cargar); else abrirRecepcion(id); };
-          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
-        });
-      }).catch(function (e) { if ($('rmPend')) $('rmPend').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    function pintar() {
+      if (!$('rmLista') || buscado()) return;
+      var est = $('rmEstado').value, nom = nombreLocal(localDe($('rmLocal').value));
+      vistas = pend.concat(hechos).filter(function (f) { return !est || f.estado === est; });
+      pintarPie();
+      $('rmExcel').disabled = !vistas.length;
+      if (!vistas.length) {
+        $('rmLista').innerHTML = '<div class="pos-cartel">' + (est === 'pendiente' ? 'No hay remitos por recibir en ' + esc(nom) + '.' :
+          est ? 'No hay remitos así en ese período.' : 'No hay remitos de ' + esc(nom) + ' en ese período, ni por recibir.') + '</div>';
+        return;
+      }
+      $('rmLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla rg-tabla rm-tabla"><thead><tr><th>Fecha</th><th>Remito</th><th>Referencia</th>' +
+          '<th>Estado</th><th>Viene de</th><th>Recibido</th><th class="n">Llegaron</th><th>Observaciones</th></tr></thead><tbody>' +
+        vistas.map(function (f) {
+          var p = f.estado === 'pendiente';
+          /* Mientras lo cuentan, cuántos productos van; si no empezaron, cuántos trae. */
+          var van = p ? '<small>' + (f.recibidos ? f.recibidos + ' de ' + f.productos + ' productos' : f.productos + (Number(f.productos) === 1 ? ' producto' : ' productos')) + '</small>' : '';
+          return '<tr data-rm="' + esc(f.id) + '"' + (p ? ' data-pend="1"' : '') + ' tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '>' +
+            '<td class="rg-nw">' + esc(fechaHora(f.fecha)) + '</td><td class="rg-nw"><b>' + esc(refRemito(f)) + '</b></td>' +
+            '<td>' + esc(f.referencia || '—') + '</td><td class="rg-nw">' + pillRemito(f.estado) + van + '</td>' +
+            '<td>' + esc(bonito(f.origen)) + '</td><td class="rg-nw">' + esc(f.recibido_en ? fechaHora(f.recibido_en) : '—') + '</td>' +
+            '<td class="n tachar">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td>' +
+            '<td class="cb-que rg-obs" title="' + esc(f.observaciones || '') + '">' + esc(f.observaciones || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+      $('rmLista').querySelectorAll('tr[data-rm]').forEach(function (tr) {
+        var id = tr.getAttribute('data-rm');
+        /* El que falta recibir se abre para contarlo (con el modo prueba, sólo se mira); los otros, el remito. */
+        tr.onclick = function () { if (tr.getAttribute('data-pend') && !prueba) abrirRecepcion(id); else abrirRemito(id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
     }
-    function cargarHechos() {
-      var r = per.rango(), n = ++pedidoH, loc = $('rmLocal').value;
-      $('rmHechos').innerHTML = '<p class="cargando">Cargando…</p>';
-      llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
-        if (n !== pedidoH || !$('rmHechos')) return;
-        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && f.estado !== 'pendiente' && !f.entre_depositos; });
-        $('rmHechos').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos recibidos en ese período.</div>' :
-          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Recibido</th>' +
-            '<th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
-          fs.map(function (f) {
-            return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '><td><b>' + esc(refRemito(f)) + '</b><small class="st-chico">' + esc(fechaHora(f.fecha)) + '</small></td>' +
-              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
-              '<td>' + esc(f.recibido_en ? fechaHora(f.recibido_en) : '—') + '</td><td class="n tachar">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td><td>' + pillRemito(f.estado) + '</td></tr>';
-          }).join('') + '</tbody></table></div>' + (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
-        $('rmHechos').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
-          tr.onclick = function () { abrirRemito(tr.getAttribute('data-ticket'), cargar); };
-          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
-        });
-      }).catch(function (e) { if ($('rmHechos')) $('rmHechos').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    /* Abajo, como BlueSoft: a la izquierda lo que llegó y cuántos remitos (sin los anulados), y el renglón chico de los
+       estados; a la derecha cuántos faltan recibir y el botón para el más viejo (no depende del filtro de Estado). */
+    function pintarPie() {
+      var vale = vistas.filter(function (f) { return f.estado !== 'anulado'; });
+      var lleg = vale.reduce(function (s, f) { return s + (Number(f.contadas) || 0); }, 0);
+      var cuantos = function (e) { return vale.filter(function (f) { return f.estado === e; }).length; };
+      var caja = function (lbl, v, cls, t) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"' + (t ? ' title="' + t + '"' : '') + '><span>' + lbl + '</span><b>' + v + '</b></div>'; };
+      var letra = function (lbl, v, cls) { return '<span' + (cls ? ' class="' + cls + '"' : '') + '>' + lbl + ' <b>' + num(v) + '</b></span>'; };
+      $('rmPie').innerHTML = caja('Productos', num(lleg), 'fuerte', 'Las prendas que llegaron (las contadas)') + caja('Remitos', num(vale.length)) +
+        '<p class="pos-por-letra">' + letra('Por recibir', cuantos('pendiente')) + letra('Con diferencias', cuantos('con_diferencias'), cuantos('con_diferencias') ? 'mal' : '') + '</p>';
+      var viejo = pend.slice().sort(function (a, b) { return String(a.fecha).localeCompare(String(b.fecha)); })[0];
+      $('rmAviso').innerHTML = !viejo ? '' : '<p>' + (pend.length === 1 ? 'Tenés 1 remito por recibir.' : 'Tenés ' + pend.length + ' remitos por recibir.') + '</p>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rmRecibir"' + (prueba ? ' disabled title="Con el modo prueba no se reciben remitos"' : ' title="El más viejo primero"') + '>' +
+        (viejo.recibidos ? 'Seguir ' : 'Recibir ') + esc(refRemito(viejo)) + '</button>';
+      if (viejo && !prueba) $('rmRecibir').onclick = function () { abrirRecepcion(viejo.id); };
     }
+    $('rmExcel').onclick = function () {
+      var r = per.rango();
+      bajarCsv('Remitos ' + nombreLocal(localDe($('rmLocal').value)) + ' ' + r.desde + ' a ' + r.hasta + '.csv',
+        ['Fecha', 'Remito', 'Referencia', 'Estado', 'Viene de', 'Recibido', 'Llegaron', 'Observaciones'],
+        vistas.map(function (f) {
+          return [fechaHora(f.fecha), refRemito(f), f.referencia || '', (ESTADO_REMITO[f.estado] || [f.estado])[0], bonito(f.origen),
+                  f.recibido_en ? fechaHora(f.recibido_en) : '', f.contadas == null ? '' : Number(f.contadas), f.observaciones || ''];
+        }));
+    };
     cargar();
     actualizable(cargar);
   }

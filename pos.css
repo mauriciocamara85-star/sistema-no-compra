@@ -1835,6 +1835,12 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 /* Los botones no se achican nunca: si no entra, el renglón chico de los totales baja. */
 .rg-pie > #rgBarra { flex: none; display: flex; max-width: 100%; }
 .rg-pie > #rgBarra:empty { display: none; }
+/* v448: Remitos del local, como los «Remitos de Compra» de BlueSoft: a la derecha del pie, en rojo, cuántos faltan recibir
+   (su «Tenés 10 remitos para descargar») con el botón para recibir el más viejo (su DESCARGAR). */
+.rg-pie > .rm-aviso { flex: none; display: flex; align-items: center; gap: 10px; max-width: 100%; padding: 0 2px; }
+.rg-pie > .rm-aviso:empty { display: none; }
+.rm-aviso p { margin: 0; font-weight: 600; color: var(--bad-txt); white-space: nowrap; }
+.rm-aviso .btn { flex: none; }
 .rg-pie .rg-barra { position: static; margin: 0; flex: 1 1 auto; flex-wrap: nowrap; gap: 8px 10px; }
 .rg-pie .rg-barra > span { flex: none; }
 .rg-pie .rg-barra .btn { flex: none; }
@@ -1854,6 +1860,8 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 }
 @media (max-width: 999px) {
   .rg-pie > #rgBarra { flex: 1 1 100%; }
+  .rg-pie > .rm-aviso { flex: 1 1 100%; flex-wrap: wrap; }
+  .rm-aviso p { white-space: normal; }
   .rg-pie .rg-barra { flex-wrap: wrap; }
   .rg-cuales { max-width: none; flex: 1 1 100%; }
 }
