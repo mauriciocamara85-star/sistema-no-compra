@@ -1444,6 +1444,35 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .rt-bs .rm-bs-datos, .rt-bs .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr); }
   .rt-bs .rm-bs-grilla { min-height: 0; }
 }
+/* El nuevo gasto como el «Gastos» de BlueSoft (v444): Fecha · Sucursal · Letra · Número · Estado; debajo Responsable; debajo
+   Forma de pago · Caja; la grilla con el renglón (Ítem · Gasto · Descripción · Total) y a la derecha el Total a pagar. */
+.pos-caja .gs-tipos { margin: -4px 0 12px; }
+.tf-datos.gs-datos > .gs-fecha, .tf-datos.gs-datos > .gs-num { grid-column: span 2; }
+.tf-datos.gs-datos > .gs-suc { grid-column: span 4; }
+.tf-datos.gs-datos > .gs-letra { grid-column: span 1; }
+.tf-datos.gs-datos > .gs-est { grid-column: span 3; }
+.tf-datos.gs-datos > .gs-resp, .tf-datos.gs-datos > .gs-forma { grid-column: 1 / span 3; }
+.tf-datos.gs-datos > .gs-caja { grid-column: span 4; }
+.gs-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 12px; align-items: start; }
+.pos-tabla.gs-tabla th.c, .pos-tabla.gs-tabla td.c { width: 52px; text-align: center; }
+.pos-tabla.gs-tabla td.n { width: 190px; }
+.pos-tabla.gs-tabla input { width: 170px; }
+.pos-tabla.gs-tabla #gmDesc { width: 100%; min-width: 160px; text-align: left; }
+.pos-tabla.gs-tabla select { width: 100%; min-width: 190px; max-width: 260px; }
+.pos-caja .gs-nota { margin: 8px 0 0; }
+.gs-tot { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.gs-tot span { font: 600 12px var(--sans); color: var(--txt-2); }
+.gs-tot b { font: 700 24px/1.15 var(--display); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .pos-caja .tf-datos.gs-datos > .pos-f { grid-column: span 6; }
+  .gs-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  /* En el celular no entra a lo ancho: el renglón va de arriba abajo, cada cosa con su nombre (sin el «1» del único renglón). */
+  .pos-tabla.gs-tabla thead, .pos-tabla.gs-tabla td.c { display: none; }
+  .pos-tabla.gs-tabla tbody tr { display: grid; gap: 10px; padding: 10px 12px; }
+  .pos-tabla.gs-tabla td, .pos-tabla.gs-tabla td.n { display: block; width: auto; height: auto; padding: 0; border: 0; text-align: left; }
+  .pos-tabla.gs-tabla td[data-l]::before { content: attr(data-l); display: block; margin-bottom: 3px; font: 600 12px var(--sans); color: var(--txt-2); }
+  .pos-tabla.gs-tabla select, .pos-tabla.gs-tabla input, .pos-tabla.gs-tabla #gmDesc { width: 100%; min-width: 0; max-width: none; }
+}
 
 /* ── Ventas por vendedor (SQL 192) ──────────────────────────────────────
    A la izquierda las columnas de BlueSoft; a la derecha, donde BlueSoft
