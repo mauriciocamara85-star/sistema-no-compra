@@ -114,9 +114,11 @@
   /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
   var MENUS = {
     mostrador: [
-      /* Las notas de crédito (SQL 205), después de los cambios, como en el menú de BlueSoft. */
+      /* Las notas de crédito (SQL 205), después de los cambios, como en el menú de BlueSoft.
+         7/11 (Mauricio: «cada cambio es un ticket… tienen que estar juntos»): como en BlueSoft, «Ticket de cambio» abre el
+         cambio nuevo y los cambios guardados están en Tickets, con las ventas (ya no hay una lista aparte). */
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                  ['cambios', 'Cambios', 'cambio'], ['notas', 'Notas de crédito', 'nc'], ['fallida', 'Venta fallida', 'fallida'],
+                  ['cambio', 'Ticket de cambio', 'cambio'], ['notas', 'Notas de crédito', 'nc'], ['fallida', 'Venta fallida', 'fallida'],
                   /* SQL 264 (Mauricio, 7/11: "si vendemos una gift card, lo hacemos desde el POS"): las vendidas, si se usaron y cuándo vencen. */
                   ['giftcards', 'Gift cards', 'gift'],
                   /* Los clientes (SQL 197), con los socios del Club: como la «Administración de clientes» de la PC del local. */
@@ -170,7 +172,7 @@
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
-  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general', cierre: 'cierres' },
+  var DENTRO = { mostrador: { remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general', cierre: 'cierres' },
                  gestion: {},
                  fabrica: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'promos', fabrica: 'remitos' };
@@ -190,7 +192,7 @@
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).',
                       retiros: 'No tenés permiso para los retiros de fondos.' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, giftcards: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambio: 1, notas: 1, fallida: 1, giftcards: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -822,6 +824,8 @@
 
   var yaAbrio = false;   // ya se abrió una pantalla en esta página (S.vista arranca en «venta»: no sirve para saberlo)
   function ir(v, desdeHash) {
+    /* 7/11: la lista de Cambios se unió a Tickets (pos.html#cambios, de antes, abre Tickets). */
+    if (v === 'cambios') v = 'tickets';
     /* Una dirección vieja (pos.html#listas, gestion.html#remitos) o un enlace a otra pantalla: se va para allá. */
     var otro = esDe(MODO, v) ? null : (OTRA_VISTA[MODO] || {})[v] || OTRAS[MODO].filter(function (m) { return esDe(m, v); })[0];
     if (otro) {
@@ -849,7 +853,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, giftcards: verGiftcards, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambio: verCambio, notas: verNotas, fallida: verFallidas, giftcards: verGiftcards, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, transportes: verTransportes, diferencias: verDiferencias, inventario: verInventario,
@@ -3702,13 +3706,14 @@
   function verTickets() {
     var c = $('cuerpo'), prueba = enPrueba(), vistos = {}, l = localListado();
     c.classList.add('lleno');
-    c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de ' + esc(lasSucursales()) + '.',
+    c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas y los cambios del POS de ' + esc(lasSucursales()) + '.',
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
         campo('', 'Sucursal', '<select id="tkLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"></select>') +
-        campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
+        /* 7/11: «Cambio» (C): sólo los tickets de cambio. Con A, B o X, los cambios no van. */
+        campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X], ['C', 'Cambio']], '') + '</select>') +
         campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }), '') + '</select>') +
         campo('', 'Estado', '<select id="tkEstado"><option value="">Todos</option><option value="cobrada">Cobradas</option><option value="anulada">Anuladas</option></select>') +
         /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
@@ -3744,12 +3749,21 @@
       var r = per.rango(), n = ++pedido;
       $('tkLista').innerHTML = '<p class="cargando">Cargando…</p>';
       $('tkBorrar').hidden = !deLaPrueba();
-      llamar('pos_tickets', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tkLocal').value || null, p_vendedor: $('tkVend').value || null,
-                              p_medio: $('tkMedio').value || null, p_estado: $('tkEstado').value || null,
-                              p_letra: $('tkLetra').value || null, p_prueba: deLaPrueba() }).then(function (d) {
+      var letra = $('tkLetra').value;
+      /* Con «Cambio» la base no trae ventas (ninguna es C) pero sí el tráfico, que no depende del comprobante. */
+      var pv = llamar('pos_tickets', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tkLocal').value || null, p_vendedor: $('tkVend').value || null,
+                                       p_medio: $('tkMedio').value || null, p_estado: $('tkEstado').value || null,
+                                       p_letra: letra || null, p_prueba: deLaPrueba() });
+      /* 7/11 (Mauricio: «cada cambio es un ticket… tienen que estar juntos»): los cambios del período, en la misma lista.
+         Con A, B o X elegido no van. Si la base no los contesta, la lista sigue con las ventas y lo dice. */
+      var pc = letra && letra !== 'C' ? Promise.resolve(null) :
+        llamar('pos_cambios', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tkLocal').value || null, p_prueba: deLaPrueba() })
+          .catch(function (e) { return { error: mensajeDe(e) }; });
+      Promise.all([pv, pc]).then(function (x) {
+        var d = x[0], cb = cambiosTk(x[1]);
         if (n !== pedido || !$('tkLista')) return;
-        sumarVistos($('tkVend'), $('tkLocal').value, vistos, d.filas);
-        pintarTickets(d);
+        sumarVistos($('tkVend'), $('tkLocal').value, vistos, (d.filas || []).concat(cb.filas));
+        pintarTickets(d, cb);
       }).catch(function (e) {
         if (!$('tkLista')) return;
         $('tkLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
@@ -3810,19 +3824,47 @@
         ' + ' + x.no_compras + ' No Compra. Conversión: las ventas sobre el tráfico.' : '';
     }
     /* Abajo, la barra de totales de BlueSoft, con el ticket promedio y las prendas por ticket. */
-    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
-    function pintarTickets(d) {
+    function caja(lbl, v, cls, tit) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"' + (tit ? ' title="' + esc(tit) + '"' : '') + '><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    /* Los cambios que trajo la base, con los filtros que pos_cambios no tiene (vendedor, forma de pago, estado), y lo que suman
+       los hechos: lo cobrado (la diferencia), sus descuentos (SQL 266; antes, 0) y el neto (lo que se lleva − lo que vuelve). */
+    function cambiosTk(x) {
+      var r = { filas: [], hechos: 0, anulados: 0, dif: 0, desc: 0, error: x && x.error, mas: !!(x && x.mas) };
+      var vend = String($('tkVend').value || '').toLowerCase(), medio = $('tkMedio').value, est = $('tkEstado').value;
+      ((x && x.filas) || []).forEach(function (f) {
+        var an = f.estado === 'anulado';
+        if (vend && String(f.vendedor || '').toLowerCase() !== vend) return;
+        if (medio && (f.medios || []).indexOf(medio) < 0) return;
+        if (est && (est === 'anulada') !== an) return;
+        r.filas.push(f);
+        if (an) { r.anulados++; return; }
+        r.hechos++;
+        r.dif += cent(f.diferencia || 0);
+        r.desc += cent(f.descuentos || 0);
+      });
+      return r;
+    }
+    function pintarTickets(d, cb) {
       var t = d.totales || {}, pl = d.por_letra || {}, n = Number(t.tickets) || 0;
       var letras = ['A', 'B', 'X'].filter(function (l) { return pl[l] != null; });
-      var porLetra = letras.length ? '<p class="pos-por-letra">' + letras.map(function (l) {
-        return '<span>' + esc(LETRAS[l]) + ' <b>' + plata(cent(pl[l])) + '</b></span>'; }).join('') + '</p>' : '';
+      /* Los cambios, al lado de los comprobantes: cuántos y lo cobrado en ellos (el de $0 cuenta, pero no suma). */
+      var porLetra = letras.length || cb.hechos ? '<p class="pos-por-letra">' + letras.map(function (l) {
+        return '<span>' + esc(LETRAS[l]) + ' <b>' + plata(cent(pl[l])) + '</b></span>'; }).join('') +
+        (cb.hechos ? '<span title="Lo cobrado en los cambios (la diferencia): ya está sumado en el Total">' + (cb.hechos === 1 ? '1 cambio' : cb.hechos + ' cambios') +
+          ' <b>' + plata(cb.dif) + '</b></span>' : '') + '</p>' : '';
       pintarTrafico(d.trafico || null);
-      $('tkPie').innerHTML = caja('Tickets', n) + caja('Productos', t.productos || 0) + caja('Neto', plata(cent(t.neto || 0))) +
-        caja('Descuentos', plata(cent(t.descuentos || 0))) + caja('Total', plata(cent(t.total || 0)), 'fuerte') +
-        caja('Ticket promedio', n ? plata(Math.round(cent(t.total) / n)) : '—') + caja('Prendas por ticket', n ? decimal(Number(t.productos) / n) : '—') +
-        caja('Anulados', t.anulados || 0) + porLetra;
-      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad. ' +
-        '«Borrar las pruebas» las borra' + ($('tkLocal').value ? ' (las de esa sucursal)' : ' todas') + ', de cualquier día.</div>' : '';
+      /* La plata de los cambios (lo cobrado de diferencia) va en Neto, Descuentos y Total, como en el cierre de caja («Ventas
+         totales del día»). Tickets, Productos, el ticket promedio y las prendas por ticket siguen siendo de las ventas. */
+      var sinCb = cb.hechos ? ' (sin los cambios)' : '';
+      $('tkPie').innerHTML = caja('Tickets', n, '', 'Las ventas cobradas' + sinCb) + caja('Productos', t.productos || 0, '', 'Las prendas de las ventas' + sinCb) +
+        caja('Neto', plata(cent(t.neto || 0) + cb.dif + cb.desc)) +
+        caja('Descuentos', plata(cent(t.descuentos || 0) + cb.desc)) + caja('Total', plata(cent(t.total || 0) + cb.dif), 'fuerte',
+          cb.hechos ? 'Las ventas ' + plata(cent(t.total || 0)) + ' + lo cobrado en los cambios ' + plata(cb.dif) : '') +
+        caja('Ticket promedio', n ? plata(Math.round(cent(t.total) / n)) : '—', '', 'Lo vendido sobre los tickets de venta' + sinCb) +
+        caja('Prendas por ticket', n ? decimal(Number(t.productos) / n) : '—', '', 'Las prendas sobre los tickets de venta' + sinCb) +
+        caja('Anulados', (Number(t.anulados) || 0) + cb.anulados) + porLetra;
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas y los cambios de <b>prueba</b>: no cuentan en ningún total de verdad. ' +
+        '«Borrar las pruebas» los borra' + ($('tkLocal').value ? ' (los de esa sucursal)' : ' todos') + ', de cualquier día.</div>' : '';
+      if (cb.error) aviso += '<div class="pos-cartel mal">No se pudieron traer los cambios (la lista tiene sólo las ventas): ' + esc(cb.error) + '</div>';
       /* SQL 212: las ventas hechas sin internet que esta compu todavía no mandó no están en la lista (no tienen número). */
       var nc = colaDe($('tkLocal').value || null, deLaPrueba()).length;
       if (nc) aviso += '<div class="pos-cartel cola">' + icono('nube') + '<span>' + (nc === 1 ? 'Hay 1 venta hecha sin internet que todavía no llegó a la base: no está en esta lista.'
@@ -3830,8 +3872,10 @@
         ' Se mandan solas cuando vuelve internet.</span> <button type="button" class="pos-link" id="tkVerCola">Ver</button></div>';
       function verCola() { var b = $('tkVerCola'); if (b) b.onclick = abrirCola; }
       var notas = d.notas || [];   // SQL 260: las notas de crédito del período, como renglones propios
-      if ((!d.filas || !d.filas.length) && !notas.length) {
-        $('tkLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
+      if ((!d.filas || !d.filas.length) && !notas.length && !cb.filas.length) {
+        var soloCb = $('tkLetra').value === 'C';
+        $('tkLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? (soloCb ? 'No hay cambios de prueba' : 'No hay ventas ni cambios de prueba') :
+          (soloCb ? 'No hay cambios' : 'No hay ventas ni cambios')) + ' en ese período con esos filtros.</div>';
         verCola();
         return;
       }
@@ -3854,14 +3898,16 @@
             (f.letra === 'X' || f.prueba ? '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
               : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>' };
         }).concat(notas.map(function (n) { return { fecha: n.fecha, h: filaNotaTk(n) }; }))
+          .concat(cb.filas.map(function (f) { return { fecha: f.fecha, h: filaCambioTk(f) }; }))
           .sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); })
           .map(function (x) { return x.h; }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+        (d.mas || cb.mas ? '<p class="pos-mas">Se ven ' + (d.mas ? 'las últimas 500 ventas' : '') + (d.mas && cb.mas ? ' y ' : '') + (cb.mas ? 'los últimos 500 cambios' : '') +
+          '. Achicá el período para ver el resto.</p>' : '');
       verCola();
-      $('tkLista').querySelectorAll('tr[data-ticket], tr[data-nota]').forEach(function (tr) {
+      $('tkLista').querySelectorAll('tr[data-ticket], tr[data-nota], tr[data-cambio]').forEach(function (tr) {
         tr.onclick = function () {
-          var nota = tr.getAttribute('data-nota');
-          if (nota) abrirNota(nota, cargar); else abrirTicket(tr.getAttribute('data-ticket'), cargar);
+          var nota = tr.getAttribute('data-nota'), cbId = tr.getAttribute('data-cambio');
+          if (nota) abrirNota(nota, cargar); else if (cbId) abrirCambio(cbId, cargar); else abrirTicket(tr.getAttribute('data-ticket'), cargar);
         };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
@@ -3891,6 +3937,22 @@
         '<td class="c">' + n.cantidad + '</td><td class="n"><b>' + plata(-cent(n.total)) + '</b></td>' +
         (n.prueba ? '<td class="apagado c" title="Es una prueba">No va</td>'
           : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (n.cae ? 'Con CAE' : '—') + '</td>') + '</tr>';
+    }
+    /* 7/11 (como BlueSoft): el ticket de cambio es un renglón más, a su hora. Comprobante «Cambio», la Referencia C-3, el Total
+       es lo que se cobró de diferencia ($0 si salía lo mismo) y la Cant., las prendas que salen de más (lo que se lleva − lo que
+       vuelve, como el «Productos» del cambio; la base la manda desde el SQL 266). Lo que vuelve y lo que se lleva, al pasar el
+       mouse. Tocarlo abre el cambio (y ahí se anula). */
+    function filaCambioTk(f) {
+      var an = f.estado === 'anulado', clases = (an ? ' anulada' : '') + (f.prueba ? ' prueba' : '');
+      var cant = f.cantidad_sale != null ? Number(f.cantidad_sale) - Number(f.cantidad_vuelve || 0) : null;
+      return '<tr data-cambio="' + esc(f.id) + '" tabindex="0" class="tk-cb' + clases + '" title="' + esc('Vuelve: ' + (f.vuelven || '—') + ' · Se lleva: ' + (f.salen || '—')) + '">' +
+        '<td>' + esc(fechaHora(f.fecha)) + '</td><td class="c">' + esc(refCambio(f)) + '</td>' +
+        '<td class="tk-dos">' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli"><span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
+        '<td class="c">Cambio</td><td class="c tk-dos">' + ((f.medios || []).length ? mediosTk(f.medios) : '<span class="apagado" title="Salía lo mismo: no se cobró nada">—</span>') + '</td>' +
+        '<td class="c">' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
+        '<td class="c">' + (cant == null ? '<span class="apagado" title="Las prendas, en el cambio (tocalo)">—</span>' : cant) + '</td>' +
+        '<td class="n tachar"><b>' + plata(cent(f.diferencia)) + '</b></td>' +
+        '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'El cambio es un comprobante interno: no va a ARCA') + '">No va</td></tr>';
     }
     /* SQL 212: cuando llegan las ventas hechas sin internet, la lista se vuelve a traer. */
     S.recargar = function () { if (S.vista === 'tickets' && $('tkLista')) cargar(); };
@@ -5639,67 +5701,6 @@
       if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. El cambio sigue armado.'); persona.entrar(); return; }
       avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
     });
-  }
-
-  /* ── El listado de cambios ── */
-  function verCambios() {
-    var c = $('cuerpo'), prueba = enPrueba();
-    c.innerHTML = cabeza('Cambios' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Los cambios de ' + esc(lasSucursales()) + ': lo que vuelve y lo que se lleva.',
-        '<button type="button" class="btn btn-sec btn-chico" id="cmBorrar" hidden>Borrar las pruebas</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" data-ir="cambio">Nuevo cambio</button>') +
-      '<div class="pos-filtros"><div id="cmPer"></div>' +
-        campo('', 'Sucursal', '<select id="cmLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        /* Los de verdad y los de prueba no se mezclan nunca; con el modo prueba prendido arranca en los de prueba. */
-        campo('', 'Cambios', '<select id="cmPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="cmLista"><p class="cargando">Cargando…</p></div>';
-    c.querySelector('[data-ir="cambio"]').onclick = function () { ir('cambio'); };
-    var per = periodoPos($('cmPer'), { inicial: 'hoy', guardar: 'pos_cambios_periodo', hastaHoy: true, alCambiar: cargar });
-    ['cmLocal', 'cmPrueba'].forEach(function (id) { $(id).onchange = cargar; });
-    $('cmBorrar').onclick = function () { borrarPruebas($('cmLocal').value, this, cargar); };
-    var pedido = 0;
-    function dePrueba() { return $('cmPrueba').value === '1'; }
-    function cargar() {
-      var r = per.rango(), n = ++pedido;
-      $('cmLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      $('cmBorrar').hidden = !dePrueba();
-      llamar('pos_cambios', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('cmLocal').value || null, p_prueba: dePrueba() }).then(function (d) {
-        if (n !== pedido || !$('cmLista')) return;
-        pintarLista(d);
-      }).catch(function (e) { if ($('cmLista')) $('cmLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
-    }
-    function pintarLista(d) {
-      var t = d.totales || {};
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Cambios</span><b>' + (t.cambios || 0) + '</b></div>' +
-        '<div class="pos-kpi"><span>Prendas que volvieron</span><b>' + (t.vuelven || 0) + '</b></div>' +
-        '<div class="pos-kpi"><span>Prendas que salieron</span><b>' + (t.salen || 0) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>Diferencia cobrada</span><b>' + plata(cent(t.diferencia || 0)) + '</b></div>' +
-        (t.anulados ? '<div class="pos-kpi"><span>Anulados</span><b>' + t.anulados + '</b></div>' : '') + '</div>' +
-        (dePrueba() ? '<div class="pos-cartel prueba">Los cambios de <b>prueba</b>: no cuentan para nada. «Borrar las pruebas» los borra' +
-          ($('cmLocal').value ? ' (los de esa sucursal)' : ' todos') + ', con las ventas de prueba.</div>' : '');
-      if (!d.filas || !d.filas.length) {
-        $('cmLista').innerHTML = kpis + '<div class="pos-cartel">' + (dePrueba() ? 'No hay cambios de prueba en ese período.' : 'No hay cambios en ese período.') + '</div>';
-        return;
-      }
-      $('cmLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
-        '<th>Cliente</th><th>Vuelve</th><th>Se lleva</th><th>Forma de pago</th><th>Estado</th><th class="n">Diferencia</th></tr></thead><tbody>' +
-        d.filas.map(function (f) {
-          var an = f.estado === 'anulado', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
-          return '<tr data-cambio="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td>' +
-            '<td class="n">' + esc(refCambio(f)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td>' +
-            '<td class="cb-que">' + esc(f.vuelven || '') + '</td><td class="cb-que">' + esc(f.salen || '') + '</td>' +
-            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
-            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Hecho</span>') + '</td>' +
-            '<td class="n tachar"><b>' + plata(cent(f.diferencia)) + '</b></td></tr>';
-        }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
-      $('cmLista').querySelectorAll('tr[data-cambio]').forEach(function (tr) {
-        tr.onclick = function () { abrirCambio(tr.getAttribute('data-cambio'), cargar); };
-        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
-      });
-    }
-    cargar();
-    actualizable(cargar);
   }
 
   /* ── Un cambio guardado: verlo y anularlo (sólo mientras la caja está abierta) ── */
