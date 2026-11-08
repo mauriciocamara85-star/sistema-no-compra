@@ -1265,6 +1265,8 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .tkl-fallida, .btn-fallida { background: #A00F1E; color: #FFFFFF; }
 .tkl-fallida { min-height: 50px; font-size: 17px; }
 .tkl-fallida:hover, .btn-fallida:hover:not(:disabled) { background: #860C19; }
+/* «Se fue sin comprar», en la venta (v442): secundario, que no compita con Guardar; la letra en el rojo de «mal» (va con el tema). */
+.btn.btn-se-fue { color: var(--bad-txt); }
 .tkl-nueva:active, .tkl-fallida:active { transform: scale(.985); }
 .tkl-nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .tkl-num { padding: 9px 8px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: center; min-width: 0; }

@@ -1737,6 +1737,7 @@
       /* El cartel de la venta guardada va en la cabecera: abajo empujaría la venta fuera de la pantalla del local. */
       cabeza('Nueva venta' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="vSub"></span>',
         '<div id="vHecho"></div>' +
+        '<button type="button" class="btn btn-sec btn-chico btn-se-fue" id="vSeFue" title="El cliente se fue sin comprar: abre la venta fallida con lo que se probó">Se fue sin comprar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vGuardarVer" title="Guardar la venta e ir a Tickets">' + textoGuardar(false) + '</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar(true) + '</button>') +
@@ -1833,6 +1834,7 @@
       guardarBorrador();
       verVenta();
     };
+    $('vSeFue').onclick = seFueSinComprar;
     $('vGuardar').onclick = function () { guardarVenta(false); };
     $('vGuardarVer').onclick = function () { guardarVenta(true); };
     engancharProducto();
@@ -5132,11 +5134,49 @@
      escribe cuando entra lo que buscaba). El motivo, el producto si pidió
      uno, el detalle y el monto perdido. Suma al tráfico de Tickets.
      ════════════════════════════════════════════════════════════════════ */
-  /* o: { local, vendedor (los de la anterior, con «Guardar y nueva»), alGuardar() }. */
+  /* «Se fue sin comprar», en la Nueva venta (Mauricio, 8/11: «sí, hacé todo»): el cliente se va con la venta a medio armar.
+     Abre la venta fallida con lo de la venta: la sucursal, el vendedor, la prenda más cara (con su talle y su color), el
+     monto perdido (lo que iba a pagar) y, si se probó más de una, todas en el Detalle. El motivo lo eligen ellos. Al
+     guardarla la venta se borra (como «Limpiar»); si la cancelan, queda como estaba. Las gift cards y los premios del
+     Club no cuentan: no son prendas que se probó. */
+  function seFueSinComprar() {
+    var ls = V.lineas.filter(function (l) { return !l.giftcard && !l.premio; });
+    var deCat = ls.filter(function (l) { return !l.libre && PROD[l.codigo]; }).sort(function (a, b) { return b.precio - a.precio; })[0];
+    var c = cuenta(V), soloPrendas = ls.length === V.lineas.length;
+    var monto = !ls.length ? null : soloPrendas ? c.total : ls.reduce(function (s, l) { return s + l.precio * l.cantidad; }, 0);
+    var renglon = function (l) {
+      return (l.descripcion || l.codigo) + (l.libre ? '' : ' (' + l.codigo + ')') + (l.talle ? ' talle ' + l.talle : '') + (l.color ? ' ' + (l.color_nom || nombreColor(l.color, l.codigo)) : '') +
+        (l.cantidad > 1 ? ' ×' + l.cantidad : '');
+    };
+    abrirFallida({ local: V.local_id, vendedor: V.vendedor, prod: deCat ? PROD[deCat.codigo] : null, talle: deCat ? deCat.talle : '', color: deCat ? deCat.color : '',
+      monto: monto, detalle: ls.length > 1 || (ls.length && !deCat) ? 'Se probó: ' + ls.map(renglon).join('; ') + '.' : '',
+      alGuardar: function () {
+        V = ventaNueva(V);
+        guardarBorrador();
+        if (S.vista === 'venta' && $('vSeFue')) verVenta();
+      } });
+  }
+  /* o: { local, vendedor (los de la anterior, con «Guardar y nueva»), alGuardar(); y desde la venta («Se fue sin comprar»):
+     prod (del catálogo), talle, color, monto (en centavos) y detalle }. */
   function abrirFallida(o) {
     o = o || {};
     var l = localMio(o.local) || localInicial(), prueba = enPrueba();
-    var F = { clave: nuevaClave(), local: l ? l.id : null, vendedor: o.vendedor || vendedorInicial(l), motivo: '', prod: null, talle: '', color: '', montoAuto: '' };
+    var F = { clave: nuevaClave(), local: l ? l.id : null, vendedor: o.vendedor || vendedorInicial(l), motivo: '', prod: o.prod || null,
+              talle: o.prod ? o.talle || '' : '', color: o.prod ? o.color || '' : '', montoAuto: '' };
+    /* El talle y el color de la venta son los de la prenda que había. Si se fue porque no había su talle (o su color), el
+       que buscaba es justo otro: con ese motivo se vacía, para que elijan el que buscaba (como en el No Compra: nunca
+       anotar el que había como el que quería). Con otro motivo vuelve el de la venta. */
+    F.deVenta = o.prod ? { talle: F.talle, color: F.color } : null;
+    function ajustarVariantes() {
+      if (!F.deVenta || !F.prod) return;
+      var n = { talle: tallesDe(F.prod).length, color: coloresDe(F.prod).length };
+      ['talle', 'color'].forEach(function (k) {
+        if (n[k] < 2 || !F.deVenta[k]) return;
+        if (F.motivo === k) { if (F[k] === F.deVenta[k]) F[k] = ''; }
+        else if (!F[k]) F[k] = F.deVenta[k];
+      });
+      pintarProd();
+    }
     /* 7/11 (v434, Mauricio: «dale así»): como la «Nueva venta fallida» de BlueSoft, en las mismas posiciones. Arriba el título
        y la fecha; a la izquierda el Vendedor, la Sucursal y, donde BlueSoft tiene el Cliente, el No Compra (el que deja su
        WhatsApp no es una venta fallida); a la derecha el Motivo (botones, en el orden de BlueSoft), el producto que buscaba
@@ -5185,6 +5225,7 @@
     function elegirProd(p) {
       var ts = tallesDe(p), cs = coloresDe(p);
       F.prod = p;
+      F.deVenta = null;
       F.talle = ts.length === 1 ? ts[0] : '';
       F.color = cs.length === 1 ? cs[0].cod : '';
       caja.querySelector('#vfProd').limpiar();
@@ -5210,6 +5251,10 @@
           return '<button type="button" class="chip' + (x.cod === F.color ? ' sel' : '') + '" data-vc="' + esc(x.cod) + '">' + esc(x.nom) + '</button>'; }).join('') + '</div></div>' : '') + '</div>';
     }
     llenarVend();
+    /* Lo que trae la venta («Se fue sin comprar»): la prenda, el detalle y el monto (el de la venta, no el de la lista). */
+    if (o.detalle) caja.querySelector('#vfDetalle').value = String(o.detalle).slice(0, 500);
+    if (o.monto) caja.querySelector('#vfMonto').value = plataCampo(o.monto);
+    if (F.prod) pintarProd();
     engancharProducto({ campo: 'vfProd', sug: 'vfSug', lista: lista, agregar: elegirProd, elegir: elegirProd, sinLinea: true,
       noEsta: function () {
         var d = caja.querySelector('#vfDetalle'), t = caja.querySelector('#vfProd').value.trim();
@@ -5232,6 +5277,7 @@
       if (!b) return;
       F.motivo = b.getAttribute('data-motivo');
       marcarMotivo();
+      ajustarVariantes();
       errorEn(caja, 'vfError', '');
     };
     caja.querySelector('#vfElegido').onclick = function (e) {
@@ -5240,7 +5286,7 @@
       if (b.id === 'vfSacar') {
         var m = caja.querySelector('#vfMonto');
         if (m.value === F.montoAuto) m.value = F.montoAuto = '';
-        F.prod = null; F.talle = ''; F.color = '';
+        F.prod = null; F.talle = ''; F.color = ''; F.deVenta = null;
         caja.querySelector('#vfProd').focus();
       } else if (b.hasAttribute('data-vt')) F.talle = F.talle === b.getAttribute('data-vt') ? '' : b.getAttribute('data-vt');
       else if (b.hasAttribute('data-vc')) F.color = F.color === b.getAttribute('data-vc') ? '' : b.getAttribute('data-vc');
@@ -5309,16 +5355,18 @@
     }
     function pintarF(d) {
       var t = d.totales || {}, pm = d.por_motivo || {};
-      var arriba = '<div class="pos-totales"><div class="pos-kpi"><span>Ventas fallidas</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div>' +
-          '<div class="pos-kpi"><span>Monto perdido</span><b>' + plata(cent(t.perdido || 0)) + '</b></div></div>' +
+      /* 8/11 (Mauricio: «sí, hacé todo»; de esta lista no hay foto de BlueSoft): los totales abajo de la grilla, como en las
+         otras listas de BlueSoft (Tickets, Retiros, Movimientos de salida), con lo de cada motivo debajo. */
+      var pie = '<div class="pos-totales abajo"><div class="pos-kpi fuerte"><span>Monto perdido</span><b>' + plata(cent(t.perdido || 0)) + '</b></div>' +
+          '<div class="pos-kpi"><span>Ventas fallidas</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
         (Object.keys(pm).length ? '<p class="pos-por-letra">' + MOTIVOS.filter(function (m) { return pm[m[0]]; }).map(function (m) {
-          return '<span>' + esc(m[1]) + ' <b>' + pm[m[0]] + '</b></span>'; }).join('') + '</p>' : '') +
-        (deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas fallidas de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '');
+          return '<span>' + esc(m[1]) + ' <b>' + pm[m[0]] + '</b></span>'; }).join('') + '</p>' : '');
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas fallidas de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
       if (!d.filas || !d.filas.length) {
-        $('vfLista').innerHTML = arriba + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas fallidas de prueba en ese período con esos filtros.' : 'No hay ventas fallidas en ese período con esos filtros.') + '</div>';
+        $('vfLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas fallidas de prueba en ese período con esos filtros.' : 'No hay ventas fallidas en ese período con esos filtros.') + '</div>' + pie;
         return;
       }
-      $('vfLista').innerHTML = arriba + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Vendedor</th><th>Motivo</th>' +
+      $('vfLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Vendedor</th><th>Motivo</th>' +
         '<th>Producto</th><th>Detalle</th><th class="n">Monto perdido</th><th>Cargó</th><th><span class="sr">Borrar</span></th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           var prod = f.descripcion ? esc(f.descripcion) + (f.talle ? ' · ' + esc(f.talle) : '') + (f.color ? ' · ' + esc(nombreColor(f.color, f.codigo)) : '') : '<span class="apagado">—</span>';
@@ -5328,7 +5376,7 @@
             '<td class="n">' + (f.monto != null ? plata(cent(f.monto)) : '<span class="apagado">—</span>') + '</td><td>' + esc(f.cargado_por || '—') + '</td>' +
             '<td>' + (puede('anular') ? '<button type="button" class="tk-quitar" data-borrar="' + esc(f.id) + '" title="Borrar (si se cargó por error)" aria-label="Borrar esta venta fallida">' + icono('x') + '</button>' : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '') + pie;
       $('vfLista').querySelectorAll('[data-borrar]').forEach(function (b) {
         b.onclick = function () {
           var f = d.filas.filter(function (x) { return x.id === b.getAttribute('data-borrar'); })[0];
