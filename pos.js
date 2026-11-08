@@ -7760,164 +7760,188 @@
     return !f.control && (filtro === 'entra' ? c0 > 0 : c0 < 0);
   }
 
-  /* Mauricio (6/11, sobre la foto de la caja fuerte): "más parecida a la de BlueSoft… al principio caja chica y caja fuerte
-     y el monto total de cada una. Hacías clic en una de ellas y ahí se te desplegaban los movimientos entrantes y salientes".
-     Arriba, cada sucursal con sus dos cajas: cuánto hay hoy y su último control. Al tocar una, abajo se despliega su
-     "Consulta de Valores" (el período, lo que entró y salió, los movimientos con el saldo, Excel y su Ajustar/Cerrar) sin
-     cambiar de pantalla; tocarla otra vez la cierra. El «Actualizar» vuelve a traer las cajas y, si hay una abierta, sus
-     movimientos. Hasta el 6/11 cada caja abría una pantalla aparte, con un selector «Caja» y «‹ Disponibilidad». */
+  /* v451 (8/11, Mauricio: «sigamos con 3 y 4»): como la «Disponibilidad de Cajas y Cuentas Bancarias» de BlueSoft (las fotos
+     del 29/10 en POS Capturas blue/Disponibilidad). A la izquierda el «Resumen»: donde BlueSoft tiene Efectivo y Cheques
+     (cheques no se usan), lo de las cajas chicas y lo de las fuertes, y abajo el Total. A la derecha la grilla de las cajas,
+     a todo el alto: Sucursal · Caja · Último control · Total. Al tocar una se abre su «Consulta de Valores», como en
+     BlueSoft: en lugar de la lista, con «Cerrar» para volver. Arriba el período y la «Caja»; a la izquierda su Resumen (al
+     empezar, lo que entró y lo que salió —se tocan y filtran— y lo que hay hoy) con «Ajustar…» o «Cerrar la caja» abajo
+     (su «Ajustar/Cerrar Caja»); a la derecha «Movimientos en efectivo» con Exportar, la grilla y abajo el último ajuste.
+     Del 6/11 al 8/11 (v371) las cajas eran tarjetas y los movimientos se desplegaban abajo de la tarjeta. */
   function verDisponibilidad() {
     /* filtro: tocar «Entró» o «Salió» deja sólo las entradas o sólo las salidas ('entra' / 'sale'; '' = todo). */
-    var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], abierta = null, ult = null, filtro = '';
-    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en cada caja, según el sistema. Tocá una para ver lo que entró y lo que salió.') +
-      '<div id="dpLista"><p class="cargando">Cargando…</p></div>';
-    /* El panel de los movimientos se arma una sola vez y se muda abajo de la sucursal de la caja abierta: así el período
-       elegido queda al pasar de una caja a la otra. */
-    var panel = document.createElement('div');
-    panel.className = 'dp-panel';
-    panel.id = 'dpPanel';
-    panel.innerHTML = '<div class="dp-panel-cab"><h3 class="dp-panel-tit" id="dpTit"></h3><div id="dpPer"></div>' +
-        '<div class="dp-panel-acc"><button type="button" class="btn btn-sec btn-chico" id="dpExcel" disabled>Bajar para Excel</button><span id="dpAccion"></span></div></div>' +
-      '<div id="dpMov"></div>';
-    var en = function (id) { return panel.querySelector('#' + id); };
-    var per = periodoPos(en('dpPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: function () { cargarMov(); } });
-    en('dpExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r, ult.caja, filtro); };
+    var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], ultD = null, abierta = null, ult = null, filtro = '', per = null;
+    var p = function (n) { return plata(cent(n || 0)); };
+    var RES = '<div class="dp-res-tit">Resumen</div>';
+    c.classList.add('lleno');
 
+    /** Las sucursales en el orden en que vienen; en cada una, la caja chica primero (como en BlueSoft). */
+    function ordenCajas(xs) {
+      var pos = {};
+      xs.forEach(function (x, i) { if (!(x.local_id in pos)) pos[x.local_id] = i; });
+      return xs.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
+        return pos[a.x.local_id] - pos[b.x.local_id] || (a.x.caja === 'chica' ? 0 : 1) - (b.x.caja === 'chica' ? 0 : 1) || a.i - b.i;
+      }).map(function (o) { return o.x; });
+    }
+    function esLaAbierta(x) { return !!abierta && abierta.local === x.local_id && abierta.caja === x.caja; }
+
+    /* El «Actualizar»: en la lista, las cajas; en la consulta, las cajas (para el selector) y los movimientos. */
     function cargar() {
       var n = ++pedido;
-      if (!cajas.length) $('dpLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      var p = llamar('pos_disponibilidad').then(function (d) {
-        if (n !== pedido || !$('dpLista')) return;
-        pintar(d);
-      }).catch(function (e) { if (n === pedido && $('dpLista')) { cajas = []; $('dpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; } });
+      var pr = llamar('pos_disponibilidad').then(function (d) {
+        if (n !== pedido) return;
+        ultD = d;
+        cajas = ordenCajas(d.cajas || []);
+        if (abierta) opcionesCaja(); else pintar();
+      }).catch(function (e) {
+        if (n !== pedido || abierta || !$('dpLista')) return;
+        cajas = [];
+        $('dpRes').innerHTML = RES;
+        $('dpAvisos').innerHTML = '';
+        $('dpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>';
+      });
       /* A la vez (no después): así el botón de actualizar gira hasta que llegan las dos cosas. */
       if (abierta) cargarMov(true);
-      return p;
+      return pr;
     }
-    function pintar(d) {
-      var p = function (n) { return plata(cent(n || 0)); };
-      cajas = d.cajas || [];
+
+    /* ── La lista: el Resumen y las cajas ── */
+    function verLista() {
+      abierta = null; ult = null; filtro = ''; per = null; pedidoMov++;
+      c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en cada caja, según el sistema. Tocá una para ver lo que entró y lo que salió.') +
+        '<div class="dp-bs dp-lista">' +
+          '<section class="dp-izq" aria-label="Resumen"><div class="dp-res" id="dpRes">' + RES + '<p class="cargando">Cargando…</p></div>' +
+            '<div id="dpAvisos" class="dp-avisos"></div></section>' +
+          '<section class="dp-der" aria-label="Las cajas"><div class="dp-tit-fila"><h3 class="dp-tit">Cajas</h3></div>' +
+            '<div id="dpLista" class="dp-grilla"><p class="cargando">Cargando…</p></div></section>' +
+        '</div>';
+      actualizable(cargar);
+      window.scrollTo(0, 0);
+      if (ultD) pintar();   // al volver de una caja: lo que ya se trajo, mientras llega lo nuevo
+      return cargar();
+    }
+    function pintar() {
+      if (!$('dpLista')) return;
+      var tCh = 0, tFu = 0, nCh = 0;
+      cajas.forEach(function (x) { if (x.caja === 'chica') { tCh += cent(x.saldo || 0); nCh++; } else tFu += cent(x.saldo || 0); });
+      $('dpRes').innerHTML = RES +
+        '<div class="dp-r"><span>' + (nCh === 1 ? 'Caja chica' : 'Cajas chicas') + '</span><b>' + plata(tCh) + '</b></div>' +
+        '<div class="dp-r"><span>' + (cajas.length - nCh === 1 ? 'Caja fuerte' : 'Cajas fuertes') + '</span><b>' + plata(tFu) + '</b></div>' +
+        '<div class="dp-r dp-r-tot"><span>Total</span><b>' + plata(tCh + tFu) + '</b></div>';
       if (!cajas.length) {
-        cerrar();
+        $('dpAvisos').innerHTML = '';
         $('dpLista').innerHTML = '<div class="pos-cartel">Todavía ninguna sucursal usa el POS de verdad. Cuando una venda, cargue un movimiento o cierre la caja, aparece acá.</div>';
         return;
       }
-      /* Las sucursales en el orden en que vienen; en cada una, la caja chica primero (como en BlueSoft). */
-      var sucs = [], porId = {};
-      cajas.forEach(function (x, i) {
-        var s = porId[x.local_id];
-        if (!s) { s = porId[x.local_id] = { id: x.local_id, nombre: x.local, cajas: [], total: 0 }; sucs.push(s); }
-        s.cajas.push(i);
-        s.total += cent(x.saldo || 0);
-      });
-      sucs.forEach(function (s) { s.cajas.sort(function (a, b) { return (cajas[a].caja === 'chica' ? 0 : 1) - (cajas[b].caja === 'chica' ? 0 : 1); }); });
-      var t = d.totales || {}, sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
       /* Las cajas fuertes que hace DP_DIAS_AVISO días o más que nadie cuenta. */
       var viejas = cajas.filter(function (x) { return x.caja === 'fuerte' && x.ultimo && ultimoControl(x).aviso; });
       var nomViejas = viejas.map(function (x) { return bonito(x.local); }).join(', ').replace(/, ([^,]*)$/, ' y $1');
-      $('dpLista').innerHTML =
-        /* Con más de una sucursal, arriba lo de todas (el "Resumen" de BlueSoft, sin cheques: no se usan). */
-        (sucs.length > 1 ? '<div class="pos-totales">' +
-          '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.chica || 0) + cent(t.fuerte || 0)) + '</b></div>' +
-          '<div class="pos-kpi"><span>En las cajas chicas</span><b>' + p(t.chica) + '</b></div>' +
-          '<div class="pos-kpi"><span>En las cajas fuertes</span><b>' + p(t.fuerte) + '</b></div></div>' : '') +
-        /* Arriba de las cajas (abajo quedaría después de la tabla abierta): la caja fuerte que hace días que nadie cuenta. */
-        (viejas.length ? '<div class="pos-cartel dp-cartel-aviso">Hace ' + (viejas.length === 1 ? ultimoControl(viejas[0]).dias : DP_DIAS_AVISO + ' días o más') +
-          (viejas.length === 1 ? ' días' : '') + ' que nadie cuenta la caja fuerte de ' + esc(nomViejas) + ': contala y cargá lo que hay con «Ajustar…».</div>' : '') +
-        sucs.map(function (s) {
-          return '<section class="dp-suc" data-local="' + esc(s.id) + '"><h3 class="dp-suc-nom">' + esc(bonito(s.nombre)) + '</h3><div class="dp-fila">' +
-            s.cajas.map(function (i) {
-              var x = cajas[i], uc = ultimoControl(x);
-              return '<button type="button" class="dp-caja" data-i="' + i + '" aria-expanded="false" aria-controls="dpPanel" title="Ver lo que entró y lo que salió">' +
-                '<span class="dp-caja-ico">' + icono(x.caja === 'chica' ? 'caja' : 'fuerte') + '</span>' +
-                '<span class="dp-caja-txt"><span class="dp-caja-nom">' + esc(nombreCaja(x)) + '</span><b>' + p(x.saldo) + '</b>' +
-                  '<small' + (uc.aviso ? ' class="dp-nunca"' : '') + (x.ultimo ? ' title="Último ' + (x.caja === 'chica' ? 'cierre' : 'ajuste') + ': ' + esc(fechaHora(x.ultimo.fecha)) + '"' : '') + '>' +
-                  esc(uc.txt) + '</small></span>' +
-                '<span class="dp-caja-flecha">' + icono('abajo') + '</span></button>';
-            }).join('') +
-            (s.cajas.length > 1 ? '<div class="dp-total"><span>Total</span><b>' + plata(s.total) + '</b></div>' : '') +
-          '</div><div class="dp-slot"></div></section>';
-        }).join('') +
+      var sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
+      $('dpAvisos').innerHTML =
+        (viejas.length ? '<div class="pos-cartel dp-cartel-aviso">Hace ' + (viejas.length === 1 ? ultimoControl(viejas[0]).dias + ' días' : DP_DIAS_AVISO + ' días o más') +
+          ' que nadie cuenta la caja fuerte de ' + esc(nomViejas) + ': contala y cargá lo que hay con «Ajustar…».</div>' : '') +
         (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar…» con lo que hay de verdad.</p>' : '');
-      $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) {
-        b.onclick = function () {
-          var x = cajas[Number(b.getAttribute('data-i'))];
-          if (esLaAbierta(x)) cerrar(); else abrir(x);
-        };
+      $('dpLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla dp-cajas"><thead><tr><th>Sucursal</th><th>Caja</th><th>Último control</th>' +
+          '<th class="n">Total</th></tr></thead><tbody>' +
+        cajas.map(function (x, i) {
+          var uc = ultimoControl(x);
+          return '<tr data-i="' + i + '" tabindex="0" title="Ver lo que entró y lo que salió">' +
+            '<td>' + esc(bonito(x.local)) + '</td><td><b>' + esc(nombreCaja(x)) + '</b></td>' +
+            '<td' + (uc.aviso ? ' class="dp-nunca"' : '') + (x.ultimo ? ' title="Último ' + (x.caja === 'chica' ? 'cierre' : 'ajuste') + ': ' + esc(fechaHora(x.ultimo.fecha)) + '"' : '') + '>' +
+              esc(uc.txt) + '</td>' +
+            '<td class="n"><b>' + p(x.saldo) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>';
+      $('dpLista').querySelectorAll('tr[data-i]').forEach(function (tr) {
+        tr.onclick = function () { verCaja(cajas[Number(tr.getAttribute('data-i'))]); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
-      /* La que estaba abierta (el «Actualizar», o después de un ajuste) sigue abierta. */
-      var x = abierta && cajas.filter(esLaAbierta)[0];
-      if (x) ubicar(x); else cerrar();
     }
-    function esLaAbierta(x) { return !!abierta && abierta.local === x.local_id && abierta.caja === x.caja; }
-    /** Marca la caja abierta y pone el panel abajo de su sucursal. */
-    function ubicar(x) {
-      $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) {
-        var si = esLaAbierta(cajas[Number(b.getAttribute('data-i'))]);
-        b.classList.toggle('abierta', si);
-        b.setAttribute('aria-expanded', si ? 'true' : 'false');
-      });
-      en('dpTit').textContent = 'Movimientos de la ' + nombreCaja(x).toLowerCase();
-      var suc = [].filter.call($('dpLista').querySelectorAll('.dp-suc'), function (s) { return s.getAttribute('data-local') === x.local_id; })[0];
-      var slot = suc && suc.querySelector('.dp-slot');
-      if (slot && panel.parentNode !== slot) slot.appendChild(panel);
-      return suc;
-    }
-    function abrir(x) {
-      abierta = { local: x.local_id, caja: x.caja };
-      ult = null;
-      filtro = '';   // otra caja: se ve todo
-      var suc = ubicar(x);
+
+    /* ── La «Consulta de Valores de Caja» de una caja ── */
+    function verCaja(x) {
+      if (!x) return;
+      abierta = { local: x.local_id, caja: x.caja }; ult = null; filtro = '';
+      c.innerHTML = cabeza('Consulta de valores de caja', 'Lo que entró y lo que salió de la caja, con el saldo después de cada movimiento.',
+          '<button type="button" class="btn btn-sec btn-chico" id="dpCerrar">Cerrar</button>') +
+        '<div class="pos-filtros"><div id="dpPer"></div>' + campo('dp-caja-sel', 'Caja', '<select id="dpCaja" class="desplegable"></select>') + '</div>' +
+        '<div class="dp-bs dp-consulta">' +
+          '<section class="dp-izq" aria-label="Resumen"><div class="dp-res" id="dpRes">' + RES + '<p class="cargando">Cargando…</p></div>' +
+            '<div id="dpAccion" class="dp-accion"></div></section>' +
+          '<section class="dp-der" aria-label="Los movimientos"><div class="dp-tit-fila"><h3 class="dp-tit">Movimientos en efectivo</h3>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="dpExcel" disabled title="Los movimientos que se ven, para abrirlos en Excel">Exportar</button></div>' +
+            '<div id="dpMov" class="dp-grilla"><p class="cargando">Cargando…</p></div><div id="dpPie" class="dp-pie"></div></section>' +
+        '</div>';
+      actualizable(cargar);
+      opcionesCaja();
+      /* El período elegido queda guardado: al pasar de una caja a otra (o al volver) sigue el mismo. */
+      per = periodoPos($('dpPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: function () { cargarMov(); } });
+      $('dpCerrar').onclick = verLista;
+      $('dpCaja').onchange = function () {
+        var y = cajas[Number(this.value)];
+        if (!y || esLaAbierta(y)) return;
+        abierta = { local: y.local_id, caja: y.caja }; ult = null; filtro = '';   // otra caja: se ve todo
+        cargarMov();
+      };
+      $('dpExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r, ult.caja, filtro); };
+      window.scrollTo(0, 0);
       cargarMov();
-      /* Con varias sucursales, la de abajo de todo: que se vea lo que se abrió. */
-      if (suc && panel.getBoundingClientRect().top > (window.innerHeight || 0) - 140) suc.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
-    function cerrar() {
-      abierta = null;
-      ult = null;
-      pedidoMov++;
-      if ($('dpLista')) $('dpLista').querySelectorAll('.dp-caja').forEach(function (b) { b.classList.remove('abierta'); b.setAttribute('aria-expanded', 'false'); });
-      if (panel.parentNode) panel.parentNode.removeChild(panel);
+    /** El selector «Caja» (el de BlueSoft): todas las cajas, con la abierta elegida. */
+    function opcionesCaja() {
+      var s = $('dpCaja');
+      if (!s) return;
+      var i = cajas.map(function (y) { return esLaAbierta(y); }).indexOf(true);
+      s.innerHTML = opciones(cajas.map(function (y, k) { return [String(k), bonito(y.local) + ' · ' + nombreCaja(y)]; }), String(i));
     }
     /* Con suave (el «Actualizar»), lo que se ve queda hasta que llega lo nuevo. */
     function cargarMov(suave) {
-      if (!abierta) return null;
+      if (!abierta || !per || !$('dpMov')) return null;
       var sel = abierta, r = per.rango(), n = ++pedidoMov;
-      if (!suave || !ult) { en('dpMov').innerHTML = '<p class="cargando">Cargando…</p>'; en('dpAccion').innerHTML = ''; en('dpExcel').disabled = true; }
+      if (!suave || !ult) {
+        $('dpRes').innerHTML = RES + '<p class="cargando">Cargando…</p>';
+        $('dpMov').innerHTML = '<p class="cargando">Cargando…</p>';
+        $('dpAccion').innerHTML = ''; $('dpPie').innerHTML = ''; $('dpExcel').disabled = true;
+      }
       return llamar('pos_caja_valores', { p_local: sel.local, p_caja: sel.caja, p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
-        if (n !== pedidoMov) return;
+        if (n !== pedidoMov || !$('dpMov')) return;
         ult = { d: d, r: r, caja: sel.caja };
         pintarMov(d, sel);
-      }).catch(function (e) { if (n === pedidoMov) en('dpMov').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+      }).catch(function (e) {
+        if (n !== pedidoMov || !$('dpMov')) return;
+        $('dpRes').innerHTML = RES;
+        $('dpMov').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>';
+      });
     }
-    /* La "Consulta de Valores de Caja" de BlueSoft: los movimientos de la caja en el período, del más nuevo al más viejo,
-       con el saldo después de cada uno. En un cierre o un ajuste, el importe es la diferencia (lo contado menos lo que
-       decía el sistema), así cada renglón es el de abajo más su importe. Cuánto hay hoy ya está en la tarjeta de arriba. */
+    /* Los movimientos de la caja en el período, del más nuevo al más viejo, con el saldo después de cada uno. En un cierre o
+       un ajuste, el importe es la diferencia (lo contado menos lo que decía el sistema), así cada renglón es el de abajo más
+       su importe. */
     function pintarMov(d, sel) {
-      var p = function (n) { return plata(cent(n || 0)); }, chica = sel.caja === 'chica', filas = d.filas || [];
-      /* Su "Ajustar/Cerrar Caja": la chica se cierra en el mostrador; la fuerte la cuenta la oficina acá. */
-      en('dpAccion').innerHTML = chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
-                                       : '<button type="button" class="btn btn-pri btn-chico" id="dpAjustar">Ajustar…</button>';
-      if (!chica) en('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
+      var chica = sel.caja === 'chica', filas = d.filas || [], u = d.ultimo;
       /* Si en este período no entró (o no salió) nada, el filtro no tiene qué mostrar: se ve todo. */
       if ((filtro === 'entra' && !cent(d.entro || 0)) || (filtro === 'sale' && !cent(d.salio || 0))) filtro = '';
       var vis = filas.filter(function (f) { return dpPasa(f, filtro); });
-      en('dpExcel').disabled = !vis.length;
-      en('dpExcel').textContent = filtro ? 'Bajar ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') + ' para Excel' : 'Bajar para Excel';
-      var u = d.ultimo;
       /* «Entró» y «Salió» se tocan: dejan sólo las entradas o sólo las salidas, y otra vez, todo. En verde lo que entró y en
          rojo lo que salió; un $0 va sin color y no se toca. */
-      function kpiFiltro(k, lbl, monto, cls) {
-        if (!cent(monto || 0)) return '<div class="pos-kpi"><span>' + lbl + '</span><b>' + p(0) + '</b></div>';
+      function rFiltro(k, lbl, monto, cls) {
+        if (!cent(monto || 0)) return '<div class="dp-r"><span>' + lbl + '</span><b>' + p(0) + '</b></div>';
         var si = filtro === k;
-        return '<button type="button" class="pos-kpi dp-filtro" data-filtro="' + k + '" aria-pressed="' + si + '" title="' +
+        return '<button type="button" class="dp-r dp-filtro" data-filtro="' + k + '" aria-pressed="' + si + '" title="' +
           (si ? 'Ver todos los movimientos' : 'Ver sólo lo que ' + lbl.toLowerCase()) + '"><span>' + lbl + (si ? ' · sólo esto' : '') + '</span><b class="' + cls + '">' + p(monto) + '</b></button>';
       }
-      en('dpMov').innerHTML = '<div class="pos-totales">' +
-          '<div class="pos-kpi"><span>Al empezar el período</span><b>' + p(d.antes) + '</b></div>' +
-          kpiFiltro('entra', 'Entró', d.entro, 'dp-entra') + kpiFiltro('sale', 'Salió', d.salio, 'dp-sale') +
-          (Number(d.ajustado) ? '<div class="pos-kpi"><span>' + (chica ? 'Diferencias de los cierres' : 'Ajustes') + '</span><b>' + esc(importeConSigno(d.ajustado)) + '</b></div>' : '') +
-        '</div>' +
+      $('dpRes').innerHTML = RES +
+        '<div class="dp-r"><span>Al empezar el período</span><b>' + p(d.antes) + '</b></div>' +
+        rFiltro('entra', 'Entró', d.entro, 'dp-entra') + rFiltro('sale', 'Salió', d.salio, 'dp-sale') +
+        (Number(d.ajustado) ? '<div class="dp-r"><span>' + (chica ? 'Diferencias de los cierres' : 'Ajustes') + '</span><b>' + esc(importeConSigno(d.ajustado)) + '</b></div>' : '') +
+        '<div class="dp-r dp-r-tot"><span>Hoy hay</span><b>' + p(d.saldo) + '</b></div>';
+      /* Su «Ajustar/Cerrar Caja», abajo del Resumen: la chica se cierra en el mostrador; la fuerte la cuenta la oficina acá. */
+      var uc = ultimoControl({ caja: sel.caja, ultimo: u });
+      $('dpAccion').innerHTML = (chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
+                                       : '<button type="button" class="btn btn-pri btn-chico" id="dpAjustar">Ajustar…</button>') +
+        (!chica && u && uc.aviso ? '<p>Hace ' + uc.dias + ' días que nadie la cuenta.</p>' : '');
+      if (!chica) $('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
+      $('dpExcel').disabled = !vis.length;
+      $('dpExcel').textContent = filtro ? 'Exportar ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') : 'Exportar';
+      $('dpMov').innerHTML =
         (filtro ? '<p class="dp-filtrado">Se ven sólo ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') + ' (' + vis.length + ' de ' + filas.length + ' movimientos). ' +
           '<button type="button" class="pos-link" id="dpTodo">Ver todo</button></p>' : '') +
         (!filas.length ? '<div class="pos-cartel">No hubo movimientos en esta caja en ese período.</div>' :
@@ -7935,33 +7959,32 @@
             return '<tr class="' + (f.control ? 'dp-control' : '') + '"' + (abre ? ' data-fila="' + i + '" tabindex="0" title="Ver el ' + (f.tipo === 'ajuste' ? 'ajuste' : 'cierre') + '"' : '') + '>' +
               '<td>' + esc(fechaHora(f.fecha)) + '</td><td><b>' + esc(f.ref) + '</b></td><td>' + esc(det) + '</td><td>' + esc(f.persona || '—') + '</td>' +
               '<td class="n">' + imp + '</td><td class="n"><b>' + p(f.saldo) + '</b></td></tr>';
-          }).join('') + '</tbody></table></div>' +
-          (d.mas ? '<p class="pos-mas">Se ven los últimos 1000. Achicá el período para ver el resto.</p>' : '')) +
-        /* Como el pie de BlueSoft ("Último ajuste de Caja" / "No hubo Ajustes de esta Caja"). */
-        '<p class="pos-ayuda">' + (u ? (chica ? 'Último cierre: Nº ' : 'Último ajuste: Nº ') + u.numero + ', el ' + esc(fechaHora(u.fecha)) +
-            (u.persona ? ', ' + esc(u.persona) : '') + '. Contaron ' + p(u.contado) + '.' :
-          chica ? 'Esta caja todavía no se cerró nunca: el saldo es lo de hoy desde $0.' :
-                  'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar…» para que dé lo de verdad.') + '</p>';
-      en('dpMov').querySelectorAll('tr[data-fila]').forEach(function (tr) {
+          }).join('') + '</tbody></table></div>');
+      /* Abajo de la grilla, como el pie de BlueSoft («Último ajuste de Caja» / «No hubo Ajustes de esta Caja», en rojo). */
+      $('dpPie').innerHTML = (d.mas ? '<p>Se ven los últimos 1000. Achicá el período para ver el resto.</p>' : '') +
+        (u ? '<p>' + (chica ? 'Último cierre: Nº ' : 'Último ajuste: Nº ') + u.numero + ', el ' + esc(fechaHora(u.fecha)) +
+            (u.persona ? ', ' + esc(u.persona) : '') + '. Contaron ' + p(u.contado) + '.</p>' :
+          '<p class="dp-sin">' + (chica ? 'Esta caja todavía no se cerró nunca: el saldo es lo de hoy desde $0.' :
+            'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar…» para que dé lo de verdad.') + '</p>');
+      $('dpMov').querySelectorAll('tr[data-fila]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-fila'))];
         tr.onclick = function () { if (f.tipo === 'ajuste') abrirAjusteHecho(f, d, cargar); else abrirCierre(f.id, cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
-      /* El filtro no vuelve a la base: pinta otra vez lo mismo con o sin el filtro, y el foco queda en el botón que se tocó. */
-      en('dpMov').querySelectorAll('[data-filtro]').forEach(function (b) {
+      /* El filtro no vuelve a la base: pinta otra vez lo mismo con o sin el filtro, y el foco queda en el renglón que se tocó. */
+      $('dpRes').querySelectorAll('[data-filtro]').forEach(function (b) {
         b.onclick = function () {
           var k = b.getAttribute('data-filtro');
           filtro = filtro === k ? '' : k;
           pintarMov(d, sel);
-          var otra = en('dpMov').querySelector('[data-filtro="' + k + '"]');
+          var otra = $('dpRes').querySelector('[data-filtro="' + k + '"]');
           if (otra) otra.focus();
         };
       });
-      var todo = en('dpTodo');
+      var todo = $('dpTodo');
       if (todo) todo.onclick = function () { filtro = ''; pintarMov(d, sel); };
     }
-    cargar();
-    actualizable(cargar);
+    verLista();
   }
 
   /* Baja lo que se ve: con el filtro de «Entró» o «Salió», sólo las entradas o sólo las salidas. */

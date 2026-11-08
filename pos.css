@@ -1540,54 +1540,58 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
 .dp-tabla td.dp-nunca { color: var(--txt-3); }
 .dp-tabla tr.dp-control td { background: var(--surface-2); }
 .dp-cero { font-size: 12px; color: var(--txt-3); }
-/* 6/11 (Mauricio: "como BlueSoft… al principio caja chica y caja fuerte y el monto total de cada una; hacías clic en una y
-   se desplegaban los movimientos"): cada sucursal con sus dos cajas en tarjetas; la abierta va en negro, como el «Hoy
-   hay» de antes, y su panel de movimientos se despliega abajo. Lo que entra en verde y lo que sale en rojo. */
-.dp-suc + .dp-suc { margin-top: 18px; }
-.dp-suc-nom { margin: 0 0 8px; font: 700 13px var(--sans); color: var(--txt-2); }
-.dp-fila { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
-.dp-caja { flex: 0 1 300px; min-width: 230px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left;
-  font-family: var(--sans); color: var(--txt); background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r);
-  box-shadow: var(--sombra); cursor: pointer; transition: border-color .15s var(--curva), background .15s var(--curva); }
-.dp-caja:hover { border-color: var(--line-alta); }
-.dp-caja:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-.dp-caja-ico { flex: none; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: var(--surface-2); color: var(--txt-2); }
-.dp-caja-ico svg { width: 20px; height: 20px; }
-.dp-caja-txt { flex: 1; min-width: 0; }
-.dp-caja-nom { display: block; font-size: 12.5px; font-weight: 600; color: var(--txt-2); }
-.dp-caja-txt b { display: block; font: 700 24px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
-.dp-caja-txt small { display: block; margin-top: 2px; font-size: 12px; color: var(--txt-3); }
-.dp-caja-txt small.dp-nunca { color: var(--warn-txt); }
-.dp-caja-flecha { flex: none; color: var(--txt-3); transition: transform .2s var(--curva); }
-.dp-caja-flecha svg { display: block; width: 18px; height: 18px; }
-.dp-caja.abierta { background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
-.dp-caja.abierta .dp-caja-nom, .dp-caja.abierta .dp-caja-txt small { color: rgba(255, 255, 255, .78); }
-.dp-caja.abierta .dp-caja-ico { background: rgba(255, 255, 255, .12); color: #FFFFFF; }
-.dp-caja.abierta .dp-caja-flecha { color: #FFFFFF; transform: rotate(180deg); }
-/* En oscuro el negro de la abierta casi no se distingue de las otras: un aro cobre (el cobre es para aros, nunca para letra). */
-html[data-theme="dark"] .dp-caja.abierta { border-color: var(--cobre); box-shadow: 0 0 0 1px var(--cobre), var(--sombra); }
-.dp-total { display: flex; flex-direction: column; justify-content: center; padding: 0 8px; }
-.dp-total span { font-size: 12.5px; font-weight: 600; color: var(--txt-3); }
-.dp-total b { font: 700 18px/1.25 var(--sans); font-variant-numeric: tabular-nums; color: var(--txt-2); }
-.dp-panel { margin-top: 10px; padding: 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); }
-.dp-panel-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
-.dp-panel-tit { margin: 0; font: 700 15px var(--sans); color: var(--txt); }
-.dp-panel-acc { display: flex; gap: 8px; margin-left: auto; }
-.dp-panel .pos-ayuda { margin-bottom: 0; }
+/* v451 (8/11): como la «Disponibilidad de Cajas» de BlueSoft y su «Consulta de Valores»: el «Resumen» a la izquierda (el
+   título en negro, como los «Resultados del día» del cierre) y la grilla a la derecha, a todo el alto en la compu. */
+.dp-bs { display: grid; gap: 12px; }
+.dp-izq, .dp-der { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.dp-res { min-width: 0; padding-bottom: 6px; overflow: hidden; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
+.dp-res-tit { margin: 0 0 4px; padding: 9px 14px; background: var(--tablero-negro); color: #FFFFFF; font: 700 14px var(--sans); }
+.dp-res .cargando { margin: 8px 14px; }
+.dp-r {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; padding: 6px 14px;
+  border: 0; background: none; text-align: left; font: 500 13.5px var(--sans); color: var(--txt-2);
+}
+.dp-r b { font: 700 16px/1.25 var(--sans); color: var(--txt); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dp-r b.dp-entra { color: var(--ok-txt); }
+.dp-r b.dp-sale { color: var(--bad-txt); }
+.dp-r-tot { margin-top: 6px; padding-top: 10px; border-top: 2px solid var(--line); color: var(--txt); font-weight: 700; }
+.dp-r-tot b { font-size: 22px; letter-spacing: -.3px; }
+/* «Entró» y «Salió» se tocan y filtran; el que está puesto, con la raya cobre a la izquierda. */
+button.dp-r { cursor: pointer; }
+button.dp-r:hover { background: var(--surface-2); }
+button.dp-r:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+button.dp-r[aria-pressed="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--cobre); color: var(--txt); }
+.dp-accion:empty, .dp-avisos:empty, .dp-pie:empty { display: none; }
+.dp-accion { display: grid; gap: 6px; }
+.dp-accion .btn { justify-content: center; }
+.dp-accion p { margin: 0 2px; font-size: 13px; font-weight: 600; color: var(--warn-txt); }
+.dp-avisos { display: grid; gap: 8px; }
+.dp-avisos .pos-cartel, .dp-avisos .pos-ayuda { margin: 0; }
+.dp-tit-fila { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+.dp-tit { margin: 0; font: 700 15px var(--sans); color: var(--txt); }
+.dp-grilla { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dp-cajas tbody tr { cursor: pointer; }
+.dp-cajas tbody tr:hover td { background: var(--surface-2); }
+.dp-cajas tbody tr:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.dp-cajas td { white-space: nowrap; }
+.dp-cajas td.dp-nunca { color: var(--warn-txt); font-weight: 600; }
+.dp-pie p { margin: 0; font-size: 13px; color: var(--txt-2); }
+.dp-pie p + p { margin-top: 4px; }
+.dp-pie .dp-sin { color: var(--bad-txt); }
 .dp-entra { color: var(--ok-txt); }
 .dp-sale { color: var(--bad-txt); }
-/* 6/11: «Entró» y «Salió» se tocan y filtran; el que está puesto lleva el aro cobre. El aviso de la caja fuerte que
-   hace días que nadie cuenta, en ámbar como su tarjeta. */
-.pos-kpi.dp-filtro:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-.pos-kpi.dp-filtro[aria-pressed="true"] { border-color: var(--cobre); box-shadow: 0 0 0 1px var(--cobre); }
-.dp-filtrado { margin: -2px 0 8px; font-size: 13px; color: var(--txt-2); }
+.dp-filtrado { margin: 0; font-size: 13px; color: var(--txt-2); }
 .dp-filtrado .pos-link { margin-left: 4px; }
-.pos-cartel.dp-cartel-aviso { margin-bottom: 12px; background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
-/* Sobre el negro de la tarjeta abierta, un ámbar claro (el de siempre no se lee). */
-.dp-caja.abierta .dp-caja-txt small.dp-nunca { color: #F2C063; }
-@media (max-width: 600px) {
-  .dp-caja { flex: 1 1 100%; }
-  .dp-total { flex-direction: row; align-items: baseline; gap: 8px; padding: 2px 4px 0; }
+.pos-cartel.dp-cartel-aviso { background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
+.pos-filtros .pos-f.dp-caja-sel { min-width: 220px; }
+@media (min-width: 1000px) {
+  .dp-bs { grid-template-columns: 300px minmax(0, 1fr); align-items: stretch; }
+  /* La lista de las cajas no se estira de más (en BlueSoft la grilla es angosta). */
+  .dp-bs.dp-lista { grid-template-columns: 300px minmax(0, 860px); }
+  .pos-cuerpo.lleno > .dp-bs { flex: 1 1 auto; min-height: 0; }
+  .dp-grilla { flex: 1 1 auto; min-height: 0; }
+  .dp-grilla > .pos-marco-tabla { flex: 1 1 auto; height: 0; min-height: 150px; overflow: auto; }
+  .dp-grilla .pos-tabla th { position: sticky; top: 0; z-index: 1; }
 }
 
 /* ── Los depósitos (SQL 193) ── */
