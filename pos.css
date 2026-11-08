@@ -1047,6 +1047,16 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .dv-bs .tk-tot > :only-child { grid-column: 1 / -1; }
 .pos .tk-tabla input.dv-razon { width: 100%; min-width: 96px; padding: 4px 8px; }
 .dv-tabla td.tk-desc { min-width: 100px; }
+/* v449: el envío nuevo como el «Envío Interno de Mercadería» de BlueSoft: el mismo molde; las Observaciones abajo de la
+   columna de la izquierda (como allá) y, debajo de la grilla, Exportar a la izquierda y la Cantidad y el Total a la derecha. */
+.ev-bs .tk-datos { grid-template-rows: repeat(var(--filas, 5), auto) minmax(0, 1fr); }
+.ev-bs .tk-datos > .ev-obs { align-self: end; margin-top: 10px; }
+.ev-bs .ev-obs textarea { height: 76px; resize: none; }
+.ev-bs .rn-pie.ev-pie { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 12px; }
+.ev-pie-izq { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 260px; }
+.ev-bs .ev-pie .tk-tot { flex: 0 1 340px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ev-bs .ev-pie .tk-tot > :only-child { grid-column: 1 / -1; }
+.ev-tabla td.tk-desc { min-width: 100px; }
 /* La lista como «Devoluciones a Fábrica y Proveedores» de BlueSoft: a todo el alto (.rgl) con el pie de Tickets abajo. */
 .dv-lista td.rg-obs { max-width: 320px; }
 .dv-prec { margin: 6px 0 0; }

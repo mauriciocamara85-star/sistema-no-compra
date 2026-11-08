@@ -12623,8 +12623,16 @@
   function verEnvioNuevo() {
     RN_DEV = false; RN_ENV = true; RN_SG = false;
     RN = cargarRemitoNuevo();
-    var c = $('cuerpo'), prueba = enPrueba(), entre = RN.tipo === 'entre', hecho = entre ? S.paseHecho : null;
+    var c = $('cuerpo'), prueba = enPrueba(), entre = RN.tipo === 'entre', hecho = entre ? S.paseHecho : null, vp = !entre && puede('precios');   // SQL 190
     S.paseHecho = null;
+    /* v449 (8/11, Mauricio: «sigamos con 3 y 4»): como el «Envío Interno de Mercadería» de BlueSoft (la foto del 28/10), el
+       molde del remito nuevo y de la devolución (.tk.rn-bs). A la izquierda los datos en su orden: Fecha · Letra ·
+       Referencia, Estado, Depósito, Lista de precios (con «Ver precios»), Sucursal origen · Sucursal destino, y las
+       Observaciones abajo de todo; a la derecha el Producto y la grilla de BlueSoft (un renglón por talle y color:
+       Ítem, Código, Descripción, Talle, Color, Cantidad, Precio unitario y Precio total) y, abajo, a la izquierda Exportar
+       y a la derecha la Cantidad de productos y el Total. «Entre depósitos del local» (lo nuestro, SQL 193), igual, con
+       la Sucursal, los dos depósitos, el Módulo y el Responsable. */
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Nuevo envío interno' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         entre ? 'De un depósito a otro de la sucursal: se pasa al guardarlo. Para el stock de todo el local, mejor <button type="button" class="pos-link" data-ir="general">Stock general</button>, con los módulos del croquis.'
               : 'Lo que el local le manda a otro local. Al guardarlo sale del stock; el otro local lo recibe contándolo en POS → Remitos.',
@@ -12638,32 +12646,56 @@
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para guardarlo.</div>' : '') +
       (hecho ? '<div class="pos-cartel st-ok">Envío <b>R-' + esc(hecho.numero) + '</b> guardado: el módulo ' + esc(hecho.modulo) + ' (' + num(hecho.unidades) + (hecho.unidades === 1 ? ' unidad' : ' unidades') +
                ') ya está en «' + esc(hecho.destino) + '». Seguí con el próximo módulo. <button type="button" class="pos-link" id="rnVerPases">Ver los envíos entre depósitos</button></div>' : '') +
-      (entre ? '<div class="tk-datos rn-datos ed-datos">' +
-          campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-          campo('', 'Depósito origen', '<select id="rnDepO"><option value="">Cargando…</option></select>') +
-          campo('', 'Depósito destino', '<select id="rnDepD"><option value="">Cargando…</option></select>') +
-          campo('', 'Módulo', '<input type="text" id="rnModulo" maxlength="20" placeholder="Ej.: 12" autocomplete="off">') +
-          campo('', 'Responsable <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Quién lo pasa"><datalist id="rnVend"></datalist>') +
-          campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: la pared del fondo" autocomplete="off">') +
-        '</div><div id="rnDepAviso"></div>'
-      : '<div class="tk-datos rn-datos ev-datos">' +
-          campo('', 'Sale de', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-          campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>') +
-          campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
-          campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
-          campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
-          campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: se lo pidió una clienta" autocomplete="off">') +
-        '</div>') + htmlProdRn();
+      (entre ? '<div id="rnDepAviso"></div>' : '') +
+      '<div class="tk rn-bs ev-bs">' +
+        '<section class="tk-izq" aria-label="Los datos del envío"><div class="tk-datos" style="--filas:' + (entre || vp ? 5 : 4) + '">' +
+          campo('c4 rn-fecha', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
+          campo('c2', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
+          /* BlueSoft pone acá el número que va a tener; el nuestro (R-…) lo da la base al guardarlo. */
+          campo('c6 rn-ref', 'Referencia', '<input type="text" value="" placeholder="Al guardarlo" readonly tabindex="-1" title="El número (R-…) lo pone el sistema al guardarlo">') +
+          (entre ?
+            campo('', 'Estado', '<input type="text" value="Se pasa al guardarlo" readonly tabindex="-1">') +
+            campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+            campo('c6', 'Depósito origen', '<select id="rnDepO"><option value="">Cargando…</option></select>') +
+            campo('c6', 'Depósito destino', '<select id="rnDepD"><option value="">Cargando…</option></select>') +
+            campo('c4', 'Módulo', '<input type="text" id="rnModulo" maxlength="20" placeholder="Ej.: 12" autocomplete="off">') +
+            campo('c8', 'Responsable <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Quién lo pasa"><datalist id="rnVend"></datalist>')
+          :
+            campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1" title="Sale del stock al guardarlo; el otro local lo recibe contándolo">') +
+            campo('', 'Depósito', '<input type="text" id="rnDepTxt" value="El predeterminado" readonly tabindex="-1" title="Sale del depósito predeterminado de la sucursal">') +
+            (vp ? campo('', 'Lista de precios', '<input type="text" id="rnListaTxt" value="" readonly tabindex="-1" title="La lista de la sucursal de donde sale">') : '') +
+            campo('c6', 'Sucursal origen', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+            campo('c6', 'Sucursal destino', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>')) +
+        /* Las Observaciones abajo de todo de la columna, como en BlueSoft: la fila de antes ocupa lo que sobra (--filas: los renglones de arriba). */
+        campo('ev-obs', 'Observaciones', '<textarea id="rnObs" maxlength="300" placeholder="' + (entre ? 'Ej.: la pared del fondo' : 'Ej.: se lo pidió una clienta') + '"></textarea>') +
+        '</div>' +
+        '</section>' +
+        '<section class="tk-der" aria-label="Los productos">' +
+          '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel o un TXT: Código, Talle, Color y Cantidad">Importar productos…</button>' +
+            '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+          '<div class="tk-grilla"><table class="tk-tabla ev-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
+            '<th class="c">Cant.</th>' + (vp ? '<th class="n">Precio unit.</th><th class="n">Precio total</th>' : '') + '<th><span class="sr">Quitar</span></th></tr></thead>' +
+            '<tbody id="rnFilas"></tbody></table></div>' +
+          '<div class="rn-pie ev-pie"><div class="ev-pie-izq"><div class="rn-pie-bts">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnExcel" title="Los renglones del envío, para abrirlos en Excel">Exportar detalle a Excel</button></div>' +
+            '<p class="rn-tot" id="rnTot"></p></div>' +
+            '<div class="tk-tot"><div class="tk-caja"><span>Cantidad de productos</span><b id="rnCant">0</b></div>' +
+              (vp ? '<div class="tk-caja" title="Con el precio de la lista de la sucursal"><span>Total</span><b id="rnPlata">$0</b></div>' : '') + '</div></div>' +
+        '</section>' +
+      '</div>';
     engancharIr(c);
+    c.querySelector('.pos-cab').classList.add('pos-cab-act');   // la bajada al lado de los botones, arriba a la derecha como en BlueSoft
     c.querySelectorAll('.ev-tipos .pestana').forEach(function (b) {
       b.onclick = function () { var t = b.getAttribute('data-tipo'); if (t === RN.tipo) return; RN.tipo = t; guardarBorradorRn(); verEnvioNuevo(); };
     });
-    var vp = $('rnVerPases');
-    if (vp) vp.onclick = function () { S.evVer = 'depositos'; S.evMarcar = hecho.id; ir('envios'); };
+    var vpa = $('rnVerPases');
+    if (vpa) vpa.onclick = function () { S.evVer = 'depositos'; S.evMarcar = hecho.id; ir('envios'); };
     $('rnObs').value = RN.observaciones || '';
+    $('rnExcel').onclick = bajarRn;
     $('rnOrigen').onchange = function () {
       RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value);
-      if (entre) { RN.dep_o = ''; RN.dep_d = ''; depositosRn(); }
+      if (entre) { RN.dep_o = ''; RN.dep_d = ''; depositosRn(); } else datosEnvioRn();
       guardarBorradorRn(); preciosRn();
     };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
@@ -12675,9 +12707,22 @@
       $('rnDepO').onchange = function () { RN.dep_o = this.value; guardarBorradorRn(); pintarRn(); };
       $('rnDepD').onchange = function () { RN.dep_d = this.value; guardarBorradorRn(); pintarRn(); };
       depositosRn();
-    } else $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
+    } else {
+      $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
+      datosEnvioRn();
+    }
     engancharRn(verEnvioNuevo);
     preciosRn();
+  }
+  /** v449: el depósito de donde sale (el predeterminado de la sucursal) y su lista de precios, como los muestra BlueSoft. */
+  function datosEnvioRn() {
+    var loc = RN.origen, l = listaPorId(listaDe(localDe(loc)));
+    if ($('rnListaTxt')) $('rnListaTxt').value = l ? l.nombre : '';
+    if ($('rnDepTxt')) $('rnDepTxt').value = 'El predeterminado';
+    traerDepositos(loc).then(function (ds) {
+      var d = depPredeterminado((ds || []).filter(function (x) { return x.activo; }));
+      if (d && $('rnDepTxt') && RN && RN.origen === loc) $('rnDepTxt').value = d.nombre;
+    }, function () {});
   }
   /** SQL 193: los depósitos de la sucursal del envío entre depósitos. Sin elegir, sale del predeterminado y va al más nuevo de los otros. */
   function depositosRn() {
@@ -12855,7 +12900,9 @@
       La devolución a fábrica (7/11) usa la misma grilla con el precio unitario y el total de cada renglón (con «Ver precios»)
       y la razón; a la izquierda, abajo, el Total y la cantidad de productos. */
   function pintarRnBs(marcar) {
-    var t = $('rnFilas'), n = 0, dev = RN_DEV, vp = dev && puede('precios'), lista = vp ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = {};
+    /* v449: el envío a otro local también, con el precio (con «Ver precios») y sin la razón; entre depósitos, sin precios. */
+    var t = $('rnFilas'), n = 0, dev = RN_DEV, env = RN_ENV, vp = (dev || (env && RN.tipo !== 'entre')) && puede('precios'),
+        lista = vp ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = {};
     RN.lineas.forEach(function (l) { n += l.cantidad; });
     $('rnCant').textContent = num(n);
     if ($('rnDif')) $('rnDif').textContent = num(RN.lineas.length);
@@ -12873,12 +12920,16 @@
                  ' title="La razón es del producto: vale para todos sus talles y colores" aria-label="' + esc('Razón de ' + l.codigo) + '"></td>' : '') +
         '<td><button type="button" class="tk-quitar" data-quitar="' + i + '" title="Quitar" aria-label="' + esc('Quitar ' + nom + ' ' + [l.talle, l.color].filter(Boolean).join(' ')) + '">' + icono('x') + '</button></td></tr>';
     }).join('') :
-      '<tr class="tk-vacia"><td colspan="' + (dev ? (vp ? 10 : 8) : 7) + '"><b>Todavía no hay productos</b>Dispará la pistola a las etiquetas (suma de a una), buscá el producto arriba y escribí cuántas van de cada talle y color, ' +
+      '<tr class="tk-vacia"><td colspan="' + (7 + (vp ? 2 : 0) + (dev ? 1 : 0)) + '"><b>Todavía no hay productos</b>Dispará la pistola a las etiquetas (suma de a una), buscá el producto arriba y escribí cuántas van de cada talle y color, ' +
       'o importá un Excel (Código, Talle, Color y Cantidad).</td></tr>';
     if ($('rnPlata')) $('rnPlata').textContent = plata(plataTot);
     var d = rnFab() && depFabRn(), dd = dev && depDevRn(), ns = Object.keys(sinPrecio).length;   // SQL 259; la devolución, de su depósito (SQL 193)
+    var sinP = ns ? ' ' + (ns === 1 ? 'Un producto no tiene precio en la lista: no suma al total.' : ns + ' productos no tienen precio en la lista: no suman al total.') : '';
+    var deps = env && RN.tipo === 'entre' ? S.dep[RN.origen] || [] : [], dO = deps.length ? depDe(deps, RN.dep_o) : null, dD = deps.length ? depDe(deps, RN.dep_d) : null;
     $('rnTot').innerHTML = !RN.lineas.length ? '' :
-      dev ? 'Salen del ' + (dd ? 'depósito «' + esc(dd.nombre) + '» de ' : 'stock de ') + esc(nombreLocal(localDe(RN.origen))) + ' al guardar y vuelven a la fábrica.' +
+      env ? (RN.tipo === 'entre' ? (dO && dD ? 'Pasan de «' + esc(dO.nombre) + '» a «' + esc(dD.nombre) + '» al guardarlo.' : '') :
+             'Salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardarlo' + (localDe(RN.destino) ? ' y van a ' + esc(nombreLocal(localDe(RN.destino))) + '.' : '.') + sinP) :
+      dev ?'Salen del ' + (dd ? 'depósito «' + esc(dd.nombre) + '» de ' : 'stock de ') + esc(nombreLocal(localDe(RN.origen))) + ' al guardar y vuelven a la fábrica.' +
             (ns ? ' ' + (ns === 1 ? 'Un producto no tiene precio en la lista: no suma al total.' : ns + ' productos no tienen precio en la lista: no suman al total.') : '') :
       RN.origen ? 'Salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' + (RN.destino === A_FABRICA ? ' y vuelven a la fábrica.' : '.') :
                            d ? 'Salen del depósito «' + esc(d.nombre) + '» de la fábrica al guardar.' : '';
