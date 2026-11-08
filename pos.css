@@ -1357,6 +1357,41 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   background: var(--surface-2); font-size: 13px; line-height: 1.4; color: var(--txt-2); }
 @media (max-width: 760px) { .vf-bs { grid-template-columns: minmax(0, 1fr); } }
 
+/* ── La Transferencia de fondos como la de BlueSoft (v439) ─────────────────
+   La nueva y la guardada: el título con los botones a la derecha; Fecha, Sucursal, Número, Letra y Responsable en un
+   renglón; Estado, Caja origen y Caja destino en otro; la grilla de Valores con el Total valores abajo a la derecha, y
+   las Observaciones al final. En el celular, de a dos. */
+.tf-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 40px 14px 0; }
+.tf-cab h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.tf-acc { display: flex; flex-wrap: wrap; gap: 8px; }
+.tf-datos { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px 12px; margin-bottom: 14px; }
+.tf-datos > .pos-f { grid-column: span 4; }
+.tf-datos > .tf-fecha, .tf-datos > .tf-num, .tf-datos > .tf-est { grid-column: span 2; }
+.tf-datos > .tf-suc { grid-column: span 3; }
+.tf-datos > .tf-letra { grid-column: span 1; }
+.tf-datos.con-ctl > .tf-ori, .tf-datos.con-ctl > .tf-des { grid-column: span 3; }
+.tf-valores { display: flex; flex-direction: column; gap: 3px; }
+.tf-valores .pos-marco-tabla { min-height: 132px; box-shadow: none; }
+.pos-tabla.tf-tabla td { height: 46px; }
+.pos-tabla.tf-tabla td.n { width: 220px; }
+.pos-tabla.tf-tabla input { width: 190px; text-align: right; font-variant-numeric: tabular-nums; }
+.tf-pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-top: 8px; }
+.pos-caja .tf-nota { margin: 0; font-size: 13px; color: var(--txt-2); }
+.tf-total { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.tf-total span { font: 700 11.5px var(--sans); letter-spacing: .04em; text-transform: uppercase; color: var(--txt-2); }
+.tf-total b { min-width: 170px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  text-align: right; font: 700 16px var(--display); font-variant-numeric: tabular-nums; }
+.tf-total.tachar b { text-decoration: line-through; color: var(--txt-3); }
+.pos-caja .tf-obs { margin-top: 12px; }
+.pos-caja .tf-obs textarea { min-height: 64px; resize: vertical; }
+.tf-obs-txt { min-height: 48px; margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .pos-caja .tf-datos > .pos-f { grid-column: span 6; }
+  .pos-tabla.tf-tabla td.n { width: auto; }
+  .pos-tabla.tf-tabla input { width: 130px; }
+}
+
 /* ── Ventas por vendedor (SQL 192) ──────────────────────────────────────
    A la izquierda las columnas de BlueSoft; a la derecha, donde BlueSoft
    tiene la torta, una barra por vendedor: un solo color (el cobre, que se

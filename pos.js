@@ -6621,18 +6621,20 @@
       var filas = d.filas || [], t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('msLocal').value;
       var ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
       filas.forEach(function (f) { if (f.origen !== 'cierre') f.prueba = deLaPrueba(); });
-      var kpis = '<div class="pos-totales">' +
+      /* Abajo, como en BlueSoft (y como en Retiros): el total, el controlado y la cantidad. */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
         (ctl ? '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' : '') +
         '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
-        (deLaPrueba() ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '');
+        (ctl && puede('gestion') && filas.length ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas esa plata en la caja fuerte. Lo tilda sólo la oficina.</p>' : '');
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
       if (!filas.length) {
-        $('msLista').innerHTML = kpis + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay movimientos de salida de prueba' : 'No hay movimientos de salida') +
-          ' en ese período. Se cargan con «Nueva transferencia».</div>';
+        $('msLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay movimientos de salida de prueba' : 'No hay movimientos de salida') +
+          ' en ese período. Se cargan con «Nueva transferencia».</div>' + pie;
         return;
       }
       /* Hasta el SQL 180 se pasaba en el Paso 2 del cierre: esos salen con el cierre, y al tocarlos se abre el cierre. */
-      $('msLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
+      $('msLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
         '<th>Cargó</th><th>Observaciones</th><th>Cierre</th>' + (ctl ? '<th class="c">Controlado</th>' : '') + '<th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var an = f.estado !== 'ok', delCierre = f.origen === 'cierre';
@@ -6644,8 +6646,7 @@
               '<span class="pill pill-ok">Caja abierta</span>') + '</td>' + (ctl ? celdaControlado(f) : '') +
             '<td class="n tachar"><b>' + p(f.monto) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '') +
-        (ctl && puede('gestion') ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas esa plata en la caja fuerte. Lo tilda sólo la oficina.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '') + pie;
       if (ctl) tildesControlado($('msLista'), cargar);
       $('msLista').querySelectorAll('tr[data-salida]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-salida'))];
@@ -6657,21 +6658,50 @@
     actualizable(cargar);
   }
 
-  /* La "Transferencia de fondos" de BlueSoft: de la caja chica a la caja fuerte, en efectivo. Dice cuánto
-     tendría que haber en la caja chica, y pregunta si pasan más que eso (un cero de más). */
+  /* La "Transferencia de fondos" de BlueSoft, en sus mismas posiciones (Mauricio, 7/11: «hagámoslo igual que BlueSoft»),
+     la nueva (o.nueva) y la guardada: arriba el título con los botones a la derecha; un renglón con Fecha, Sucursal,
+     Número, Letra y Responsable (sin la Referencia de BlueSoft: repite el número); otro con Estado, Caja origen y Caja
+     destino; la grilla de Valores con el Total valores abajo a la derecha, y al final las Observaciones. Lo nuestro es
+     sólo efectivo en pesos de la caja chica a la caja fuerte: el importe se escribe en el renglón de la grilla, sin el
+     «Agregar valor…» (cheques, retenciones). Donde BlueSoft tiene ese botón va lo de la caja chica: cuánto tendría que
+     haber (la nueva) o en qué cierre entró (la guardada). */
+  function transferenciaHtml(o) {
+    var ro = function (cls, lbl, v, t) { return campo(cls, lbl, '<input type="text" value="' + esc(v) + '" readonly tabindex="-1"' + (t ? ' title="' + esc(t) + '"' : '') + '>'); };
+    return '<div class="tf-cab"><h3 id="posVentTit">' + o.titulo + '</h3><div class="tf-acc">' + o.acciones + '</div></div>' + (o.antes || '') +
+      '<div class="tf-datos' + (o.controlado ? ' con-ctl' : '') + '">' +
+        ro('tf-fecha', 'Fecha', o.fecha) +
+        (o.nueva ? campo('tf-suc', 'Sucursal', '<select id="tfLocal" class="desplegable">' + opcionesLocales(o.local) + '</select>') : ro('tf-suc', 'Sucursal', o.local)) +
+        (o.nueva ? campo('tf-num', 'Número', '<input type="text" value="" placeholder="Al guardarla" readonly tabindex="-1" title="El número (MS-…) lo pone el sistema al guardarla">')
+                 : ro('tf-num', 'Número', o.numero || '—')) +
+        ro('tf-letra', 'Letra', 'X') +
+        ro('tf-resp', 'Responsable', o.responsable || '—', o.nueva ? 'Quien entró: queda como el que la cargó' : '') +
+        ro('tf-est', 'Estado', o.estado) +
+        ro('tf-ori', 'Caja origen', 'Caja chica') +
+        ro('tf-des', 'Caja destino', 'Caja fuerte') +
+        (o.controlado ? ro('tf-ctl', 'Controlado', o.controlado.txt, o.controlado.title) : '') +
+      '</div>' +
+      '<div class="tf-valores"><span class="pos-lbl">Valores</span>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla"><thead><tr><th>Tipo de valor</th><th class="n">Importe</th><th>Moneda</th></tr></thead>' +
+          '<tbody><tr' + (o.anulada ? ' class="anulada"' : '') + '><td>Efectivo</td><td class="n' + (o.anulada ? ' tachar' : '') + '">' +
+            (o.nueva ? '<input type="text" inputmode="decimal" id="tfMonto" data-plata autocomplete="off" placeholder="$0" aria-label="Importe en efectivo">' : '<b>' + plata(o.monto) + '</b>') +
+          '</td><td>Pesos</td></tr></tbody></table></div>' +
+        '<div class="tf-pie"><p class="pos-ayuda tf-nota" id="tfHay">' + (o.nota || '') + '</p>' +
+          '<div class="tf-total' + (o.anulada ? ' tachar' : '') + '"><span>Total valores</span><b id="tfTotal">' + plata(o.monto || 0) + '</b></div></div>' +
+      '</div>' +
+      (o.nueva ? campo('tf-obs', 'Observaciones', '<textarea id="tfObs" maxlength="200" rows="3"></textarea>')
+               : '<div class="pos-f tf-obs"><span>Observaciones</span><p class="tf-obs-txt">' + (o.obs ? esc(o.obs) : '<span class="apagado">Sin observaciones.</span>') + '</p></div>') +
+      (o.despues || '');
+  }
+  /* La nueva: de la caja chica a la caja fuerte, en efectivo. Dice cuánto tendría que haber en la caja chica, y pregunta
+     si pasan más que eso (un cero de más). A la base va lo mismo que antes. */
   function abrirSalida(localId, prueba, alGuardar) {
-    var clave = nuevaClave(), hay = null, pedido = 0;
-    var caja = ventana('<h3 id="posVentTit">' + (prueba ? 'Transferencia de prueba' : 'Transferencia de fondos') + '</h3>' +
-      '<p class="pos-bajada">De la caja chica a la caja fuerte. Hacela antes de cerrar la caja: el cierre la resta de lo que tendría que haber.</p>' +
-      '<div class="pos-campos">' +
-        campo('ancho', 'Sucursal', '<select id="tfLocal" class="desplegable">' + opcionesLocales(localId) + '</select>') +
-        campo('', 'Desde', '<input type="text" value="Caja chica" readonly>') +
-        campo('', 'Hacia', '<input type="text" value="Caja fuerte" readonly>') +
-        campo('', 'Importe en efectivo', '<input type="text" inputmode="decimal" id="tfMonto" autocomplete="off" placeholder="$0">') +
-        campo('ancho', 'Observaciones', '<input type="text" id="tfObs" maxlength="200" autocomplete="off">') +
-      '</div><p class="pos-ayuda" id="tfHay"></p><div class="pos-error" id="tfError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="tfGuardar">Guardar</button></div>');
+    var clave = nuevaClave(), hay = null, pedido = 0, yo = String((S.ini.yo && S.ini.yo.nombre) || '').trim();
+    var caja = ventana(transferenciaHtml({ nueva: true, local: localId, fecha: fechaCorta(S.ini.hoy), responsable: yo, estado: 'Aprobada',
+      titulo: (prueba ? 'Transferencia de prueba' : 'Transferencia de fondos') + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+      acciones: '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="tfGuardar">Guardar</button>',
+      despues: '<div class="pos-error" id="tfError"></div>' }), true);
+    caja.classList.add('tf');
     /* Lo que tendría que haber en la caja chica de esa sucursal (sin el saldo inicial del primer cierre, no se sabe). */
     function verHay() {
       var n = ++pedido, z = caja.querySelector('#tfHay');
@@ -6686,7 +6716,11 @@
     }
     verHay();
     caja.querySelector('#tfLocal').onchange = verHay;
-    plataEnVivo(caja.querySelector('#tfMonto')).oninput = function () { errorEn(caja, 'tfError', ''); };
+    caja.querySelector('#tfMonto').oninput = function () {
+      var m = leerPlata(this.value);
+      caja.querySelector('#tfTotal').textContent = plata(isNaN(m) ? 0 : m);
+      errorEn(caja, 'tfError', '');
+    };
     setTimeout(function () { caja.querySelector('#tfMonto').focus(); }, 0);
     function guardarSalida() {
       var bt = caja.querySelector('#tfGuardar');
@@ -7282,8 +7316,23 @@
   function abrirMovDetalle(f, alCambiar) {
     var an = f.estado !== 'ok', abierto = !f.cierre, deFuerte = f.tipo === 'retiro' && f.caja === 'fuerte';
     var ctl = (f.tipo === 'caja_fuerte' || f.tipo === 'retiro') && f.origen !== 'cierre' && f.controlado !== undefined;
-    var num = refGasto(f);
-    var caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
+    var num = refGasto(f), caja;
+    /* La transferencia de fondos guardada, en la misma ventana que la nueva (como BlueSoft). La del Paso 2 de un cierre viejo, no: ésa abre el cierre. */
+    if (f.tipo === 'caja_fuerte' && f.origen !== 'cierre') {
+      caja = ventana(transferenciaHtml({ anulada: an, local: bonito(f.local), fecha: fechaHora(f.fecha), numero: num, responsable: f.persona,
+        estado: an ? 'Anulada' : 'Aprobada', monto: cent(f.monto), obs: f.descripcion,
+        titulo: 'Transferencia de fondos' + (an ? ' <span class="pill pill-bad">Anulada</span>' : ''),
+        controlado: ctl ? { txt: f.controlado ? 'Sí' + (f.controlado_por ? ', ' + f.controlado_por : '') : 'Todavía no',
+                            title: f.controlado && f.controlado_en ? 'El ' + fechaHora(f.controlado_en) : 'Lo tilda la oficina cuando ve esa plata en la caja fuerte' } : null,
+        nota: an ? '' : abierto ? 'Salió de la caja chica: la resta el próximo cierre.' : 'Entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarla, hay que anular ese cierre.',
+        acciones: (!an && abierto && !f.controlado ? '<button type="button" class="btn btn-sec btn-chico" id="mdAnularBtn">Anular</button>' : '') +
+          (ctl && puede('gestion') && !an ? '<button type="button" class="btn btn-sec btn-chico" id="mdCtlBtn">' + (f.controlado ? 'Sacarle el tilde' : 'Marcar como controlado') + '</button>' : '') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button>',
+        antes: '<div id="mdAnular"></div>' + (an ? '<div class="pos-cartel mal">Anulada' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' : ''),
+        despues: !an && abierto && f.controlado ? '<p class="pos-ayuda">Ya la controló la oficina: para anularla, primero hay que sacarle el tilde de «Controlado».</p>' : '' }), true);
+      caja.classList.add('tf');
+    } else
+    caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
         (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +
       '<div class="pos-ticket-datos">' +
         '<div><span>Fecha</span>' + esc(fechaHora(f.fecha)) + '</div>' +
