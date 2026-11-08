@@ -1467,16 +1467,18 @@
     return (S.ini.promos || []).filter(function (p) { return p.activo && (!p.desde || p.desde <= hoy) && (!p.hasta || p.hasta >= hoy); });
   }
   /** Cómo quedarían las promos elegidas al sumar p (la que no se combina reemplaza a la otra que no se combina),
-      y cuánto descontaría p en este ticket. */
-  function conPromo(p) {
-    var puestas = {};
-    Object.keys(V.puestas || {}).forEach(function (id) {
+      y cuánto descontaría p en este ticket. X y fn: la venta (V, cuenta) o el cambio (CB, cuentaCambio; SQL 266). */
+  function conPromo(p, X, fn) {
+    X = X || V;
+    fn = fn || cuenta;
+    var puestas = {}, ya = X.puestas || {};
+    Object.keys(ya).forEach(function (id) {
       var q = promoDe(Number(id));
       if (q && (p.combinable || q.combinable)) puestas[id] = true;
     });
     puestas[p.id] = true;
-    var d = cuenta(Object.assign({}, V, { puestas: puestas })).descuentos.filter(function (x) { return x.tipo === 'promo' && x.promo_id === p.id; })[0];
-    var reemplaza = p.combinable ? null : promosVigentes().filter(function (q) { return !q.combinable && q.id !== p.id && V.puestas[q.id]; })[0] || null;
+    var d = fn(Object.assign({}, X, { puestas: puestas })).descuentos.filter(function (x) { return x.tipo === 'promo' && x.promo_id === p.id; })[0];
+    var reemplaza = p.combinable ? null : promosVigentes().filter(function (q) { return !q.combinable && q.id !== p.id && ya[q.id]; })[0] || null;
     return { puestas: puestas, monto: d ? d.monto : 0, reemplaza: reemplaza };
   }
   /** Qué hace una promo, corto, para el botón de «Descuentos +». */
@@ -3687,7 +3689,7 @@
   /* ════════════════════════════════════════════════════════════════════
      TICKETS (el listado de BlueSoft)
      ════════════════════════════════════════════════════════════════════ */
-  /** "Borrar las pruebas" (en Tickets y en Cambios): las ventas y los cambios de prueba, con su caja de prueba. */
+  /** "Borrar las pruebas" (en Tickets; desde el 7/11 los cambios están ahí): las ventas y los cambios de prueba, con su caja de prueba. */
   function borrarPruebas(loc, bt, despues) {
     var l = loc && localDe(loc);
     if (!confirm('¿Borrar ' + (l ? 'las pruebas de ' + nombreLocal(l) : 'todas las pruebas') +
@@ -5363,30 +5365,58 @@
   function cambioNuevo(antes) {
     var l = (antes && localMio(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
-             lista_id: listaDe(l), cliente: '', vuelve: [], sale: [], forma: 'efectivo', pago: {}, observaciones: '' };
+             lista_id: listaDe(l), cliente: '', vuelve: [], sale: [], forma: 'efectivo', pago: {}, observaciones: '',
+             puestas: {}, manuales: [] };   // SQL 266: las promos elegidas y los descuentos a mano, como en la venta
   }
   function cargarCambio() {
     var b = leerJSON(K_CAMBIO, null);
     if (b && b.v === 1 && b.clave && Array.isArray(b.vuelve) && Array.isArray(b.sale) && localMio(b.local_id) && listaPorId(b.lista_id)) {
       b.pago = b.pago || {};
       if (!MEDIOS[b.forma]) b.forma = 'efectivo';
+      if (!b.puestas || typeof b.puestas !== 'object' || Array.isArray(b.puestas)) b.puestas = {};   // un borrador de antes del 266
+      if (!Array.isArray(b.manuales)) b.manuales = [];
       return b;
     }
     return cambioNuevo();
   }
   function guardarBorradorCb() { guardarJSON(K_CAMBIO, CB); }
 
-  /** La cuenta del cambio, en centavos. dif = lo que se lleva − lo que vuelve: lo que se cobra (negativa, no se guarda).
-      rebaja = lo que se bajó de la lista en lo que se lleva (el «Descuentos» de la pantalla; ya está restado de dif). */
+  /** La cuenta del cambio, en centavos. base = lo que se lleva − lo que vuelve; dif = base − los descuentos: lo que se
+      cobra (negativa, no se guarda). rebaja = lo que se bajó de la lista en lo que se lleva (ya está restado de base).
+      SQL 266 (Mauricio, 7/11: «si a mí me entra una remera y yo vendo cuatro productos… puedo meter un 3x2»): las promos
+      elegidas (3x2, 2.ª al 50 %) y los descuentos a mano van sobre lo que se lleva, con la misma cuenta de la venta, y
+      entre todos no pasan la base: el cambio no baja de $0 (no se devuelve plata). La de forma de pago no va (no se paga
+      todo en efectivo: una parte es lo que vuelve); el cupón y el Club, en la venta.
+      descuentos: los que entran (lo que se manda a la base); noAplican: las elegidas que con estas prendas no descuentan;
+      noEntran: los que no entran porque el cambio ya da $0. */
   function cuentaCambio(cb) {
-    var r = { vuelve: 0, sale: 0, cv: 0, cs: 0, rebaja: 0 };
+    var r = { vuelve: 0, sale: 0, cv: 0, cs: 0, rebaja: 0, desc: 0, descuentos: [], noAplican: [], noEntran: [] };
     cb.vuelve.forEach(function (l) { r.vuelve += l.precio * l.cantidad; r.cv += l.cantidad; });
     cb.sale.forEach(function (l) {
       r.sale += l.precio * l.cantidad; r.cs += l.cantidad;
       if (l.lista != null && l.precio < l.lista) r.rebaja += (l.lista - l.precio) * l.cantidad;
     });
-    r.dif = r.sale - r.vuelve;
+    r.base = r.sale - r.vuelve;
+    var puestas = cb.puestas || {}, manuales = cb.manuales || [];
+    if (cb.sale.length && (manuales.length || Object.keys(puestas).length)) {
+      var c = cuenta({ lineas: cb.sale, puestas: puestas, manuales: manuales, forma: 'cambio', local_id: cb.local_id });
+      var queda = Math.max(0, r.base);
+      c.descuentos.forEach(function (d) {
+        var m = Math.min(d.monto, queda);
+        if (m <= 0) { r.noEntran.push(d); return; }
+        queda -= m;
+        r.desc += m;
+        r.descuentos.push(Object.assign({}, d, { monto: m, entero: d.monto }));
+      });
+      r.noAplican = c.noAplican;
+    }
+    r.dif = r.base - r.desc;
     return r;
+  }
+  /** Por qué una promo elegida no descuenta nada en el cambio. */
+  function porQueNoPromoCb(p) {
+    return p.tipo === 'medio_pago' ? 'en un cambio no va (no se paga todo ' + (p.medio === 'efectivo' ? 'en efectivo' : 'con ' + (MEDIOS[p.medio] || p.medio)) + ': una parte es lo que vuelve)'
+      : porQueNoPromo(p, {}) + ' en lo que se lleva';
   }
   /** Las reglas del precio (las mismas de la base): lo que vuelve, a lista o menos; lo que se lleva, con precio
       (desde el SQL 263 puede ir más barato que la lista). */
@@ -5439,7 +5469,9 @@
         '</div>' +
         '<div class="tk-tot">' +
           '<div class="tk-caja"><span>Neto</span><b id="cbNeto">$0</b></div>' +
-          '<div class="tk-caja" title="Lo que se bajó de la lista en el precio de lo que se lleva"><span>Descuentos</span><b id="cbDesc">$0</b></div>' +
+          /* SQL 266: como en la venta (y en el Ticket de cambio de BlueSoft), «Descuentos» abre las promos y el descuento a mano. */
+          '<button type="button" class="tk-caja" id="cbDescBtn" title="Elegir una promo (3x2, 2.ª al 50 %) o agregar un descuento a mano sobre lo que se lleva. ' +
+            'Suma también lo que se bajó de la lista en el precio"><span>Descuentos</span><b id="cbDesc">$0</b></button>' +
           '<div class="tk-caja"><span>Productos</span><b id="cbCant">0</b></div>' +
           '<div class="tk-caja gordo" id="cbTotCaja"><span>' + (prueba ? 'Total · prueba' : 'Total a pagar') + '</span><b id="cbTotal">$0</b></div>' +
         '</div></section>' +
@@ -5482,6 +5514,7 @@
       verCambio();
     };
     $('cbGuardar').onclick = guardarCambio;
+    $('cbDescBtn').onclick = abrirDescuentoCb;
     ['vuelve', 'sale'].forEach(function (s) {
       var x = SENTIDO[s];
       engancharProducto({ campo: x.campo, sug: x.sug, lista: function () { return CB.lista_id; }, agregar: agregarCb(s) });
@@ -5565,9 +5598,11 @@
       if (e.key === 'Enter' && e.target.matches('.tk-cant, .tk-precio')) { e.preventDefault(); e.target.blur(); $(SENTIDO[s].campo).focus(); }
     });
     t.addEventListener('click', function (e) {
-      var b = e.target.closest('[data-quitar]');
+      var b = e.target.closest('[data-quitar], [data-sacar], [data-manual]');
       if (!b) return;
-      CB[s].splice(Number(b.getAttribute('data-quitar')), 1);
+      if (b.hasAttribute('data-quitar')) CB[s].splice(Number(b.getAttribute('data-quitar')), 1);
+      else if (b.hasAttribute('data-sacar')) delete CB.puestas[b.getAttribute('data-sacar')];   // SQL 266: la promo
+      else CB.manuales.splice(Number(b.getAttribute('data-manual')), 1);                        // SQL 266: el descuento a mano
       pintarCambio();
       $(SENTIDO[s].campo).focus();
     });
@@ -5579,9 +5614,10 @@
     var k = cuentaCambio(CB), l0 = localDe(CB.local_id), li = listaPorId(CB.lista_id), n = 0, cobra = k.dif > 0;
     $('cbSubt').textContent = nombreLocal(l0) + ' · ' + (li ? li.nombre : '');
     $('cbRef').value = 'Al guardar';
-    /* Como la venta: Neto (a precio de lista) − Descuentos = Total a pagar. */
-    $('cbNeto').textContent = conSigno(k.dif + k.rebaja);
-    $('cbDesc').textContent = k.rebaja ? '−' + plata(k.rebaja) : '$0';
+    /* Como la venta: Neto (a precio de lista) − Descuentos = Total a pagar. Descuentos = lo bajado de la lista + las promos
+       y los a mano (SQL 266). */
+    $('cbNeto').textContent = conSigno(k.base + k.rebaja);
+    $('cbDesc').textContent = k.rebaja + k.desc ? '−' + plata(k.rebaja + k.desc) : '$0';
     $('cbCant').textContent = k.cs - k.cv;
     $('cbTotal').textContent = conSigno(k.dif);
     $('cbTotCaja').classList.toggle('neg', k.dif < 0);
@@ -5611,7 +5647,7 @@
             (aj ? '<small class="cb-lista">lista ' + plata(l.lista) + '</small>' : '') + '</td>' +
           '<td class="n"><b>' + plata(l.precio * l.cantidad) + '</b></td>' +
           '<td><button type="button" class="tk-quitar" data-quitar="' + i + '" title="Quitar" aria-label="Quitar ' + esc(l.descripcion) + '">' + icono('x') + '</button></td></tr>';
-      }).join('') : '<tr class="tk-vacia"><td colspan="9">' + x.vacia + '</td></tr>';
+      }).join('') + (s === 'sale' ? filasDescCb(k) : '') : '<tr class="tk-vacia"><td colspan="9">' + x.vacia + '</td></tr>';
       $(x.sub).innerHTML = ls.length ? cant + (cant === 1 ? ' prenda' : ' prendas') + ' · <b>' + plata(tot) + '</b>' : '';
     });
 
@@ -5625,11 +5661,101 @@
       $('cbCero').onclick = dejarEnCero;
     } else {
       nota.className = 'tk-nota';
-      nota.innerHTML = enPrueba() ? '<b>Modo prueba:</b> el cambio numera aparte (CP-1, CP-2…), no cuenta para nada y se borra desde Cambios.' :
+      nota.innerHTML = enPrueba() ? '<b>Modo prueba:</b> el cambio numera aparte (CP-1, CP-2…), no cuenta para nada y se borra desde Tickets («Borrar las pruebas»).' :
         CB.vuelve.length && !CB.sale.length ? '<b>Ahora, lo que se lleva:</b> dispará la pistola en «Productos salientes» (F2 pasa de un campo al otro).' :
         '<b>Como en BlueSoft:</b> lo que vuelve entra al precio de la lista de hoy, aunque lo haya comprado con promo. Si se lleva algo más caro, se cobra la diferencia y entra en el cierre de caja.';
     }
     guardarBorradorCb();
+  }
+
+  /* SQL 266: los descuentos, abajo de lo que se lleva (como en la grilla de la venta), con su ✕; en gris, la promo elegida
+     que todavía no descuenta y lo que no entra porque el cambio ya da $0. */
+  function filasDescCb(k) {
+    function sacar(d) {
+      return d.tipo === 'promo' ? 'data-sacar="' + d.promo_id + '" title="Sacar la promo" aria-label="Sacar la promo ' + esc(d.descripcion) + '"'
+        : 'data-manual="' + d.idx + '" title="Sacar el descuento" aria-label="Sacar el descuento ' + esc(d.descripcion) + '"';
+    }
+    return k.descuentos.map(function (d) {
+      return '<tr class="tk-fila-d' + (d.tipo === 'manual' ? ' manual' : '') + '"><td></td><td colspan="6">' + esc(d.descripcion) +
+        (d.monto < d.entero ? ' <small>(de ' + plata(d.entero) + ': el cambio no baja de $0)</small>' : '') + '</td>' +
+        '<td class="n">−' + plata(d.monto) + '</td><td><button type="button" class="tk-quitar" ' + sacar(d) + '>' + icono('x') + '</button></td></tr>';
+    }).concat(k.noAplican.map(function (p) {
+      return '<tr class="tk-fila-sacada"><td></td><td colspan="8">Elegiste «' + esc(p.nombre) + '», pero ' + esc(porQueNoPromoCb(p)) + ': todavía no descuenta. ' +
+        '<button type="button" data-sacar="' + p.id + '">Sacarla</button></td></tr>';
+    }), k.noEntran.map(function (d) {
+      return '<tr class="tk-fila-sacada"><td></td><td colspan="8">«' + esc(d.descripcion) + '» no entra: ' +
+        (k.base > 0 ? 'con lo de arriba, el cambio ya da $0' : 'lo que se lleva no vale más que lo que vuelve') + ' (no se devuelve plata). ' +
+        '<button type="button" ' + sacar(d).replace(/ title="[^"]*"/, '') + '>Sacarlo</button></td></tr>';
+    })).join('');
+  }
+
+  /* SQL 266: «Descuentos» del cambio, como el «Agregar descuento» de la venta: arriba las promos prendidas (cada una dice
+     cuánto descontaría en lo que se lleva), abajo el descuento a mano. Sin cupón ni Club (van en la venta). */
+  function abrirDescuentoCb() {
+    var k = cuentaCambio(CB);
+    if (!CB.sale.length) { avisar('info', 'Primero cargá lo que se lleva: los descuentos van sobre eso.'); return; }
+    if (k.dif <= 0) { avisar('info', k.base <= 0 ? 'Lo que se lleva no vale más que lo que vuelve: no hay nada que descontar.' : 'El cambio ya da $0: no hay nada más que descontar.'); return; }
+    var foco = false;
+    var promos = promosVigentes().map(function (p) {
+      var o = conPromo(p, CB, cuentaCambio), puesta = !!CB.puestas[p.id] && k.descuentos.some(function (d) { return d.promo_id === p.id; });
+      var sirve = !puesta && o.monto > 0, auto = sirve && !foco ? (foco = true, ' autofocus') : '';
+      return '<button type="button" class="pos-promo-op' + (puesta ? ' puesta' : '') + '" data-promo="' + p.id + '"' + (sirve ? '' : ' disabled') + auto + '>' +
+        '<span class="pos-promo-op-txt"><b>' + esc(p.nombre) + '</b><small>' + esc(queHacePromo(p)) + '</small>' +
+        (puesta ? '<em>Ya está en el cambio</em>' : !sirve ? '<em>No aplica: ' + esc(porQueNoPromoCb(p)) + '</em>' :
+          o.reemplaza ? '<em>Reemplaza a «' + esc(o.reemplaza.nombre) + '» (no se suman)</em>' : '') + '</span>' +
+        '<span class="pos-promo-op-monto">' + (puesta ? icono('ok') : sirve ? '−' + plata(o.monto) : '') + '</span></button>';
+    }).join('');
+    var sobre = 'Sobre lo que se lleva (el % va después de las promos). El cambio no baja de $0: queda por cobrar ' + plata(k.dif) + '.';
+    var caja = ventana('<h3 id="posVentTit">Agregar descuento</h3>' +
+      (promos ? '<p class="pos-bajada">Las promos van sobre lo que se lleva y no se aplican solas: tocá la que corresponde y el sistema hace la cuenta. Se sacan con la ✕ de la grilla.</p>' +
+          '<div class="pos-ds-titulo">Promociones</div><div class="pos-promos-elegir">' + promos + '</div>' +
+          '<div class="pos-ds-titulo">O un descuento a mano</div><p class="pos-ayuda pos-ds-ayuda">' + esc(sobre) + '</p>'
+        : '<p class="pos-bajada">' + esc(sobre) + ' Se saca con la ✕ de la grilla.</p>') +
+      '<div class="pos-campos">' +
+        campo('ancho', 'Descuento', '<select id="dsTipo"' + (foco ? '' : ' autofocus') + '>' + DESCUENTOS.map(function (d, i) { return '<option value="' + i + '">' + esc(d[0]) + '</option>'; }).join('') + '</select>') +
+        campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="dsPct" value="5">') +
+        campo('', 'O un monto ($)', '<input type="text" inputmode="decimal" id="dsVal" data-plata placeholder="$0">') +
+      '</div><div class="pos-error" id="dsError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dsOk">Agregar</button></div>');
+    var tipo = caja.querySelector('#dsTipo'), pct = caja.querySelector('#dsPct'), val = caja.querySelector('#dsVal');
+    tipo.onchange = function () { var d = DESCUENTOS[Number(tipo.value)]; pct.value = d[1] ? d[1] : ''; if (!d[1]) val.focus(); };
+    val.oninput = function () { if (val.value.trim()) pct.value = ''; };
+    pct.oninput = function () { if (pct.value.trim()) val.value = ''; };
+    function listo() {
+      var d = DESCUENTOS[Number(tipo.value)], p = parseFloat(String(pct.value).replace(',', '.')), m = leerPlata(val.value);
+      var nombre = d[0].replace(/\s*\d+\s*%$/, '') || d[0];
+      if (val.value.trim()) {
+        if (!errorEn(caja, 'dsError', !(m > 0) ? 'El monto no se entiende.' : m > k.dif ? 'Es más de lo que queda por cobrar (' + plata(k.dif) + '): el cambio no baja de $0.' : '')) return;
+        CB.manuales.push({ descripcion: nombre, monto: m });
+      } else {
+        if (!errorEn(caja, 'dsError', !(p > 0 && p <= 100) ? 'El porcentaje va de 0 a 100 (o escribí un monto).' : '')) return;
+        CB.manuales.push({ descripcion: nombre, pct: Math.round(p * 100) / 100 });
+      }
+      cerrarVentana();
+      pintarCambio();
+      verDescCb();
+      $('cbSale').focus();
+    }
+    caja.querySelector('#dsOk').onclick = listo;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); listo(); } });
+    caja.querySelectorAll('[data-promo]').forEach(function (b) {
+      b.onclick = function () {
+        var p = promoDe(Number(b.getAttribute('data-promo'))), o = p && conPromo(p, CB, cuentaCambio);
+        if (!o || !o.monto) return;
+        CB.puestas = o.puestas;
+        cerrarVentana();
+        pintarCambio();
+        verDescCb();
+        avisar('ok', p.nombre + ': −' + plata(o.monto) + (o.reemplaza ? ' (en lugar de «' + o.reemplaza.nombre + '»)' : '') + '.');
+        $('cbSale').focus();
+      };
+    });
+  }
+
+  /** Con varias prendas, los renglones del descuento quedan abajo de la grilla: se baja hasta ellos para que se vean. */
+  function verDescCb() {
+    var g = $('cbFilasS') && $('cbFilasS').closest('.tk-grilla');
+    if (g) g.scrollTop = g.scrollHeight;
   }
 
   /* "Ajustamos el ticket para que dé cero" (Mauricio): sube el precio de lo que se lleva; lo que vuelve sigue a precio de lista. */
@@ -5674,6 +5800,8 @@
       clave: CB.clave, prueba: enPrueba(), local_id: CB.local_id, vendedor: CB.vendedor, lista_id: CB.lista_id,
       cliente_nombre: String(CB.cliente || '').trim(), observaciones: CB.observaciones || '',
       items: CB.vuelve.map(function (l) { return itemCb('vuelve', l); }).concat(CB.sale.map(function (l) { return itemCb('sale', l); })),
+      /* SQL 266: las promos y los descuentos a mano (la base revisa que no pasen lo que queda por cobrar). */
+      descuentos: k.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || null, descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
       pagos: pagosDe(k.dif, CB).map(function (x) {
         var y = Object.assign({}, x, { monto: aPesos(x.monto) });
         if (y.recibido) y.recibido = aPesos(y.recibido); else delete y.recibido;
@@ -5740,8 +5868,13 @@
         '</div>' +
         '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th>' +
           '<th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
-          filas('vuelve', 'Vuelve (productos entrantes)') + filas('sale', 'Se lleva (productos salientes)') + '</tbody></table></div>' +
-        '<div class="pos-ticket-tot"><span>Vuelve ' + p(t.vuelve) + ' · Se lleva ' + p(t.se_lleva) + '</span><b>Diferencia ' + p(t.diferencia) + '</b></div>' +
+          filas('vuelve', 'Vuelve (productos entrantes)') + filas('sale', 'Se lleva (productos salientes)') +
+          /* SQL 266: los descuentos del cambio, debajo de lo que se lleva (como en el ticket de la venta). */
+          (t.descuentos_detalle || []).map(function (d) {
+            return '<tr class="tk-fila-d' + (d.tipo === 'manual' ? ' manual' : '') + '"><td></td><td colspan="6">' + esc(d.descripcion) + '</td><td class="n">−' + p(d.monto) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' +
+        '<div class="pos-ticket-tot"><span>Vuelve ' + p(t.vuelve) + ' · Se lleva ' + p(t.se_lleva) +
+          (Number(t.descuentos) ? ' · Descuentos −' + p(t.descuentos) : '') + '</span><b>Diferencia ' + p(t.diferencia) + '</b></div>' +
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Se cobró</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(t.anulado_en)) + (t.anulado_por_nombre ? ' por ' + esc(t.anulado_por_nombre) : '') + ': ' + esc(t.anulado_motivo || '') + '</div>' :

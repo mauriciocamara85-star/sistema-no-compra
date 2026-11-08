@@ -1645,6 +1645,9 @@ grant execute on function pos_retiran(), pos_caja_mov_controlar(uuid, boolean) t
 --    vuelve      = suma de lo que vuelve
 --    se_lleva    = suma de lo que se lleva
 --    diferencia  = se_lleva − vuelve  (nunca negativa)  =  suma de los pagos
+--  SQL 266 (7/11): con los descuentos del cambio (las promos 3x2, 2.ª al 50 %
+--  y los a mano, sobre lo que se lleva, como en la venta):
+--    diferencia  = se_lleva − descuentos − vuelve  (nunca negativa)
 --
 --  Cada local numera sus cambios aparte de las ventas (C-1, C-2…) y sus
 --  pruebas aparte (CP-1…). Todavía sin stock y sin factura.
@@ -1663,7 +1666,8 @@ create table pos_cambios (
   cliente_nombre   text,
   vuelve           numeric(12,2) not null check (vuelve >= 0),
   se_lleva         numeric(12,2) not null check (se_lleva >= 0),
-  diferencia       numeric(12,2) generated always as (se_lleva - vuelve) stored,
+  descuentos       numeric(12,2) not null default 0,   -- SQL 266: las promos y los a mano (pos_cambio_descuentos)
+  diferencia       numeric(12,2) generated always as (se_lleva - descuentos - vuelve) stored,   -- SQL 266: menos los descuentos
   cantidad_vuelve  int not null,
   cantidad_sale    int not null,
   observaciones    text,
@@ -1674,7 +1678,8 @@ create table pos_cambios (
   cierre_id        uuid references pos_cierres(id) on delete set null,
   clave            text unique,
   unique (local_id, prueba, numero),
-  check (se_lleva >= vuelve)
+  constraint pos_cambios_descuentos_check check (descuentos >= 0),   -- SQL 266
+  constraint pos_cambios_check check (se_lleva - descuentos >= vuelve)   -- SQL 266 (antes: se_lleva >= vuelve)
 );
 create index pos_cambios_dia on pos_cambios (dia, local_id);
 create index pos_cambios_sin_cierre on pos_cambios (local_id, prueba) where cierre_id is null;
@@ -1710,6 +1715,17 @@ create table pos_cambio_pagos (
   primary key (cambio_id, orden)
 );
 
+-- SQL 266: cada descuento del cambio (como pos_venta_descuentos).
+create table pos_cambio_descuentos (
+  cambio_id    uuid not null references pos_cambios(id) on delete cascade,
+  orden        int not null,
+  tipo         text not null check (tipo in ('promo', 'manual')),
+  promo_id     int,
+  descripcion  text not null,
+  monto        numeric(12,2) not null check (monto > 0),
+  primary key (cambio_id, orden)
+);
+
 -- Cuántos cambios entraron en cada cierre y cuánto se cobró en ellos (ya está sumado en las ventas).
 alter table pos_cierres add column cambios int not null default 0;
 alter table pos_cierres add column cambios_diferencia numeric(14,2) not null default 0;
@@ -1717,7 +1733,8 @@ alter table pos_cierres add column cambios_diferencia numeric(14,2) not null def
 alter table pos_cambios       enable row level security;
 alter table pos_cambio_items  enable row level security;
 alter table pos_cambio_pagos  enable row level security;
-revoke all on pos_cambios, pos_cambio_items, pos_cambio_pagos from anon, authenticated;
+alter table pos_cambio_descuentos enable row level security;   -- SQL 266
+revoke all on pos_cambios, pos_cambio_items, pos_cambio_pagos, pos_cambio_descuentos from anon, authenticated;
 
 /* El precio de un producto en una lista (el mismo que trae pos_precios), o
    null si no tiene. Es para las otras funciones. */
@@ -1746,6 +1763,8 @@ declare
   v_items   jsonb := coalesce(p->'items', '[]'::jsonb);
   v_pagos   jsonb := coalesce(p->'pagos', '[]'::jsonb);
   v_obs     text := nullif(trim(coalesce(p->>'observaciones', '')), '');
+  v_descs   jsonb := coalesce(p->'descuentos', '[]'::jsonb);   -- SQL 266: las promos y los descuentos a mano
+  v_desc    numeric := 0;
   v_vuelve  numeric := 0;
   v_sale    numeric := 0;
   v_cv      int := 0;
@@ -1815,6 +1834,26 @@ begin
       to_char(v_sale, 'FM999G999G990D00'), to_char(v_vuelve, 'FM999G999G990D00');
   end if;
 
+  /* SQL 266 (7/11): los descuentos del cambio, como en la venta: las promos de Gestión → Promociones (3x2, 2.ª al 50 %)
+     y los descuentos a mano, sobre lo que se lleva. La pantalla hace la cuenta; acá se revisa que cada uno tenga monto y
+     que entre todos no pasen lo que queda por cobrar (el cambio no da negativo: no se devuelve plata). El cupón, el
+     regalo de cumpleaños y el premio del Club van en la venta (necesitan su lógica). */
+  if jsonb_typeof(v_descs) <> 'array' then raise exception 'Los descuentos no son válidos.'; end if;
+  if jsonb_array_length(v_descs) > 20 then raise exception 'Son demasiados descuentos para un cambio.'; end if;
+  for x in select * from jsonb_array_elements(v_descs) loop
+    m := round((x->>'monto')::numeric, 2);
+    if m is null or m <= 0 then raise exception 'Hay un descuento que no es válido.'; end if;
+    if coalesce(x->>'tipo', '') not in ('promo', 'manual') then
+      raise exception 'En un cambio van las promos y los descuentos a mano (el cupón y los beneficios del Club, en la venta).';
+    end if;
+    v_desc := v_desc + m;
+  end loop;
+  if v_desc > v_dif then
+    raise exception 'Los descuentos ($%) son más de lo que queda por cobrar ($%): el cambio no puede dar negativo.',
+      to_char(v_desc, 'FM999G999G990D00'), to_char(v_dif, 'FM999G999G990D00');
+  end if;
+  v_dif := v_dif - v_desc;
+
   if jsonb_typeof(v_pagos) <> 'array' then raise exception 'Los pagos no son válidos.'; end if;
   if v_dif = 0 and jsonb_array_length(v_pagos) > 0 then raise exception 'Sale lo mismo: no hay nada que cobrar.'; end if;
   if v_dif > 0 and jsonb_array_length(v_pagos) = 0 then raise exception 'Falta la forma de pago de la diferencia.'; end if;
@@ -1850,9 +1889,9 @@ begin
   select coalesce(max(c.numero), 0) + 1 into v_num from pos_cambios c where c.local_id = v_local and c.prueba = v_prueba;
 
   insert into pos_cambios (local_id, numero, prueba, dia, vendedor, cargado_por, lista_id, cliente_nombre, vuelve, se_lleva,
-                           cantidad_vuelve, cantidad_sale, observaciones, clave)
+                           cantidad_vuelve, cantidad_sale, observaciones, clave, descuentos)
   values (v_local, v_num, v_prueba, pos_hoy(), v_vend, orden_yo_id(), v_lista, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''),
-          v_vuelve, v_sale, v_cv, v_cs, v_obs, v_clave)
+          v_vuelve, v_sale, v_cv, v_cs, v_obs, v_clave, v_desc)
   returning id into v_id;
 
   i := 0;
@@ -1863,6 +1902,15 @@ begin
             nullif(trim(coalesce(x->>'talle', '')), ''), nullif(trim(coalesce(x->>'color', '')), ''),
             (x->>'cantidad')::int, round((x->>'precio')::numeric, 2), pos_precio_de(v_lista, x->>'codigo'),
             round((x->>'precio')::numeric, 2) * (x->>'cantidad')::int);
+  end loop;
+
+  /* SQL 266: cada descuento, con su promo si es una (como pos_venta_descuentos). */
+  i := 0;
+  for x in select * from jsonb_array_elements(v_descs) loop
+    i := i + 1;
+    insert into pos_cambio_descuentos (cambio_id, orden, tipo, promo_id, descripcion, monto)
+    values (v_id, i, x->>'tipo', nullif(x->>'promo_id', '')::int,
+            left(coalesce(nullif(trim(coalesce(x->>'descripcion', '')), ''), 'Descuento'), 120), round((x->>'monto')::numeric, 2));
   end loop;
 
   /* SQL 160: lo que vuelve entra al stock del local y lo que se lleva sale.
@@ -1915,13 +1963,16 @@ begin
                  'salen', (select string_agg(i.descripcion || coalesce(' ' || i.talle, '') || case when i.cantidad > 1 then ' ×' || i.cantidad else '' end, ', ' order by i.item)
                              from pos_cambio_items i where i.cambio_id = z.id and i.sentido = 'sale'),
                  'medios', (select jsonb_agg(g.medio order by g.orden) from pos_cambio_pagos g where g.cambio_id = z.id),
-                 'vuelve', z.vuelve, 'se_lleva', z.se_lleva, 'diferencia', z.diferencia, 'estado', z.estado) order by z.fecha desc)
+                 'vuelve', z.vuelve, 'se_lleva', z.se_lleva, 'diferencia', z.diferencia, 'estado', z.estado,
+                 -- SQL 266: los descuentos y cuántas prendas vuelven y salen (la «Cant.» del cambio en Tickets)
+                 'descuentos', z.descuentos, 'cantidad_vuelve', z.cantidad_vuelve, 'cantidad_sale', z.cantidad_sale) order by z.fecha desc)
           from (select * from c order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
       'totales', (select jsonb_build_object(
                     'cambios',    count(*) filter (where estado = 'hecho'),
                     'anulados',   count(*) filter (where estado = 'anulado'),
                     'vuelven',    coalesce(sum(cantidad_vuelve) filter (where estado = 'hecho'), 0),
                     'salen',      coalesce(sum(cantidad_sale) filter (where estado = 'hecho'), 0),
+                    'descuentos', coalesce(sum(descuentos) filter (where estado = 'hecho'), 0),   -- SQL 266
                     'diferencia', coalesce(sum(diferencia) filter (where estado = 'hecho'), 0)) from c),
       'mas', (select count(*) > 500 from c)
     )
@@ -1943,6 +1994,8 @@ begin
               'cierre', (select jsonb_build_object('id', k.id, 'numero', k.numero, 'prueba', k.prueba, 'estado', k.estado)
                            from pos_cierres k where k.id = c.cierre_id),
               'items', coalesce((select jsonb_agg(to_jsonb(i) - 'cambio_id' order by i.item) from pos_cambio_items i where i.cambio_id = c.id), '[]'::jsonb),
+              -- SQL 266: los descuentos, con el mismo nombre que en pos_venta
+              'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'cambio_id' order by d.orden) from pos_cambio_descuentos d where d.cambio_id = c.id), '[]'::jsonb),
               'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'cambio_id' order by g.orden) from pos_cambio_pagos g where g.cambio_id = c.id), '[]'::jsonb))
     into r
     from pos_cambios c join orden_locales l on l.id = c.local_id
