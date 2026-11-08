@@ -7511,8 +7511,9 @@
     function pintarCierres(d) {
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
       var dif = t.faltas || t.sobras ? [t.faltas ? t.faltas + ' con falta' : '', t.sobras ? t.sobras + ' con sobra' : ''].filter(Boolean).join(' · ') : 'Todos cuadran';
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Cierres</span><b>' + (t.cierres || 0) + '</b></div>' +
+      /* Abajo de la grilla, como en BlueSoft (v446, la foto de los cierres de BlueSoft: Ventas totales, en efectivo, en tarjeta,
+         Mercado Pago… abajo a la izquierda, en el orden de las columnas). */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi"><span>Ventas</span><b>' + p(t.ventas) + '</b></div>' +
         '<div class="pos-kpi"><span>En efectivo</span><b>' + p(t.efectivo) + '</b></div>' +
         '<div class="pos-kpi"><span>En tarjeta</span><b>' + p(t.tarjeta) + '</b></div>' +
@@ -7520,9 +7521,10 @@
         '<div class="pos-kpi"><span>Gastos</span><b>' + p(t.gastos) + '</b></div>' +
         '<div class="pos-kpi fuerte"><span>Movimientos de salida</span><b>' + p(t.retiro) + '</b></div>' +
         (Number(t.retiros_fondos) ? '<div class="pos-kpi"><span>Retiros de la caja chica</span><b>' + p(t.retiros_fondos) + '</b></div>' : '') +   // SQL 191
-        (t.cierres ? '<div class="pos-kpi"><span>Ajustes</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') + '</div>' +   // 7/11: la columna se llama «Ajuste», como en BlueSoft
-        ($('ciPrueba').value === '1' ? '<div class="pos-cartel prueba">Los cierres de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en POS → Tickets.</div>' : '');
-      if (!d.filas || !d.filas.length) { $('ciLista').innerHTML = kpis + '<div class="pos-cartel">No hay cierres en ese período.</div>'; return; }
+        (t.cierres ? '<div class="pos-kpi"><span>Ajustes</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') +   // 7/11: la columna se llama «Ajuste», como en BlueSoft
+        '<div class="pos-kpi"><span>Cierres</span><b>' + (t.cierres || 0) + '</b></div></div>';
+      var kpis = $('ciPrueba').value === '1' ? '<div class="pos-cartel prueba">Los cierres de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en POS → Tickets.</div>' : '';
+      if (!d.filas || !d.filas.length) { $('ciLista').innerHTML = kpis + '<div class="pos-cartel">No hay cierres en ese período.</div>' + pie; return; }
       /* Las columnas de BlueSoft. Mauricio (7/11, con la foto de los cierres de BlueSoft): "Saldo final, retiro de fondos,
          nuevo saldo, esas tres agregaría… y ajuste también… vamos a poder desplazarnos hacia la derecha". Cada fila se lee
          como la cuenta del cierre: el inicial y el efectivo, menos los gastos, los movimientos de salida y los retiros de
@@ -7557,7 +7559,7 @@
             '<td class="n tachar"><b>' + p(f.esperado) + '</b>' + (ing ? '<small title="Otros ingresos a la caja chica: ya están sumados">con ' + esc(importeConSigno(ing)) + ' de otros ingresos</small>' : '') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : sin ? '<span class="cj-dv warn" title="Nadie la contó: quedó lo que tendría que haber">Sin contar</span>' : '<span class="cj-dv ' + dv.cls + '" title="' + esc(dv.txt) + '">' + esc(dv.corto) + '</span>') + '</td>' +   // SQL 247
             '<td class="n tachar"><b>' + p(f.queda) + '</b></td></tr>';
-        }).join('') + '</tbody></table></div>' +
+        }).join('') + '</tbody></table></div>' + pie +
         (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
       $('ciLista').querySelectorAll('tr[data-cierre]').forEach(function (tr) {
         tr.onclick = function () { abrirCierre(tr.getAttribute('data-cierre'), cargar); };
@@ -10750,22 +10752,23 @@
       filas = todas.filter(function (f) { return !f.entre_depositos && (!v || (v === 'salen' ? f.origen_local_id === loc : f.destino_local_id === loc)); });
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
       var con189 = !filas.length || filas[0].sin_precio !== undefined, vp = puede('precios');   // SQL 190: sin «Ver precios», sin el monto
-      /* Los totales de abajo de BlueSoft: cantidad de envíos, unidades y monto; y cuántos faltan recibir. */
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Envíos</span><b>' + miles(vivas.length) + '</b></div>' +
-        '<div class="pos-kpi"><span>Por recibir</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div>' +
+      /* Los totales de abajo de BlueSoft, en su orden (v446: abajo de la grilla, como en la foto): Cantidad total (las unidades),
+         Monto total y Cantidad de envíos; y cuántos faltan recibir. */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
-        (vp ? '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div>' : '') + '</div>';
+        (vp ? '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div>' : '') +
+        '<div class="pos-kpi"><span>Envíos</span><b>' + miles(vivas.length) + '</b></div>' +
+        '<div class="pos-kpi"><span>Por recibir</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div></div>';
       if (!filas.length) {
-        $('evLista').innerHTML = kpis + '<div class="pos-cartel">' + (v === 'llegan' ? 'Ningún local le mandó nada a ' + esc(nom) + ' en ese período.' :
+        $('evLista').innerHTML = '<div class="pos-cartel">' + (v === 'llegan' ? 'Ningún local le mandó nada a ' + esc(nom) + ' en ese período.' :
           v === 'salen' ? esc(nom) + ' no mandó nada en ese período. Se hace con «Nuevo envío».' :
-          'No hay envíos de ' + esc(nom) + ' ni a ' + esc(nom) + ' en ese período. Se hacen con «Nuevo envío».') + '</div>';
+          'No hay envíos de ' + esc(nom) + ' ni a ' + esc(nom) + ' en ese período. Se hacen con «Nuevo envío».') + '</div>' + pie;
         $('evBajar').disabled = true;
         return;
       }
       /* Las columnas de BlueSoft (Fecha, Referencia, Origen, Destino, Cantidad, Total, Observaciones), con el estado y quién lo cargó.
          El otro local, en negrita. */
-      $('evLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sale de</th><th>Llega a</th>' +
+      $('evLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sale de</th><th>Llega a</th>' +
           '<th>Estado</th><th>Cargó</th><th class="n">Unidades</th>' + (vp ? '<th class="n">Total</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var sale = f.origen_local_id === loc;
@@ -10778,7 +10781,7 @@
             '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + (f.unidades == null ? '<span class="apagado" title="Se ven al contarlo">—</span>' : num(f.unidades)) + '</td>' +
             (vp ? '<td class="n tachar"><b>' + (f.total == null && !sale ? '<span class="apagado">—</span>' : totalDev(f)) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
             '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
-        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+        }).join('') + '</tbody></table></div>' + pie + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
       $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-env'))];
         /* El que lo mandó lo ve entero; el que lo recibe, a ciegas hasta contarlo (con «Recibirlo»). */
@@ -10796,18 +10799,19 @@
       filas = todas.filter(function (f) { return f.entre_depositos; });
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; }), est = vivas.map(estadoTestigos);
       function cuantos(e) { return est.filter(function (x) { return e.indexOf(x) >= 0; }).length; }
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Módulos</span><b>' + miles(vivas.length) + '</b></div>' +
+      /* v446: abajo de la grilla, como los envíos entre locales (la cantidad total primero, como en BlueSoft). */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
+        '<div class="pos-kpi"><span>Módulos</span><b>' + miles(vivas.length) + '</b></div>' +
         '<div class="pos-kpi"><span>Controlados</span><b>' + miles(cuantos(['ok'])) + '</b></div>' +
         '<div class="pos-kpi"><span>Sin controlar</span><b>' + miles(cuantos(['sin', 'uno'])) + '</b></div>' +
         '<div class="pos-kpi"><span>Para rehacer</span><b class="' + (cuantos(['mal']) ? 'st-sale' : '') + '">' + miles(cuantos(['mal'])) + '</b></div></div>';
       if (!filas.length) {
-        $('evLista').innerHTML = kpis + '<div class="pos-cartel">No hay envíos entre depósitos de ' + esc(nom) + ' en ese período. Para el stock de todo el local: «Nuevo envío» → «Entre depósitos del local», un envío por módulo.</div>';
+        $('evLista').innerHTML = '<div class="pos-cartel">No hay envíos entre depósitos de ' + esc(nom) + ' en ese período. Para el stock de todo el local: «Nuevo envío» → «Entre depósitos del local», un envío por módulo.</div>' + pie;
         $('evBajar').disabled = true;
         return;
       }
-      $('evLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Módulo</th><th>Responsable</th><th>Sale de</th><th>Llega a</th>' +
+      $('evLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Módulo</th><th>Responsable</th><th>Sale de</th><th>Llega a</th>' +
           '<th class="n">Unidades</th><th>Testigos</th><th>Cargó</th><th>Observaciones</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           return '<tr data-env="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.evMarcar ? 'recien' : '') + '">' +
@@ -10816,7 +10820,7 @@
             '<td>' + esc(f.origen_deposito || '—') + '</td><td><b>' + esc(f.destino_deposito || '—') + '</b></td>' +
             '<td class="n tachar">' + num(f.unidades) + '</td><td>' + (f.estado === 'anulado' ? pillRemito('anulado') : pillTestigos(f)) + '</td>' +
             '<td>' + esc(f.creado_nombre || '—') + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
-        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+        }).join('') + '</tbody></table></div>' + pie + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
       $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-env'))];
         tr.onclick = function () { abrirPase(f.id, cargar); };
