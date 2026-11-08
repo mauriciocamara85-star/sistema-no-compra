@@ -6693,7 +6693,7 @@
       }
       /* Las columnas de "Gastos del Local" de BlueSoft (Comprobante, Fecha, Día, Total, Observaciones), con el tipo de gasto y en qué cierre entró. */
       $('gsLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
-        '<th>Tipo</th><th>Descripción</th><th>Cargó</th><th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
+        '<th>Tipo</th><th>Observaciones</th><th>Cargó</th><th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var an = f.estado !== 'ok';
           return '<tr data-gasto="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
@@ -6720,11 +6720,11 @@
      título con Cancelar · Guardar a la derecha y, debajo, qué es (Gasto del local, Otra salida u Otro ingreso: lo nuestro);
      los datos en los lugares de BlueSoft: Fecha · Sucursal · Letra · Número (su «Referencia») · Estado; debajo el
      Responsable (sin el Proveedor: no se usa); y debajo Forma de pago (Efectivo) · Caja (Caja chica). La grilla con el
-     renglón del gasto, que se escribe ahí mismo (en BlueSoft, con «Agregar gasto…»): Ítem · Gasto · Descripción · Total;
-     debajo, donde BlueSoft tiene «Agregar gasto…», que entra en el próximo cierre; y a la derecha el Total a pagar (sin
-     Neto, descuentos, IVA ni recargos). Un renglón por gasto (8/11: «dale» a «no por ahora»), sin las Observaciones de
-     BlueSoft (el gasto tiene una sola descripción). Se carga desde Gastos (el mostrador) y desde Gestión → Movimientos,
-     eligiendo la sucursal. A la base va lo mismo que antes. */
+     renglón del gasto, que se elige ahí mismo (en BlueSoft, con «Agregar gasto…»): Ítem · Gasto · Total; debajo, donde
+     BlueSoft tiene «Agregar gasto…», que entra en el próximo cierre; a la derecha el Total a pagar (sin Neto, descuentos,
+     IVA ni recargos); y abajo las Observaciones, donde en BlueSoft escriben de qué fue (v445: antes, en el renglón). Un
+     renglón por gasto (8/11: «dale» a «no por ahora»). Se carga desde Gastos (el mostrador) y desde Gestión →
+     Movimientos, eligiendo la sucursal. A la base va lo mismo que antes. */
   function abrirMovimiento(localId, prueba, alGuardar) {
     var clave = nuevaClave(), tipo = 'gasto', yo = String((S.ini.yo && S.ini.yo.nombre) || '').trim();
     var ro = function (cls, lbl, v, extra) { return campo(cls, lbl, '<input type="text" value="' + esc(v) + '" readonly tabindex="-1"' + (extra || '') + '>'); };
@@ -6744,16 +6744,19 @@
         ro('gs-caja', 'Caja', 'Caja chica') +
       '</div>' +
       '<div class="gs-cuerpo"><div class="tf-valores">' +
-          '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla gs-tabla"><thead><tr><th class="c">Ítem</th><th>Gasto</th><th>Descripción</th><th class="n">Total</th></tr></thead>' +
+          '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla gs-tabla"><thead><tr><th class="c">Ítem</th><th>Gasto</th><th class="n">Total</th></tr></thead>' +
             '<tbody><tr><td class="c">1</td><td data-l="Gasto">' +
               '<select id="gmRubro" aria-label="Tipo de gasto"><option value="">Elegí…</option>' + RUBROS_GASTO.map(function (g) {
                 return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select>' +
               '<b id="gmQue" hidden></b></td>' +
-              '<td data-l="Descripción"><input type="text" id="gmDesc" maxlength="200" autocomplete="off" aria-label="Descripción"></td>' +
               '<td class="n" data-l="Total"><input type="text" inputmode="decimal" id="gmMonto" data-plata autocomplete="off" placeholder="$0" aria-label="Total"></td></tr></tbody></table></div>' +
           '<p class="pos-ayuda tf-nota gs-nota" id="gmNota"></p></div>' +
         '<div class="gs-tot"><span id="gmTotLbl">Total a pagar</span><b id="gmTotal">' + plata(0) + '</b></div>' +
-      '</div><div class="pos-error" id="gmError"></div>', true);
+      '</div>' +
+      /* 8/11, con la foto del gasto guardado de BlueSoft: lo que se escribe («4hrs luca») va en las Observaciones, abajo; el
+         renglón lleva sólo el tipo de gasto. Es la misma descripción de siempre (va a la base igual). */
+      campo('tf-obs gs-obs', 'Observaciones', '<textarea id="gmDesc" maxlength="200" rows="2"></textarea>') +
+      '<div class="pos-error" id="gmError"></div>', true);
     caja.classList.add('tf', 'gs');
     function marcar() {
       caja.querySelectorAll('[data-tipo]').forEach(function (b) {
@@ -6765,7 +6768,7 @@
       caja.querySelector('#gmRubro').hidden = !gasto;
       caja.querySelector('#gmQue').hidden = gasto;
       caja.querySelector('#gmQue').textContent = TIPOS_MOV[tipo];
-      caja.querySelector('#gmDesc').placeholder = gasto ? 'Si hace falta' : '¿De qué es?';
+      caja.querySelector('#gmDesc').placeholder = gasto ? 'Si hace falta: para qué fue, de quién…' : '¿De qué es?';
       caja.querySelector('#gmEstado').value = entra ? 'Cobrado' : 'Pagado';
       caja.querySelector('#gmTotLbl').textContent = entra ? 'Total que entra' : 'Total a pagar';
       caja.querySelector('#gmNota').textContent = 'En efectivo, ' + (entra ? 'a' : 'de') + ' la caja chica: entra solo en el próximo cierre de caja.';
@@ -7110,6 +7113,40 @@
       '</div>' +
       '<div class="rm-bs-nota dv-bs-obs rt-bs-obs"><span>Observaciones</span><p>' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">Sin observaciones.</span>') + '</p></div>' +
       (o.despues || '');
+  }
+  /* El gasto guardado (también la otra salida y el otro ingreso), como la «Factura de Compra» guardada de BlueSoft (la
+     foto de Mauricio del 8/11): arriba el título con la sucursal, el número con la fecha y los botones (Anular, donde
+     BlueSoft dice Eliminar; Cerrar); los datos en dos columnas (Comprobante, Responsable y Moneda; Estado, Forma de
+     pago, Caja y en qué cierre entró); a la izquierda Concepto · Valor con el Total y, debajo, las observaciones (lo que
+     escribieron: «4hrs luca»); a la derecha la grilla con el renglón (Ítem · Gasto · Total). Sin lo que acá no existe
+     (Proveedor, Vencimiento, Plazo de pago, Condición frente al IVA, Estado impresión, Neto, IVA, Descuentos, Duplicar,
+     Mail, Editar, Imprimir, Exportar, Generar nota de crédito, el adjunto, Asociar remito/proceso, Documentos asociados,
+     Cambiar observaciones). Los mismos id de antes (mdAnularBtn, #mdAnular): abrirMovDetalle les pone lo que hacen. */
+  function gastoBsHtml(f, o) {
+    var an = f.estado !== 'ok', num = refGasto(f), m = plata(cent(f.monto)), entra = f.tipo === 'ingreso';
+    var dato = function (l, v) { return '<div><span>' + l + '</span><b>' + v + '</b></div>'; };
+    var que = f.tipo === 'gasto' ? f.rubro || TIPOS_MOV.gasto : TIPOS_MOV[f.tipo] || f.tipo;
+    return '<div class="rm-bs-cab">' +
+        '<div class="rm-bs-tit"><h3 id="posVentTit">' + esc(TIPOS_MOV[f.tipo] || 'Gasto') + '</h3><small>' + esc(bonito(f.local)) + '</small></div>' +
+        '<div class="rm-bs-num"><b>' + esc(num || '—') + '</b><span>' + esc(fechaHora(f.fecha)) + '</span></div>' +
+        '<div class="rm-bs-acc">' + o.acciones + '</div>' +
+      '</div>' +
+      '<div id="mdAnular"></div>' +
+      '<div class="rm-bs-datos">' +
+        '<div>' + dato('Comprobante', esc(num || '—')) + dato('Responsable', esc(f.persona || '—')) + dato('Moneda', 'Pesos') + '</div>' +
+        '<div>' + dato('Estado', an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">' + (entra ? 'Cobrado' : 'Pagado') + '</span>') +
+          dato('Forma de pago', 'Efectivo') + dato('Caja', 'Caja chica') +
+          dato('Cierre de caja', esc(f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : an ? '—' : 'Entra en el próximo')) + '</div>' +
+      '</div>' + (o.carteles || '') +
+      '<div class="rm-bs-cuerpo gs-bs-cuerpo">' +
+        '<div class="gs-bs-izq">' +
+          '<div class="tk-grilla rm-bs-grilla rt-bs-conc"><table class="tk-tabla"><thead><tr><th>Concepto</th><th class="n">Valor</th></tr></thead><tbody>' +
+            '<tr><td><b>' + (entra ? 'Total que entró:' : 'Total:') + '</b></td><td class="n' + (an ? ' rt-bs-tachado' : '') + '"><b id="gmTotal">' + m + '</b></td></tr></tbody></table></div>' +
+          '<div class="rm-bs-nota dv-bs-obs rt-bs-obs"><span>Observaciones</span><p>' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">Sin observaciones.</span>') + '</p></div>' +
+        '</div>' +
+        '<div class="tk-grilla rm-bs-grilla gs-bs-grilla"><table class="tk-tabla"><thead><tr><th class="c">Ítem</th><th>Gasto</th><th class="n">Total</th></tr></thead><tbody>' +
+          '<tr><td class="c">1</td><td>' + esc(que) + '</td><td class="n' + (an ? ' rt-bs-tachado' : '') + '">' + m + '</td></tr></tbody></table></div>' +
+      '</div>';
   }
   /* El nuevo: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo. La caja no viene
      elegida (cambia el cierre). Del de la caja chica dice cuánto tendría que haber y pregunta si sacan más (un cero de
@@ -7624,6 +7661,14 @@
           !abierto && !deFuerte ? '<p class="pos-ayuda rt-bs-ayuda">Ya entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarlo, hay que anular ese cierre.</p>' :
           f.controlado ? '<p class="pos-ayuda rt-bs-ayuda">Ya lo controló la oficina: para anularlo, primero hay que sacarle el tilde de «Controlado».</p>' : '' }), true);
       caja.classList.add('rm-bs', 'rt-bs');
+    } else if (f.tipo === 'gasto' || f.tipo === 'salida' || f.tipo === 'ingreso') {
+      /* El gasto guardado, como la «Factura de Compra» guardada de BlueSoft (gastoBsHtml). Mismo molde que el retiro (rt-bs). */
+      caja = ventana(gastoBsHtml(f, {
+        acciones: (!an && abierto ? '<button type="button" class="btn btn-sec btn-chico" id="mdAnularBtn">Anular</button>' : '') +
+          '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button>',
+        carteles: an ? '<div class="pos-cartel mal">Anulado' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' :
+          !abierto ? '<p class="pos-ayuda rt-bs-ayuda">Ya entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarlo, hay que anular ese cierre.</p>' : '' }), true);
+      caja.classList.add('rm-bs', 'rt-bs', 'gs-bs');
     } else
     caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
         (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +

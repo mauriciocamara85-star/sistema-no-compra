@@ -1457,12 +1457,20 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .pos-tabla.gs-tabla th.c, .pos-tabla.gs-tabla td.c { width: 52px; text-align: center; }
 .pos-tabla.gs-tabla td.n { width: 190px; }
 .pos-tabla.gs-tabla input { width: 170px; }
-.pos-tabla.gs-tabla #gmDesc { width: 100%; min-width: 160px; text-align: left; }
 .pos-tabla.gs-tabla select { width: 100%; min-width: 190px; max-width: 260px; }
 .pos-caja .gs-nota { margin: 8px 0 0; }
 .gs-tot { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
 .gs-tot span { font: 600 12px var(--sans); color: var(--txt-2); }
 .gs-tot b { font: 700 24px/1.15 var(--display); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.pos-caja .gs-obs { margin-top: 10px; }
+.pos-caja .gs-obs textarea { min-height: 56px; }
+/* El gasto guardado como la «Factura de Compra» de BlueSoft (v445), con el molde del retiro guardado (.rt-bs): a la
+   izquierda Concepto · Valor y debajo las observaciones; a la derecha la grilla con el renglón. */
+.rt-bs.gs-bs .rm-bs-cuerpo { grid-template-columns: 300px minmax(0, 1fr); }
+.gs-bs-izq { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rt-bs.gs-bs .rt-bs-conc { min-height: 0; }
+.gs-bs .gs-bs-izq .rt-bs-obs { margin-top: 0; flex: 1 1 auto; }
+.gs-bs .tk-tabla .c { width: 52px; }
 @media (max-width: 760px) {
   .pos-caja .tf-datos.gs-datos > .pos-f { grid-column: span 6; }
   .gs-cuerpo { grid-template-columns: minmax(0, 1fr); }
@@ -1471,7 +1479,11 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .pos-tabla.gs-tabla tbody tr { display: grid; gap: 10px; padding: 10px 12px; }
   .pos-tabla.gs-tabla td, .pos-tabla.gs-tabla td.n { display: block; width: auto; height: auto; padding: 0; border: 0; text-align: left; }
   .pos-tabla.gs-tabla td[data-l]::before { content: attr(data-l); display: block; margin-bottom: 3px; font: 600 12px var(--sans); color: var(--txt-2); }
-  .pos-tabla.gs-tabla select, .pos-tabla.gs-tabla input, .pos-tabla.gs-tabla #gmDesc { width: 100%; min-width: 0; max-width: none; }
+  .pos-tabla.gs-tabla select, .pos-tabla.gs-tabla input { width: 100%; min-width: 0; max-width: none; }
+}
+@media (max-width: 860px) {
+  .rt-bs.gs-bs .rm-bs-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .gs-bs-izq { order: 2; }   /* en el celular, primero el renglón y después el total y las observaciones */
 }
 
 /* ── Ventas por vendedor (SQL 192) ──────────────────────────────────────
