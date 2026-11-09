@@ -942,6 +942,30 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .rc-tot { color: var(--txt-2); font-weight: 700; font-variant-numeric: tabular-nums; }
 .rc-grilla tfoot th, .rc-grilla tfoot td { border-top: 1px solid var(--line-alta); border-bottom: 0; padding-top: 5px; }
 .rc-total { font-size: 15px; }
+/* v454: «Curvas» (una curva = una prenda de cada talle), separada de los talles. */
+.pos .st-grilla input.rc-curva {
+  width: 52px; min-height: 0; padding: 5px 4px; text-align: center;
+  font: 700 15px var(--sans); font-variant-numeric: tabular-nums; border-color: var(--cobre);
+  -moz-appearance: textfield; appearance: textfield;
+}
+.pos .st-grilla input.rc-curva::-webkit-inner-spin-button, .pos .st-grilla input.rc-curva::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.rc-grilla .rc-cv { padding-right: 12px; border-right: 1px solid var(--line-alta); }
+.rc-grilla thead th.rc-cv { font-weight: 700; color: var(--txt); }
+@media (max-width: 520px) { .pos .st-grilla input.rc-curva { width: 44px; font-size: 16px; } .rc-grilla .rc-cv { padding-right: 6px; } }
+/* La ventana «Por curva»: el lugar de la grilla reservado, así las sugerencias del producto entran sin que la ventana deslice. */
+.pc-prod { margin-bottom: 12px; }
+.pc-zona { min-height: 280px; }
+.pc-vacia { margin: 0; padding: 32px 12px; text-align: center; color: var(--txt-3); border: 1px dashed var(--line-alta); border-radius: 12px; }
+.pc-cab { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 0 0 8px; }
+.pc-cab b { font-size: 15.5px; }
+.pc-cab span { color: var(--txt-3); font-size: 13px; }
+.pc-ya { margin: 8px 0 0; }
+/* En el celular, el envío, la devolución y el remito: el campo a todo el ancho y sus botones arriba (las sugerencias, pegadas al campo). */
+@media (max-width: 520px) {
+  .tk.rn-bs .tk-prod { flex-wrap: wrap; }
+  .tk.rn-bs .tk-prod .pos-f { flex-basis: 100%; }
+  .tk.rn-bs .tk-prod .btn { order: -1; }
+}
 
 /* Lo que llegó contra lo que dice el remito: arriba lo contado, abajo lo mandado. */
 .rc-c { display: inline-flex; flex-direction: column; align-items: center; min-width: 42px; padding: 3px 6px; border-radius: 8px; line-height: 1.15; }

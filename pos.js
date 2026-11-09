@@ -9293,20 +9293,34 @@
       }).join('') + '</tr>';
     }).join('') + '</tbody></table></div>';
   }
-  /** Para escribir cantidades: valor(talle, color) es lo que ya hay en cada casilla; ojo(talle, color) la marca. */
-  function grillaCarga(cod, ts, cs, valor, ojo) {
-    return '<div class="st-scroll"><table class="st-grilla rc-grilla">' + cabGrilla(ts, true) + '<tbody>' + cs.map(function (c) {
-      return '<tr><th>' + esc(nombreCol(c, cod)) + '</th>' + ts.map(function (t) {
+  /** Para escribir cantidades: valor(talle, color) es lo que ya hay en cada casilla; ojo(talle, color) la marca.
+      v454: con curvas, al lado de cada color la columna «Curvas» (una curva = una prenda de cada talle): escribir 2 pone 2
+      en todos los talles de ese color. Muestra cuántas son si todos los talles del color tienen lo mismo. */
+  function grillaCarga(cod, ts, cs, valor, ojo, curvas) {
+    var cab = cabGrilla(ts, true);
+    if (curvas) cab = cab.replace('</span></th>', '</span></th><th class="c rc-cv" title="Una curva es una prenda de cada talle">Curvas</th>');
+    return '<div class="st-scroll"><table class="st-grilla rc-grilla' + (curvas ? ' rc-curvas' : '') + '">' + cab + '<tbody>' + cs.map(function (c) {
+      var vs = ts.map(function (t) { return Number(valor(t, c)) || 0; }), cv = vs[0] > 0 && vs.every(function (v) { return v === vs[0]; }) ? vs[0] : '';
+      return '<tr><th>' + esc(nombreCol(c, cod)) + '</th>' +
+        (curvas ? '<td class="c rc-cv"><input type="number" class="rc-curva" min="0" max="99" inputmode="numeric" data-c="' + esc(c) + '" value="' + cv + '"' +
+                  ' aria-label="' + esc('Curvas de ' + nombreCol(c, cod)) + '"></td>' : '') + ts.map(function (t) {
         var v = valor(t, c), k = t + '|' + c;
         return '<td class="c"><input type="number" class="rc-in' + (ojo && ojo(t, c) ? ' rc-ojo' : '') + '" min="0" max="9999" inputmode="numeric" data-k="' + esc(k) + '" value="' + (v || '') + '"' +
           ' aria-label="' + esc(nombreCol(c, cod) + ', talle ' + nombreTalle(t)) + '"></td>';
       }).join('') + '<td class="n rc-tot" data-tc="' + esc(c) + '"></td></tr>';
-    }).join('') + '</tbody><tfoot><tr><th>Total</th>' + ts.map(function (t) { return '<td class="c rc-tot" data-tt="' + esc(t) + '"></td>'; }).join('') +
+    }).join('') + '</tbody><tfoot><tr><th>Total</th>' + (curvas ? '<td class="rc-cv"></td>' : '') + ts.map(function (t) { return '<td class="c rc-tot" data-tt="' + esc(t) + '"></td>'; }).join('') +
       '<td class="n"><b class="rc-total"></b></td></tr></tfoot></table></div>';
   }
   /** Las sumas de una grilla de carga, y el Enter que pasa a la casilla siguiente (al final, a fin()). */
   function engancharGrilla(z, alCambiar, fin) {
-    var ins = [].slice.call(z.querySelectorAll('.rc-in'));
+    var ins = [].slice.call(z.querySelectorAll('.rc-in')), cvs = [].slice.call(z.querySelectorAll('.rc-curva'));
+    /** v454: las curvas de un color, si todos sus talles tienen lo mismo (si no, vacía). */
+    function curvaDe(tr) {
+      var cv = tr && tr.querySelector('.rc-curva');
+      if (!cv) return;
+      var vs = [].map.call(tr.querySelectorAll('.rc-in'), function (i) { return parseInt(i.value, 10) || 0; });
+      cv.value = vs[0] > 0 && vs.every(function (v) { return v === vs[0]; }) ? vs[0] : '';
+    }
     function sumar() {
       var porC = {}, porT = {}, tot = 0;
       ins.forEach(function (i) {
@@ -9324,6 +9338,7 @@
         var n = parseInt(inp.value, 10);
         if (inp.value !== '' && !(n >= 0 && n <= 9999)) inp.value = '';
         sumar();
+        curvaDe(inp.closest('tr'));
         if (alCambiar) alCambiar(inp.getAttribute('data-k'), parseInt(inp.value, 10) || 0);
       };
       inp.onkeydown = function (e) {
@@ -9332,6 +9347,24 @@
         if (ins[i + 1]) { ins[i + 1].focus(); ins[i + 1].select(); } else if (fin) fin();
       };
       inp.onfocus = function () { inp.select(); };
+    });
+    /* v454: N en «Curvas» pone N en cada talle de ese color; el Enter pasa al color siguiente (después del último, a fin()). */
+    cvs.forEach(function (cv, i) {
+      cv.oninput = function () {
+        var n = parseInt(cv.value, 10);
+        if (cv.value !== '' && !(n >= 0 && n <= 99)) cv.value = '';
+        n = n >= 1 && n <= 99 ? n : 0;
+        var fila = [].slice.call(cv.closest('tr').querySelectorAll('.rc-in'));
+        fila.forEach(function (inp) { inp.value = n || ''; });
+        sumar();
+        if (alCambiar) fila.forEach(function (inp) { alCambiar(inp.getAttribute('data-k'), n); });
+      };
+      cv.onkeydown = function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (cvs[i + 1]) { cvs[i + 1].focus(); cvs[i + 1].select(); } else if (fin) fin();
+      };
+      cv.onfocus = function () { cv.select(); };
     });
     sumar();
     return { sumar: sumar, valores: function () {
@@ -12496,6 +12529,7 @@
         '</div></section>' +
         '<section class="tk-der" aria-label="Los productos">' +
           '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnCurva" title="Un producto con todos sus talles: cuántas curvas van de cada color">Por curva…</button>' +
             '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
           '<div class="tk-grilla"><table class="tk-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
             '<th class="c">Cant.</th><th><span class="sr">Quitar</span></th></tr></thead><tbody id="rnFilas"></tbody></table></div>' +
@@ -12634,6 +12668,7 @@
         '</div></section>' +
         '<section class="tk-der" aria-label="Los productos">' +
           '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnCurva" title="Un producto con todos sus talles: cuántas curvas van de cada color">Por curva…</button>' +
             '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel o un TXT: Código, Talle, Color y Cantidad">Importar productos…</button>' +
             '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
           '<div class="tk-grilla"><table class="tk-tabla dv-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
@@ -12741,6 +12776,7 @@
         '</section>' +
         '<section class="tk-der" aria-label="Los productos">' +
           '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="rnCurva" title="Un producto con todos sus talles: cuántas curvas van de cada color">Por curva…</button>' +
             '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel o un TXT: Código, Talle, Color y Cantidad">Importar productos…</button>' +
             '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
           '<div class="tk-grilla"><table class="tk-tabla ev-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
@@ -12829,6 +12865,7 @@
   /* El campo del producto y la lista: los mismos en el remito de Gestión y en la devolución. */
   function htmlProdRn() {
     return '<div class="tk-prod rn-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnCurva" title="Un producto con todos sus talles: cuántas curvas van de cada color">Por curva…</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel: Código, Talle, Color y Cantidad">Pegar o subir un Excel…</button>' +
         '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
       '<div id="rnLista"></div>';
@@ -12844,6 +12881,7 @@
     };
     $('rnGuardar').onclick = guardarRemito;
     $('rnPegar').onclick = function () { abrirImportar(function (items) { sumarRn(items); guardarBorradorRn(); pintarRn(); }); };
+    if ($('rnCurva')) $('rnCurva').onclick = function () { abrirPorCurva(); };   // v454
     /* Un producto nuevo de la fábrica puede no estar todavía en el catálogo: el disparo a su etiqueta entra igual. */
     engancharProducto({ campo: 'rnProd', sug: 'rnSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, escaneoLibre: true,
       prod: function (cod) { return PROD[cod] || (RN.lineas.some(function (l) { return l.codigo === cod; }) ? productoRn(cod) : null); },
@@ -12874,9 +12912,13 @@
     if (!ts.length) ts = [''];
     if (!cs.length) cs = [''];
     ts = ordenarTalles(ts, cod); cs = ordenarColores(cs, cod);
-    var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(cod) + (p[2] ? ' · ' + esc(p[2]) : '') + ' · cuántas van de cada talle y color.</p>' +
-      grillaCarga(cod, ts, cs, function (t, c) { return ya[t + '|' + c]; }) + '<div class="pos-error" id="gcError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Listo</button></div>', ts.length > 5);
+    /* v454: con «Curvas» si la curva es la de verdad (hasta 9 talles); los que traen del catálogo 14 o 24 talles genéricos
+       (34 al 52 con los impares…), sin: ahí una curva no es uno de cada uno. Para ésos está «Por curva…». */
+    var conCurvas = ts.length <= 9;
+    var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(cod) + (p[2] ? ' · ' + esc(p[2]) : '') +
+        (conCurvas ? ' · cuántas curvas van de cada color (una de cada talle), o cuántas de cada talle.</p>' : ' · cuántas van de cada talle y color.</p>') +
+      grillaCarga(cod, ts, cs, function (t, c) { return ya[t + '|' + c]; }, null, conCurvas) + '<div class="pos-error" id="gcError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Listo</button></div>', ts.length > 4);
     var g = engancharGrilla(caja, null, function () { caja.querySelector('#gcOk').focus(); });
     caja.querySelector('#gcOk').onclick = function () {
       var m = g.valores(), donde = -1;
@@ -12892,7 +12934,96 @@
       cerrarVentana();
       pintarRn(cod);
     };
-    setTimeout(function () { var i = caja.querySelector('.rc-in'); if (i) i.focus(); }, 0);
+    setTimeout(function () { var i = caja.querySelector('.rc-curva') || caja.querySelector('.rc-in'); if (i) i.focus(); }, 0);
+  }
+
+  /* v454 (8/11, Mauricio: «en los envíos internos o también para hacer el stock tiene que estar por curva, para elegir un
+     producto y agregarlo por curva directamente; es más fácil»): el «Por curva» de BlueSoft, a la derecha del Producto (en
+     el envío, el remito, la devolución y el módulo del Stock general). Se elige el producto y en cada color se escribe
+     cuántas curvas van (una curva = una prenda de cada talle del producto); cualquier talle se cambia a mano. Lo de acá se
+     SUMA a lo que ya estaba; «Agregar y elegir otro» deja la ventana abierta para el producto siguiente. */
+  function abrirPorCurva() {
+    var p = null, g = null, que = RN_DEV ? 'la devolución' : RN_SG ? 'el módulo' : RN_ENV ? 'el envío' : 'el remito';
+    var caja = ventana('<h3 id="posVentTit">Agregar por curva</h3>' +
+      '<p class="pos-bajada">Elegí el producto y escribí cuántas curvas van de cada color: una curva es una prenda de cada talle. Si algún talle va distinto, cambialo en su casilla.</p>' +
+      '<div class="tk-prod pc-prod">' + campo('', 'Producto', '<input type="search" id="pcProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="pcSug" autofocus>') +
+        '<div class="tk-sug" id="pcSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+      '<div class="pc-zona" id="pcZona"></div><div class="pos-error" id="pcError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="pcOtro">Agregar y elegir otro</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="pcOk">Agregar</button></div>', true);
+    caja.classList.add('pc-caja');
+    _alCerrar = function () { var f = $('rnProd'); if (f) f.focus(); };
+    function q(s) { return caja.querySelector(s); }
+    function vacia() {
+      p = null; g = null;
+      q('#pcZona').innerHTML = '<p class="pc-vacia">Elegí el producto: aparecen sus colores y su curva de talles.</p>';
+    }
+    /* La curva: los talles del catálogo. Si son muchos (14 o 24 genéricos: 34 al 52 con los impares…), una curva no es uno de
+       cada uno: entonces son los talles que hay o hubo en el stock de la sucursal (de cualquier color), con «Ver los N talles»
+       por si falta alguno; sin stock que mirar, todos los del catálogo. */
+    function mostrar(pp, color, todos, curvasAntes) {
+      var cod = pp[0], cat = ordenarTalles(tallesDe(pp), cod), cs = ordenarColores(coloresDe(pp).map(function (x) { return x.cod; }), cod), ya = 0;
+      var lo = RN.origen && localDe(RN.origen) ? RN.origen : '', st = lo ? S.stock[lo] : null, ts = cat, deStock = false;
+      p = pp;
+      if (!cs.length) cs = [''];
+      q('#pcProd').limpiar();
+      errorEn(caja, 'pcError', '');
+      if (cat.length > 9 && !todos && lo && !st && !caja.pidioStock) {   // el stock de la sucursal todavía no está: se pide una vez
+        caja.pidioStock = true;
+        q('#pcZona').innerHTML = '<p class="cargando">Buscando los talles que hay en ' + esc(nombreLocal(localDe(lo))) + '…</p>';
+        traerStock(lo).then(function () { if (p === pp && caja.isConnected) mostrar(pp, color); });
+        return;
+      }
+      if (cat.length > 9 && !todos && st && st.con) {
+        /* Los que figuran en el stock (también en negativo: un talle que se vendió es de la curva aunque hoy no quede). */
+        var hay = cat.filter(function (t) { return cs.some(function (c) { return claveVar(cod, t, c) in st.m; }); });
+        if (hay.length) { ts = hay; deStock = true; }
+      }
+      if (!ts.length) ts = [''];
+      RN.lineas.forEach(function (l) { if (l.codigo === cod) ya += l.cantidad; });
+      q('#pcZona').innerHTML = '<div class="pc-cab"><b>' + esc(pp[1]) + '</b><span>' + esc(cod) + (pp[2] ? ' · ' + esc(pp[2]) : '') + ' · ' +
+          (ts[0] ? 'curva ' + esc(ts.join(' · ')) : 'talle único') + (deStock ? ' (los talles que figuran en el stock de ' + esc(nombreLocal(localDe(lo))) + ')' : '') + '</span>' +
+          (deStock ? '<button type="button" class="pos-link" id="pcTodos">Ver los ' + cat.length + ' talles</button>' : '') + '</div>' +
+        grillaCarga(cod, ts, cs, function () { return 0; }, null, true) +
+        (ya ? '<p class="pos-ayuda pc-ya">Ya hay ' + num(ya) + (ya === 1 ? ' prenda' : ' prendas') + ' de este producto en ' + que + ': lo de acá se suma.</p>' : '');
+      g = engancharGrilla(q('#pcZona'), function () { errorEn(caja, 'pcError', ''); }, function () { q('#pcOk').focus(); });
+      var cvs = [].slice.call(q('#pcZona').querySelectorAll('.rc-curva'));
+      var foco = cvs.filter(function (i) { return i.getAttribute('data-c') === (color || ''); })[0] || cvs[0];
+      if (curvasAntes) cvs.forEach(function (i) { var n = curvasAntes[i.getAttribute('data-c')]; if (n) { i.value = n; i.oninput(); } });
+      else if (cvs.length === 1) { cvs[0].value = 1; cvs[0].oninput(); }   // un solo color: ya va una curva
+      var bt = q('#pcTodos');
+      if (bt) bt.onclick = function () {   // todos los talles, con las curvas que ya estaban escritas
+        var antes = {};
+        cvs.forEach(function (i) { antes[i.getAttribute('data-c')] = i.value; });
+        mostrar(pp, color, true, antes);
+      };
+      setTimeout(function () { if (foco && foco.isConnected) { foco.focus(); foco.select(); } }, 0);
+    }
+    function agregar(seguir) {
+      if (!p || !g) { errorEn(caja, 'pcError', 'Primero elegí el producto.'); q('#pcProd').focus(); return; }
+      var m = g.valores(), ks = Object.keys(m), cod = p[0], nom = p[1], n = 0;
+      if (!ks.length) {
+        errorEn(caja, 'pcError', 'Escribí cuántas curvas van de algún color.');
+        var c0 = q('.rc-curva');
+        if (c0) c0.focus();
+        return;
+      }
+      sumarRn(ks.map(function (k) { var a = k.split('|'); n += m[k]; return { codigo: cod, descripcion: PROD[cod] ? '' : nom, talle: a[0], color: a[1], cantidad: m[k] }; }));
+      guardarBorradorRn();
+      pintarRn(cod);
+      avisar('ok', num(n) + (n === 1 ? ' prenda' : ' prendas') + ' de ' + nom + ' en ' + que + '.');
+      if (seguir) { vacia(); q('#pcProd').focus(); } else cerrarVentana();
+    }
+    q('#pcOk').onclick = function () { agregar(false); };
+    q('#pcOtro').onclick = function () { agregar(true); };
+    /* El Escape con las sugerencias abiertas sólo las cierra (sin esto cierra la ventana): va antes que el de engancharProducto. */
+    q('#pcProd').addEventListener('keydown', function (e) { if (e.key === 'Escape' && !q('#pcSug').hidden) e.stopPropagation(); });
+    engancharProducto({ campo: 'pcProd', sug: 'pcSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true,
+      elegir: function (pp) { mostrar(pp); },
+      agregar: function (pp, talle, color) { mostrar(pp, color); },   // el disparo a una etiqueta: su producto, con el cursor en su color
+      noEsta: function (cod) { avisar('err', 'No encontré «' + cod + '» en el catálogo: por curva van los productos del catálogo, con sus talles.'); q('#pcProd').select(); } });
+    vacia();
   }
 
   function pintarRn(marcar) {
