@@ -1579,6 +1579,8 @@
      de pago (o en Múltiple). Se usa entera, como en Cobrar. Gift Cards y
      Cobrar siguen andando igual. */
   var ES_GC = /^99\d{12}$/;
+  /* La tarjeta del Club: 12 números (la gift card son 14 y empieza con 99). */
+  var ES_CLUB = /^\d{12}$/;
   var ESTADO_GC = { usado: 'usada', vencido: 'vencida', anulado: 'anulada' };
   /** La sugerencia «Gift Card» del campo de producto (escribiendo "gift"). */
   var SUG_GC = ['GIFTCARD', 'Gift Card', 'Pasá la tarjeta por la pistola'];
@@ -2088,7 +2090,9 @@
     /* SQL 264: la Gift Card también es un artículo («GIFTCARD», para el stock): en la venta no va como una prenda, la
        sugerencia es la de siempre (que pide pasar la tarjeta). */
     /* SQL 265: lo que no está en el catálogo puede ser un cupón (su código): queda como descuento. */
+    /* La tarjeta del Club por la pistola: elige al socio (socioPorTarjeta). */
     return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar, giftcard: abrirGiftcard, noEsta: cuponEnProducto,
+             socio: socioPorTarjeta,
              buscar: function (q) {
                var r = buscarProductos(q).filter(function (p) { return p[0] !== 'GIFTCARD'; });
                return /^gif/i.test(String(q || '').trim()) ? [SUG_GC].concat(r).slice(0, 8) : r;
@@ -2128,6 +2132,13 @@
         cerrar();
         return;
       }
+      /* Los 12 números de la tarjeta del Club (la pistola que no manda Enter): si es la de un socio, lo elige; si no,
+         el texto queda como está. */
+      if (o.socio && ES_CLUB.test(gcod) && !prodDe(gcod)) {
+        tEsc = setTimeout(function () { if (campoP.value.trim() === gcod) o.socio(gcod, true); }, 150);
+        cerrar();
+        return;
+      }
       var d = leerEscaneo(campoP.value);
       /* Algunas pistolas no mandan Enter: si el texto ya es un disparo completo (el talle y el color
          existen en esa prenda), se agrega solo, cuando deja de escribir. */
@@ -2155,6 +2166,7 @@
       var cod = campoP.value.trim().toUpperCase(), pc = prodDe(cod);
       if (o.giftcard && ES_GC.test(cod)) { campoP.limpiar(); o.giftcard(cod); return; }   // SQL 200: una gift card impresa
       if (pc) { elegir(pc); return; }
+      if (o.socio && ES_CLUB.test(cod)) { cerrar(); o.socio(cod, false); return; }   // la tarjeta del Club
       /* Si las sugerencias se cerraron (salió del campo y volvió), se buscan de nuevo. */
       if (!sug.length) { sug = buscar(campoP.value); mira = 0; }
       if (sug.length) { elegir(sug[mira]); return; }
@@ -2473,6 +2485,9 @@
         if (r && r.corto) { hallados = []; lista.innerHTML = '<p class="so-nada">' + esc(r.porque) + '</p>'; return; }
         if (S.sin197) caja.querySelector('#soCrear').hidden = true;
         hallados = r || [];
+        /* La tarjeta del Club (por la pistola o escrita): si es la de un socio, lo elige sin tener que tocarlo. */
+        var suya = tarjetaDe(hallados, q);
+        if (suya) { tomarHallado(suya); cerrarVentana(); pintar(); return; }
         lista.innerHTML = hallados.length ? hallados.map(function (h, i) {
           var s = h.socio, c = h.cliente;
           var datos = [c && docTexto(c), c && c.condicion && c.condicion !== 'consumidor_final' ? CONDICION[c.condicion] : '',
@@ -2490,9 +2505,7 @@
     lista.onclick = function (e) {
       var b = e.target.closest('[data-so]');
       if (!b) return;
-      var h = hallados[Number(b.getAttribute('data-so'))];
-      if (h.cliente) elegirCliente(h.cliente, h.socio);
-      else elegirSocio(h.socio);
+      tomarHallado(hallados[Number(b.getAttribute('data-so'))]);
       cerrarVentana();
       pintar();
     };
@@ -2503,6 +2516,39 @@
     caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
     caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
     caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
+  }
+  /** Lo elegido de la lupita ({cliente, socio}) pasa a la venta. */
+  function tomarHallado(h) {
+    if (h.cliente) elegirCliente(h.cliente, h.socio);
+    else elegirSocio(h.socio);
+  }
+  /** Si lo buscado son los 12 números de una tarjeta del Club y es la de un solo socio, ese ({cliente, socio}); si no, null. */
+  function tarjetaDe(hallados, q) {
+    var cod = String(q || '').replace(/\s/g, '');
+    if (!ES_CLUB.test(cod)) return null;
+    var h = (Array.isArray(hallados) ? hallados : []).filter(function (x) { return x.socio && String(x.socio.codigo) === cod; });
+    return h.length === 1 ? h[0] : null;
+  }
+  /* La tarjeta del Club pasada por la pistola en «Producto» (Mauricio, 8/11: "y acá si escaneo el código de la tarjeta
+     sale igual, ¿no?"): elige al socio como la lupita, sin abrirla. Va después del producto con ese código (si lo hubiera)
+     y de la gift card (14 números). silencioso (la pistola sin Enter): si no es de un socio, el texto queda como está. */
+  function socioPorTarjeta(cod, silencioso) {
+    var campoP = $('vProd');
+    function noEs(m) {
+      if (silencioso || !campoP.isConnected) return;
+      avisar('err', m || 'No encontré «' + cod + '» en el catálogo ni como tarjeta del Club.');
+      campoP.select();   // el próximo disparo lo reemplaza
+    }
+    if (V.socio && String(V.socio.codigo) === cod) { campoP.limpiar(); avisar('info', V.socio.nombre + ' ya está en la venta.'); return; }
+    buscarClientes(cod).then(function (r) {
+      if (!campoP.isConnected || campoP.value.trim() !== cod) return;   // mientras tanto escribieron otra cosa
+      var h = r && !r.corto ? tarjetaDe(r, cod) : null;
+      if (!h) { noEs(); return; }
+      campoP.limpiar();
+      tomarHallado(h);
+      pintar();
+      avisar('ok', 'Socio del Club: ' + (h.cliente ? h.cliente.nombre : h.socio.nombre) + ' · ' + miles(Number(h.socio.puntos) || 0) + ' puntos.');
+    }).catch(function (e) { noEs(mensajeDe(e)); });
   }
   /** La lupita: los clientes y los socios juntos (SQL 197), cada uno {cliente, socio}; sin el 197, sólo los socios
       (pos_club_buscar), como antes, y no lo vuelve a intentar hasta recargar. */
