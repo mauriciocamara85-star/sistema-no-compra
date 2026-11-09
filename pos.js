@@ -2238,10 +2238,11 @@
   function abrirDetalle(p, o) {
     o = o || prodVenta();
     if (gcEnCambio(p, o)) return;   // SQL 264
-    var talles = tallesDe(p), colores = coloresDe(p), pr = precioDe(p[0], o.lista());
+    /* v458: el envío, el remito, la devolución y el Stock general la usan sin el precio (o.sinPrecio) y con «Por curva…» (o.porCurva). */
+    var talles = tallesDe(p), colores = coloresDe(p), pr = o.sinPrecio ? null : precioDe(p[0], o.lista());
     var sel = { talle: talles.length === 1 ? talles[0] : '', color: colores.length === 1 ? colores[0].cod : '' };
-    var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(p[0]) + ' · ' + esc(p[2] || 'Sin rubro') + ' · ' +
-        (pr ? plata(pr) : '<b>sin precio en esta lista</b> (se escribe en la grilla)') + '</p>' +
+    var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(p[0]) + ' · ' + esc(p[2] || 'Sin rubro') +
+        (o.sinPrecio ? '' : ' · ' + (pr ? plata(pr) : '<b>sin precio en esta lista</b> (se escribe en la grilla)')) + '</p>' +
       '<div class="pos-campos">' +
         '<div class="pos-f ancho"><span>Talle</span><div class="chips" id="dtTalles">' + talles.map(function (t) {
           return '<button type="button" class="chip" data-talle="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div>' +
@@ -2250,7 +2251,8 @@
           return '<button type="button" class="chip" data-color="' + esc(x.cod) + '">' + esc(x.nom) + '</button>'; }).join('') + '</div></div>' : '') +
         campo('', 'Cantidad', '<input type="number" id="dtCant" min="1" max="999" value="1">') +
       '</div><div class="pos-error" id="dtError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dtOk">Agregar</button></div>');
+      '<div class="pos-pie">' + (o.porCurva ? '<button type="button" class="btn btn-sec btn-chico izq" id="dtCurva" title="Todos los talles de este producto: cuántas curvas van de cada color">Por curva…</button>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dtOk">Agregar</button></div>');
     function marcar() {
       caja.querySelectorAll('[data-talle]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-talle') === sel.talle); });
       caja.querySelectorAll('[data-color]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-color') === sel.color); });
@@ -2272,6 +2274,8 @@
       o.agregar(p, talle, sel.color, n);
     }
     caja.querySelector('#dtOk').onclick = listo;
+    var bc = caja.querySelector('#dtCurva');
+    if (bc) bc.onclick = function () { cerrarVentana(); o.porCurva(p); };   // v458: la grilla de ese producto, con «Curvas»
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); listo(); } });
     setTimeout(function () { var b = caja.querySelector(sel.talle ? (colores.length > 1 ? '[data-color]' : '#dtOk') : '[data-talle], #dtOtro'); if (b) b.focus(); }, 0);
   }
@@ -12919,9 +12923,17 @@
     $('rnPegar').onclick = function () { abrirImportar(function (items) { sumarRn(items); guardarBorradorRn(); pintarRn(); }); };
     if ($('rnCurva')) $('rnCurva').onclick = function () { abrirPorCurva(); };   // v454
     /* Un producto nuevo de la fábrica puede no estar todavía en el catálogo: el disparo a su etiqueta entra igual. */
-    engancharProducto({ campo: 'rnProd', sug: 'rnSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, escaneoLibre: true,
+    var oRn = { campo: 'rnProd', sug: 'rnSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, escaneoLibre: true,
       prod: function (cod) { return PROD[cod] || (RN.lineas.some(function (l) { return l.codigo === cod; }) ? productoRn(cod) : null); },
-      elegir: function (p) { $('rnProd').limpiar(); editarProductoRn(p); },
+      /* v458 (8/11, Mauricio: «cuando vos ponés el producto en el buscador se te abre igual que el ticket de venta para elegir el
+         color y el talle… ahí dentro podríamos poner la opción de por curva»): elegir un producto abre la ventana de la venta
+         (talle, color y cantidad, sin el precio) con «Por curva…» adentro, que abre la grilla de ese producto con «Curvas». */
+      elegir: function (p) {
+        $('rnProd').limpiar();
+        abrirDetalle(p, oRn);
+        _alCerrar = function () { var f = $('rnProd'); if (f) f.focus(); };
+      },
+      porCurva: function (p) { abrirPorCurva(p); },
       agregar: function (p, talle, color, n) {
         $('rnProd').limpiar();
         sumarRn([{ codigo: p[0], descripcion: p[1], talle: talle, color: color, cantidad: n || 1 }]);
@@ -12935,7 +12947,8 @@
         if (!confirm(cod + ' no está en el catálogo. ¿Agregarlo igual ' + (RN_DEV ? 'a la devolución' : RN_ENV ? 'al envío' : 'al remito') + '?')) return;
         $('rnProd').limpiar();
         editarProductoRn([cod, cod, '', '', '']);
-      } });
+      } };
+    engancharProducto(oRn);
     pintarRn();
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('rnProd'); if (p) p.focus(); }, 0);
   }
@@ -12977,8 +12990,9 @@
      producto y agregarlo por curva directamente; es más fácil»): el «Por curva» de BlueSoft, a la derecha del Producto (en
      el envío, el remito, la devolución y el módulo del Stock general). Se elige el producto y en cada color se escribe
      cuántas curvas van (una curva = una prenda de cada talle del producto); cualquier talle se cambia a mano. Lo de acá se
-     SUMA a lo que ya estaba; «Agregar y elegir otro» deja la ventana abierta para el producto siguiente. */
-  function abrirPorCurva() {
+     SUMA a lo que ya estaba; «Agregar y elegir otro» deja la ventana abierta para el producto siguiente.
+     v458: con prod (desde «Por curva…» de la ventana del producto), arranca con ése ya elegido. */
+  function abrirPorCurva(prod) {
     var p = null, g = null, que = RN_DEV ? 'la devolución' : RN_SG ? 'el módulo' : RN_ENV ? 'el envío' : 'el remito';
     var caja = ventana('<h3 id="posVentTit">Agregar por curva</h3>' +
       '<p class="pos-bajada">Elegí el producto y escribí cuántas curvas van de cada color: una curva es una prenda de cada talle. Si algún talle va distinto, cambialo en su casilla.</p>' +
@@ -13060,6 +13074,7 @@
       agregar: function (pp, talle, color) { mostrar(pp, color); },   // el disparo a una etiqueta: su producto, con el cursor en su color
       noEsta: function (cod) { avisar('err', 'No encontré «' + cod + '» en el catálogo: por curva van los productos del catálogo, con sus talles.'); q('#pcProd').select(); } });
     vacia();
+    if (prod) mostrar(prod);
   }
 
   function pintarRn(marcar) {
