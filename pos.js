@@ -154,7 +154,7 @@
       ['Reportes', [['iva', 'IVA Ventas', 'iva'], ['reportes', 'Reportes', 'reportes']]],
       /* El registro de tiempos (SQL 206): las entradas y salidas de cada uno, como el "Registro de tiempos" de BlueSoft (la huella viene después). */
       ['Personal', [['tiempos', 'Registro de tiempos', 'reloj']]],
-      ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
+      ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación', 'arca']]]   // 8/11: «Facturación (ARCA)» no entraba con el «Pronto»; la pantalla sigue diciendo (ARCA)
     ],
     /* La fábrica (Mauricio, 6/11: "la parte de remitos que tenemos para crear remitos y que nos llegue acá tiene que estar
        dentro de la fábrica, no en gestión"): lo que sale del depósito de la fábrica a los locales y lo que llegó mal.
@@ -882,12 +882,15 @@
   function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : leer(K_FIJO) !== '1'; }
   function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else guardar(K_FIJO, ch ? '0' : '1'); }
 
-  function item(it) {
+  /* Los reportes de Ventas, después de una rayita (8/11: «lo de todos los días» arriba, los reportes abajo; como en
+     BlueSoft siguen en la misma sección y en el mismo orden). La rayita no suma alto: va en el hueco de 1 px entre renglones. */
+  var REPORTES = { vendedores: 1, porproducto: 1, iva: 1 };
+  function item(it, sep) {
     var activa = it[0] === S.vista || it[0] === DENTRO[MODO][S.vista];
     var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>') +
       (it[0] === 'diferencias' && S.difPend ? cuentaHtml(S.difPend) : '');
-    if (it[3]) return '<a class="pos-item" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
-    return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
+    if (it[3]) return '<a class="pos-item' + (sep ? ' pos-sep' : '') + '" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
+    return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + (sep ? ' pos-sep' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
       (activa ? ' aria-current="page"' : '') + '>' + dentro + '</button>';
   }
   /* Las diferencias de los remitos sin resolver (SQL 167): el número al lado de "Diferencias", en Fábrica (antes, Gestión). */
@@ -948,9 +951,8 @@
     var chico = menuChico(), y = persona.yo();
     var flota = chico && _flota && compuGrande();   // se tocó una sección con el menú abierto por encima: sigue abierto
     /* Los dos sin la barra del sistema (Gestión desde el 31/10): "‹ Sistema" arriba de las secciones. */
-    var cab = (OFICINA
-      ? '<div class="pos-menu-cab"><span>' + NOMBRE + '</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>'
-      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>') +
+    /* Gestión y Fábrica con el mismo encabezado que el POS (8/11): el logo y el nombre (NOMBRE es «POS» en el mostrador). */
+    var cab = '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>' + NOMBRE + '</span>' + Interfaz.botonPanel(chico && !flota, '', 'menuPos') + '</div>' +
       '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
     /* Las secciones se despliegan y se pliegan, en Gestión (20/10) y desde el 5/11 también en el mostrador (Mauricio:
        "BlueSoft tenía también secciones y dentro de cada sección cosas adentro … no me gusta que tengas que deslizar …
@@ -959,7 +961,9 @@
       var ab = grupoAbierto(g);
       return '<button type="button" class="pos-grupo pos-grupo-btn" data-grupo="' + esc(g[0]) + '" aria-expanded="' + ab + '">' +
         '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
-        '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
+        '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(function (it, i) {
+          return item(it, MODO === 'mostrador' && i > 0 && REPORTES[it[0]] && !REPORTES[g[1][i - 1][0]]);
+        }).join('') + '</div>';
     }).join('');
     var cuerpo = OFICINA ? grupos
       : grupos +
@@ -9160,7 +9164,7 @@
         '<button type="button" class="btn btn-pri btn-chico" id="prNueva">Nueva promoción</button>') +
       '<div class="pos-promos">' + ((S.ini.promos || []).length ? S.ini.promos.map(function (p) {
         return '<div class="pos-promo' + (p.activo ? '' : ' apagada') + '"><label class="pos-switch" title="' + (p.activo ? 'Prendida: se ofrece en la venta' : 'Apagada: no se ofrece') + '"><input type="checkbox" data-activa="' + p.id + '"' + (p.activo ? ' checked' : '') +
-          ' aria-label="' + esc(p.nombre) + ' activa"><i></i></label><div><b>' + esc(p.nombre) + '</b><small>' + esc(describirPromo(p)) + '</small></div>' +
+          ' aria-label="' + esc(p.nombre) + ' activa"><i></i></label><div><b>' + esc(p.nombre) + (p.activo ? '' : '<span class="pos-promo-tag">Apagada</span>') + '</b><small>' + esc(describirPromo(p)) + '</small></div>' +
           '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button></div>';
       }).join('') : '<div class="pos-cartel">Todavía no hay promociones.</div>') + '</div>';
     $('prNueva').onclick = function () { editarPromo(null); };
@@ -12713,7 +12717,7 @@
           campo('c6 rn-ref', 'Referencia', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off" title="El número del remito de la fábrica">') +
           campo('c6', 'Responsable', '<input type="text" value="' + esc(yo || '—') + '" readonly tabindex="-1" title="Quien entró: queda como el que lo cargó">') +
           campo('c6', 'Estado', '<input type="text" id="rnEstado" value="Pendiente de envío" readonly tabindex="-1">') +
-          campo('', 'Cliente <span class="lbl-opc">(el local al que llega)</span>', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) +
+          campo('', 'Cliente <span class="lbl-opc">(el local al que llega)</span>', '<select id="rnDestino" class="desplegable" required><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) +
             (env ? '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option>' : '') + '</select>') +
           campo('c6', 'Lista de precios', '<input type="text" value="Sin precios" readonly tabindex="-1" title="El remito lleva sólo las cantidades">') +
           '<div class="tk-pagox" id="rnTempZ"></div>' +   // SQL 259: la temporada
@@ -12957,8 +12961,8 @@
           (entre ?
             campo('', 'Estado', '<input type="text" value="Se pasa al guardarlo" readonly tabindex="-1">') +
             campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-            campo('c6', 'Depósito origen', '<select id="rnDepO"><option value="">Cargando…</option></select>') +
-            campo('c6', 'Depósito destino', '<select id="rnDepD"><option value="">Cargando…</option></select>') +
+            campo('c6', 'Depósito origen', '<select id="rnDepO" required><option value="">Cargando…</option></select>') +
+            campo('c6', 'Depósito destino', '<select id="rnDepD" required><option value="">Cargando…</option></select>') +
             campo('c4', 'Módulo', '<input type="text" id="rnModulo" maxlength="20" placeholder="Ej.: 12" autocomplete="off">') +
             campo('c8', 'Responsable <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Quién lo pasa"><datalist id="rnVend"></datalist>')
           :
@@ -12966,7 +12970,7 @@
             campo('', 'Depósito', '<input type="text" id="rnDepTxt" value="El predeterminado" readonly tabindex="-1" title="Sale del depósito predeterminado de la sucursal">') +
             (vp ? campo('', 'Lista de precios', '<input type="text" id="rnListaTxt" value="" readonly tabindex="-1" title="La lista de la sucursal de donde sale">') : '') +
             campo('c6', 'Sucursal origen', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-            campo('c6', 'Sucursal destino', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>')) +
+            campo('c6', 'Sucursal destino', '<select id="rnDestino" class="desplegable" required><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>')) +
         /* Las Observaciones abajo de todo de la columna, como en BlueSoft: la fila de antes ocupa lo que sobra (--filas: los renglones de arriba). */
         campo('ev-obs', 'Observaciones', '<textarea id="rnObs" maxlength="300" placeholder="' + (entre ? 'Ej.: la pared del fondo' : 'Ej.: se lo pidió una clienta') + '"></textarea>') +
         '</div>' +

@@ -50,6 +50,13 @@
 .pos-item:hover { background: var(--surface-2); color: var(--txt); }
 .pos-item.activa { background: var(--surface-3); color: var(--txt); box-shadow: inset 3px 0 0 var(--acc); }
 .pos-item > span { overflow: hidden; text-overflow: ellipsis; }
+/* La rayita antes de los reportes de Ventas (8/11): en el primer píxel del renglón, así no suma alto (en la PC del local
+   el menú entra justo). Adentro y no en el hueco de arriba, porque los renglones de las secciones recortan lo que se sale
+   (overflow: hidden, por la animación). Sólo en la compu: en el celular el menú es una tira. */
+@media (min-width: 1000px) {
+  .pos-item.pos-sep { position: relative; }
+  .pos-item.pos-sep::before { content: ''; position: absolute; left: 12px; right: 12px; top: 0; height: 1px; background: var(--line-alta); pointer-events: none; }
+}
 .pos-pronto { margin-left: auto; padding-left: 6px; font: 600 10.5px var(--sans); font-style: normal; color: var(--txt-3); }
 /* Achicado (5/11, como Supabase: "que tenga un movimiento fluido, no tan brusco"): es el mismo menú, angosto. Los
    renglones y los títulos de las secciones quedan a la misma altura y cada ícono en el mismo lugar; los nombres se
@@ -74,13 +81,12 @@
   .pos-menu-cab { justify-content: flex-start; gap: 0; padding: 0 0 4px 4px; }
   .pos-menu-cab > span:not(.pos-marca) { flex: 1 1 0; min-width: 0; margin: 0 6px 0 8px; transition: opacity .2s var(--curva) .04s, flex-grow .24s var(--curva-menu), margin .24s var(--curva-menu); }
   .menu-chico .pos-menu-cab > span:not(.pos-marca) { margin: 0; }
-  [data-pos="mostrador"] .pos-menu-cab { padding-left: 8px; }
-  [data-pos="mostrador"] .pos-menu-cab .plegar-panel { overflow: hidden; transition: opacity .2s var(--curva) .04s, width .24s var(--curva-menu), background .15s, color .15s; }
-  [data-pos="mostrador"] .menu-chico .pos-menu-cab .plegar-panel { width: 0; opacity: 0; pointer-events: none; transition: opacity .1s, width .24s var(--curva-menu); }
-  [data-pos="mostrador"] .pos-menu-cab .plegar-panel svg { transition: transform .24s var(--curva-menu); }
-  [data-pos="mostrador"] .menu-chico .pos-menu-cab .plegar-panel svg { transform: scale(0); }
-  [data-pos="gestion"] .menu-chico .pos-menu-cab > span,
-  [data-pos="fabrica"] .menu-chico .pos-menu-cab > span { flex-grow: 0; }
+  /* Desde el 8/11 Gestión y Fábrica llevan el mismo encabezado (el logo): lo de abajo vale para los tres. */
+  .pos-menu-cab { padding-left: 8px; }
+  .pos-menu-cab .plegar-panel { overflow: hidden; transition: opacity .2s var(--curva) .04s, width .24s var(--curva-menu), background .15s, color .15s; }
+  .menu-chico .pos-menu-cab .plegar-panel { width: 0; opacity: 0; pointer-events: none; transition: opacity .1s, width .24s var(--curva-menu); }
+  .pos-menu-cab .plegar-panel svg { transition: transform .24s var(--curva-menu); }
+  .menu-chico .pos-menu-cab .plegar-panel svg { transform: scale(0); }
 }
 /* En el celular el menú es una tira que se desliza. */
 @media (max-width: 999px) {
@@ -200,7 +206,13 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 /* align-items: stretch, porque estilos.css centra todo <label> (es flex con align-items: center). */
 .pos-f { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; text-align: left; }
 .pos-f > span:first-child, .pos-lbl { font: 600 11.5px/1.25 var(--sans); color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pos input[readonly] { background: var(--surface-2); color: var(--txt-2); }
+/* Lo que no se escribe (Mauricio, 8/11: «el ojo va directo a lo que hay que completar»): sin el canto del campo, que dice
+   «acá se escribe» (estilos.css), sobre un gris liso. Queda en su lugar, como en BlueSoft. El borde sigue (transparente):
+   el campo mide lo mismo y la fecha atrasada del cierre (.cj-tarde, más abajo) se sigue marcando. */
+.pos input[readonly] { background: var(--surface-3); border-color: transparent; color: var(--txt-2); }
+/* Lo que falta elegir para poder guardar (8/11): canto cobre hasta que se elige. El desplegable lleva required y arranca
+   en <option value="">Elegí…</option>, así :invalid lo marca solo y se apaga al elegir. */
+.pos select[required]:invalid:not(:focus) { border-color: var(--sel-borde); box-shadow: var(--sel-glow); }
 .pos select:disabled { background-color: var(--surface-2); color: var(--txt-2); opacity: 1; }
 @media (min-width: 900px) {
   .pos input[type=text], .pos input[type=tel], .pos input[type=email], .pos input[type=number],
@@ -446,7 +458,12 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center;
   padding: 12px 14px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
-.pos-promo.apagada { opacity: .62; box-shadow: none; }
+/* La apagada (8/11): se apagan el nombre y la descripción, no la tarjeta entera; «Editar» queda como en las otras (con
+   la tarjeta transparente parecía que no se podía tocar) y al lado del nombre dice «Apagada». */
+.pos-promo.apagada { box-shadow: none; background: var(--surface-2); }
+.pos-promo.apagada b, .pos-promo.apagada small { color: var(--txt-3); }
+.pos-promo-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line-alta); border-radius: 999px;
+  font: 600 10.5px/1.3 var(--sans); color: var(--txt-2); letter-spacing: .3px; text-transform: uppercase; vertical-align: 2px; }
 .pos-promo b { display: block; font-size: 15px; }
 .pos-promo small { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 2px; line-height: 1.4; }
 .pos-switch { position: relative; width: 42px; height: 24px; flex: none; }
