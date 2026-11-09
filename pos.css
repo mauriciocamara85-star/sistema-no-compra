@@ -207,9 +207,13 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .pos-f { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; text-align: left; }
 .pos-f > span:first-child, .pos-lbl { font: 600 11.5px/1.25 var(--sans); color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Lo que no se escribe (Mauricio, 8/11: «el ojo va directo a lo que hay que completar»): sin el canto del campo, que dice
-   «acá se escribe» (estilos.css), sobre un gris liso. Queda en su lugar, como en BlueSoft. El borde sigue (transparente):
-   el campo mide lo mismo y la fecha atrasada del cierre (.cj-tarde, más abajo) se sigue marcando. */
-.pos input[readonly] { background: var(--surface-3); border-color: transparent; color: var(--txt-2); }
+   «acá se escribe» (estilos.css). Queda en su lugar, como en BlueSoft. El 9/11 eligió un gris más clarito que el de la v460
+   (--surface-3 era medio oscuro y frío) con un borde gris bien finito que le da la forma del campo sin que parezca que se
+   escribe. Probó el cobre suave y quedó colorinche: el cobre es «acá tenés que hacer algo». Los colores van en variables
+   para que el oscuro no le gane a la fecha atrasada del cierre (.cj-tarde, más abajo, con la misma especificidad). */
+.pos { --pos-fijo: #EEF0F3; --pos-fijo-borde: #DDE1E6; }
+html[data-theme="dark"] .pos { --pos-fijo: #20242A; --pos-fijo-borde: #2E343D; }
+.pos input[readonly] { background: var(--pos-fijo); border-color: var(--pos-fijo-borde); color: var(--txt-2); }
 /* Lo que falta elegir para poder guardar (8/11): canto cobre hasta que se elige. El desplegable lleva required y arranca
    en <option value="">Elegí…</option>, así :invalid lo marca solo y se apaga al elegir. */
 .pos select[required]:invalid:not(:focus) { border-color: var(--sel-borde); box-shadow: var(--sel-glow); }
