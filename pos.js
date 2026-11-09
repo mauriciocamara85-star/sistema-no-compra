@@ -1798,7 +1798,7 @@
     pintarHecho();
 
     $('vLetra').onchange = function () {
-      if (this.value === 'A' && !clienteParaA(V.cliente)) { this.value = V.letra; abrirCliente(true); return; }
+      if (this.value === 'A' && !clienteParaA(V.cliente)) { this.value = V.letra; pedirDatosA(); return; }
       V.letra = this.value;
       V.letraMano = true;   // 8/11: la eligió el vendedor (ver letraPorForma)
       /* La X va sólo con efectivo (como en BlueSoft: "X: en efectivo, sin factura"). */
@@ -2421,7 +2421,8 @@
     });
   }
 
-  /* El cliente: para la factura A, o para mandarle la factura. */
+  /* El cliente para la factura A, sin los clientes en la base (sin el SQL 197): el formulario de antes, sólo para esta venta.
+     Con el 197 (siempre, desde el 29/10) la factura A abre la ficha (pedirDatosA). */
   function abrirCliente(paraA) {
     var cl = V.cliente || {};
     var cond = cl.condicion || (paraA ? 'responsable_inscripto' : 'consumidor_final');
@@ -2480,21 +2481,23 @@
   /* "Cargar" (SQL 171): la lupita del cliente. Con el SQL 197 busca los clientes y los socios del Club juntos (por el
      nombre, el DNI o el CUIT, el WhatsApp, el mail o la tarjeta) y tiene «Crear cliente» (Mauricio, 29/10: "cuando buscamos
      un cliente en la lupita, también ahí tiene que estar la opción de crear cliente con todos los datos"); sin el 197,
-     sólo los socios, como antes. O se hace socio ahí mismo. Los datos para mandarle la factura siguen en la de siempre. */
+     sólo los socios, como antes.
+     v459 (Mauricio, 8/11: "dale hacelo"): tres píldoras en una fila. Sin «Datos para la factura» ("es como crear un cliente":
+     los datos de la factura van en la ficha) y sin el alta del Club que cargaba el vendedor: «Sumarse al Club» muestra el QR
+     y el cliente se anota solo desde su celular ("tendría que ser que el cliente baje la aplicación directamente"). */
   function abrirSocio() {
-    var so = V.socio, prueba = enPrueba();
+    var so = V.socio;
     var caja = ventana('<h3 id="posVentTit">Cliente</h3><p class="pos-bajada">Buscalo por su nombre, DNI o CUIT, WhatsApp, mail o la tarjeta del Club. ' +
-        'Si no está, crealo; si quiere sumar puntos, hacelo socio.</p>' +
+        'Si no está, crealo; si quiere sumar puntos, que se sume al Club desde su celular.</p>' +
       (so ? '<div class="so-actual">' + marcaClub(so) + '<b>' + esc(so.nombre) + '</b><span id="soPts">' + miles(so.puntos) + ' puntos</span>' +
             '<button type="button" class="pos-link" id="soSacar">Sacarlo de la venta</button></div>' +
             /* SQL 265: lo que puede usar en esta venta (antes, en Cobrar). */
             '<div class="so-club" id="soClub"><p class="so-nada">Buscando lo que tiene para usar del Club…</p></div>' : '') +
       campo('', 'Buscar cliente', '<input type="search" id="soBuscar" autocomplete="off" spellcheck="false" placeholder="Nombre, DNI o CUIT, WhatsApp, mail o tarjeta" autofocus>') +
       '<div class="so-lista" id="soLista"></div><div class="pos-error" id="soError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="soFinal">Consumidor final</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="soFactura" title="Para esta venta: la factura A, o mandarle la factura por mail o WhatsApp">Datos para la factura</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="soCrear" title="Con todos sus datos y los de la factura; queda en Clientes"' + (S.sin197 ? ' hidden' : '') + '>Crear cliente</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="soAlta"' + (prueba ? ' disabled title="En modo prueba no se hacen socios: el alta es de verdad"' : '') + '>Hacerlo socio</button></div>');
+      '<div class="pos-pie so-pie"><button type="button" class="btn btn-sec btn-chico izq" id="soFinal">Consumidor final</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soCrear" title="La ficha de cliente, con los datos de la factura; queda en Clientes"' + (S.sin197 ? ' hidden' : '') + '>Crear cliente</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soClubQr" title="El QR del Club: el cliente se anota solo desde su celular">Sumarse al Club</button></div>');
     var campoB = caja.querySelector('#soBuscar'), lista = caja.querySelector('#soLista'), espera = null, pedido = 0, hallados = [];
     function buscar() {
       var q = campoB.value.trim(), n = ++pedido;
@@ -2518,7 +2521,7 @@
             (s ? '<span class="so-niv">' + esc(s.nivel || '') + '</span><span class="so-pts">' + miles(Number(s.puntos) || 0) + ' puntos</span>'
                : '<span class="so-niv">Cliente Nº ' + c.numero + '</span><span class="so-pts"></span>') + '</button>';
         }).join('') : '<p class="so-nada">No hay ningún ' + (S.sin197 ? 'socio' : 'cliente ni socio') + ' con «' + esc(q) + '».' +
-          (S.sin197 ? (prueba ? '' : ' Si quiere sumarse, tocá «Hacerlo socio».') : ' Tocá «Crear cliente»' + (prueba ? '.' : ' o, si quiere sumar puntos, «Hacerlo socio».')) + '</p>';
+          (S.sin197 ? ' Si quiere sumarse, tocá «Sumarse al Club».' : ' Tocá «Crear cliente» o, si quiere sumar puntos, «Sumarse al Club».') + '</p>';
       }).catch(function (e) { if (n === pedido && caja.isConnected) { lista.innerHTML = ''; errorEn(caja, 'soError', mensajeDe(e)); } });
     }
     campoB.oninput = function () { clearTimeout(espera); espera = setTimeout(buscar, 300); };
@@ -2534,9 +2537,51 @@
     if (sacar) sacar.onclick = aConsumidorFinal;
     caja.querySelector('#soFinal').onclick = aConsumidorFinal;
     if (so) cargarClubSocio(caja, so);   // SQL 265
-    caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
     caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
-    caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
+    caja.querySelector('#soClubQr').onclick = abrirSumarseClub;
+  }
+  /* «Sumarse al Club»: el QR del Club con el local de la venta (vdhclub.com/?local=…, el mismo de los carteles: el alta queda
+     anotada en ese local). El cliente se anota en su celular y después se lo elige como siempre: su tarjeta por la pistola
+     o buscándolo por su WhatsApp. El dibujo del QR (qrcode-generator, el de fichero.html y qr-resenas.html) se trae recién
+     acá; sin internet queda la dirección escrita. */
+  function abrirSumarseClub() {
+    var lc = localDe(V.local_id), url = 'https://vdhclub.com/' + (lc && lc.codigo ? '?local=' + encodeURIComponent(lc.codigo) : '');
+    var caja = ventana('<h3 id="posVentTit">Sumarse al Club</h3><p class="pos-bajada">Que lo escanee con la cámara de su celular y se anote solo: ' +
+        'con su WhatsApp, y se lleva el regalo de bienvenida.</p>' +
+      '<div class="so-qr"><div class="so-qr-placa" id="sqQr" role="img" aria-label="El QR del Club VDH"><p class="so-nada">Armando el QR…</p></div>' +
+        '<p class="so-qr-url">O que entre a <b>vdhclub.com</b></p></div>' +
+      '<p class="so-qr-paso">Cuando termine, en su celular aparece la tarjeta: pasala por la pistola en «Producto», o tocá «Buscarlo» y escribí su WhatsApp.</p>' +
+      '<div class="pos-pie so-pie"><button type="button" class="btn btn-sec btn-chico izq" id="sqVolver">Buscarlo</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>');
+    caja.querySelector('#sqVolver').onclick = abrirSocio;
+    conQr().then(function (qrcode) {
+      var box = caja.querySelector('#sqQr');
+      if (!box || !caja.isConnected) return;
+      var q = qrcode(0, 'M');   // corrección media: se lee aunque la pantalla tenga un reflejo
+      q.addData(url);
+      q.make();
+      box.innerHTML = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+      box.setAttribute('data-url', url);
+    }).catch(function () {
+      var box = caja.querySelector('#sqQr');
+      if (box) box.innerHTML = '<p class="so-nada">Sin internet no se puede mostrar el QR: que entre a vdhclub.com desde su celular.</p>';
+    });
+  }
+  /** El dibujo del QR (qrcode-generator 1.4.4, MIT, el mismo de fichero.html): se carga la primera vez que hace falta. */
+  var _qr = null;
+  function conQr() {
+    if (window.qrcode) return Promise.resolve(window.qrcode);
+    if (_qr) return _qr;
+    _qr = new Promise(function (ok, mal) {
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+      s.integrity = 'sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1';
+      s.crossOrigin = 'anonymous';
+      s.onload = function () { if (window.qrcode) ok(window.qrcode); else { _qr = null; mal(new Error('sin qrcode')); } };
+      s.onerror = function () { _qr = null; s.remove(); mal(new Error('no se pudo traer el QR')); };
+      document.head.appendChild(s);
+    });
+    return _qr;
   }
   /* Sacar al cliente de la venta: vuelve a Consumidor final (el «Cliente Genérico» de BlueSoft), sin nombre, documento
      ni socio. Mauricio (8/11): "cuando lo saqué, el cliente quedó con el nombre… si lo sacás, tendría que aparecer
@@ -2550,10 +2595,18 @@
     cerrarVentana();
     pintar();
   }
-  /** Lo elegido de la lupita ({cliente, socio}) pasa a la venta. */
+  /** Lo elegido de la lupita ({cliente, socio}) pasa a la venta. Un cliente que no es socio saca al socio que estaba
+      (v459): si no, los puntos de la venta iban al socio de antes. */
   function tomarHallado(h) {
+    if (h.cliente && !h.socio) soltarSocio();
     if (h.cliente) elegirCliente(h.cliente, h.socio);
     else elegirSocio(h.socio);
+  }
+  /** El socio sale de la venta (con lo suyo del Club); el cliente queda. */
+  function soltarSocio() {
+    if (!V.socio) return;
+    soltarClub();
+    V.socio = null;
   }
   /** Si lo buscado son los 12 números de una tarjeta del Club y es la de un solo socio, ese ({cliente, socio}); si no, null. */
   function tarjetaDe(hallados, q) {
@@ -2595,7 +2648,7 @@
     });
   }
   /** El socio elegido: su nombre va al ticket (menos en la factura A, que lleva la razón social) y su mail y su
-      WhatsApp quedan a mano para mandarle la factura (con su sí, en «Datos para la factura»). */
+      WhatsApp quedan a mano para mandarle la factura (con ARCA, en la ventana de «listo»). */
   function elegirSocio(s) {
     if (V.socio && V.socio.codigo !== s.codigo) soltarClub();   // SQL 265: lo del Club era del otro socio
     V.socio = { codigo: s.codigo, nombre: s.nombre, nivel: s.nivel || '', puntos: Number(s.puntos) || 0, factor: Number(s.factor) || 1 };
@@ -2603,6 +2656,8 @@
     /* SQL 197: si antes estaba elegido un cliente de la lista, sus datos no pasan a este socio. */
     var cl = (!V.cliente_id && V.cliente) || { condicion: 'consumidor_final' };
     V.cliente_id = null;
+    /* v459: si la empresa de la factura A se fue (era de la lista), la A no queda sin nadie: vuelve a B o X y va el socio. */
+    if (V.letra === 'A' && !clienteParaA(cl)) sacarA();
     if (V.letra !== 'A') cl.nombre = s.nombre;
     if (!cl.email && s.mail) cl.email = String(s.mail).toLowerCase();
     if (!cl.tel && s.telefono) cl.tel = s.telefono;
@@ -2820,42 +2875,6 @@
       if (!d.length) { avisar('err', 'El cupón «' + txt + '» está ' + estadoCupon(r[0].estado) + ': no se puede usar.'); return; }
       ponerCupon(d[0], txt);
     }).catch(function (e) { if (falta265(e)) S.sin265 = true; noEsta(); });
-  }
-  /* "Hacerlo socio": el alta de siempre del Club (club_alta: el bono de bienvenida), con el local de la venta.
-     Es de verdad aunque se esté probando: por eso en modo prueba no se puede. */
-  function abrirAltaSocio(texto) {
-    if (enPrueba()) { avisar('info', 'En modo prueba no se hacen socios: el alta es de verdad.'); return; }
-    var dig = String(texto || '').replace(/\D/g, ''), pal = dig ? [] : String(texto || '').trim().split(/\s+/).filter(Boolean);
-    var caja = ventana('<h3 id="posVentTit">Hacerlo socio del Club</h3><p class="pos-bajada">El alta de siempre del Club: se lleva el bono de bienvenida ' +
-        'y suma desde esta compra. Es de verdad, aunque estés probando el POS.</p>' +
-      '<div class="pos-campos">' +
-        campo('', 'Nombre', '<input type="text" id="saNombre" maxlength="40" autocomplete="off" value="' + esc(pal[0] || '') + '">') +
-        campo('', 'Apellido', '<input type="text" id="saApellido" maxlength="40" autocomplete="off" value="' + esc(pal.slice(1).join(' ')) + '">') +
-        campo('', 'WhatsApp', '<input type="tel" id="saTel" maxlength="20" placeholder="Con la característica" value="' + esc(dig.length >= 6 ? texto : '') + '">') +
-        campo('', 'Mail <span class="lbl-opc">(si quiere)</span>', '<input type="email" id="saMail" maxlength="120">') +
-        '<label class="pos-check ancho"><input type="checkbox" id="saAcepta"> Acepta que le escribamos por WhatsApp con promociones y novedades</label>' +
-      '</div><div class="pos-error" id="saError"></div>' +
-      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="saOk">Hacerlo socio</button></div>');
-    /* Lo que ya escribió en el buscador pasa al alta: el foco va al primer campo que falta. */
-    setTimeout(function () { var f = caja.querySelector(pal[1] ? '#saTel' : pal[0] ? '#saApellido' : '#saNombre'); if (f) f.focus(); }, 0);
-    function listo() {
-      var x = { nombre: caja.querySelector('#saNombre').value.trim(), apellido: caja.querySelector('#saApellido').value.trim(),
-                telefono: caja.querySelector('#saTel').value.trim(), mail: caja.querySelector('#saMail').value.trim(),
-                local_id: V.local_id, acepta: caja.querySelector('#saAcepta').checked };
-      if (!errorEn(caja, 'saError', !x.nombre ? 'Falta el nombre.' : !x.apellido ? 'Falta el apellido.' :
-                                    x.telefono.replace(/\D/g, '').length < 8 ? 'Falta el WhatsApp (con la característica).' :
-                                    x.mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.mail) ? 'Ese mail no se entiende: dejalo vacío si no lo tiene a mano.' : '')) return;
-      var bt = caja.querySelector('#saOk');
-      bt.disabled = true;
-      llamar('pos_club_alta', { p: x }).then(function (r) {
-        elegirSocio(r.socio);
-        cerrarVentana();
-        pintar();
-        avisar(r.nuevo ? 'ok' : 'info', r.nuevo ? 'Listo: ' + r.socio.nombre + ' ya es socio del Club.' : 'Ese WhatsApp ya era socio del Club (' + r.socio.nombre + '): quedó elegido.');
-      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'saError', mensajeDe(e)); });
-    }
-    caja.querySelector('#saOk').onclick = listo;
-    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); listo(); } });
   }
 
   /* "Pago múltiple" de BlueSoft: varios medios en el mismo ticket. */
@@ -4992,6 +5011,7 @@
       if (h && d.id) h.textContent = d.nombre;
       formCliente($('clFicha'), d, {
         oficina: OFICINA,
+        alCerrar: function () { verClientes(true); },
         alGuardar: function (x, otro) {
           avisar('ok', (d.id ? 'Listo: se guardó la ficha de ' : 'Listo: ') + x.nombre + (d.id ? '.' : ' quedó cargado (Nº ' + x.numero + ').'));
           S.cliVer = otro ? { nuevo: '' } : { id: x.id };
@@ -5013,50 +5033,69 @@
     return d;
   }
 
-  /* El formulario de la ficha (en Clientes y en la ventana de la venta): el nombre arriba y las 4 pestañas.
-     op.alGuardar(cliente, otro) — otro: «Guardar y nuevo»; op.ventana: en la venta (con «Cancelar»); op.socio: la tarjeta
-     del socio de la venta, para atarlo al crearlo; op.local: dónde se crea. */
+  /* La ficha (en Clientes y en la ventana de la venta), como la «Ficha de cliente» de BlueSoft (v459, Mauricio 8/11: "crear
+     un cliente habría que hacerlo ahí, ver cómo lo tiene BlueSoft"; fotos del 29/10 en POS Capturas blue/06): arriba Código
+     y Nombre; las 4 pestañas; en «Datos generales», a la izquierda Tipo y Número y la condición de IVA, a la derecha el
+     Estado (Activo) y el Mail, y las Observaciones a lo ancho; Direcciones y Teléfonos, una lista con «Agregar…» abajo que
+     abre el formulario chico (tocar un renglón lo cambia); Datos persona, el cumpleaños y los talles en una fila. Los
+     botones abajo a la izquierda: Guardar · Guardar y nuevo · Cerrar. Afuera (de venta mayorista o que no guardamos):
+     Rubro, Etiquetas, Web, Facebook, «Usar en remitos», «Localidad normalizada», Exportar y las pestañas Condiciones
+     comerciales, Acciones, Descuentos y Productos y servicios.
+     op.alGuardar(cliente, otro) — otro: «Guardar y nuevo» (fuera de la venta); op.ventana: en la venta («Cerrar» cierra la
+     ventana); op.alCerrar: «Cerrar» en Clientes; op.socio: la tarjeta del socio de la venta, para atarlo al crearlo;
+     op.local: dónde se crea; op.paraA: viene de elegir «Factura A» (pide el CUIT y la condición de IVA). */
   function formCliente(cont, d, op) {
     op = op || {};
     var dirs = (d.direcciones || []).map(function (x) { return Object.assign({}, x); });
     var tels = (d.telefonos || []).map(function (x) { return Object.assign({}, x); });
-    var pest = 'generales', hoy = hoyCli();
-    var info = d.id ? '<p class="cli-info">Cliente Nº <b>' + d.numero + '</b>' +
-        (d.creado ? ' · lo cargó ' + esc(d.creado_nombre || 'la oficina') + ' el ' + diaDe(d.creado) + (d.local ? ' en ' + esc(bonito(d.local)) : '') : '') +
-        (d.modificado ? ' · lo cambió ' + esc(d.modificado_nombre || 'la oficina') + ' el ' + diaDe(d.modificado) : '') + '</p>' : '';
+    var hoy = hoyCli(), sub = null;   // sub: el formulario chico abierto, { tipo: 'dir' | 'tel', i: el renglón, o -1 si es nuevo }
+    var info = d.id && (d.creado || d.modificado) ? '<p class="cli-info">' +
+        [d.creado ? 'Lo cargó ' + esc(d.creado_nombre || 'la oficina') + ' el ' + diaDe(d.creado) + (d.local ? ' en ' + esc(bonito(d.local)) : '') : '',
+         d.modificado ? (d.creado ? 'lo' : 'Lo') + ' cambió ' + esc(d.modificado_nombre || 'la oficina') + ' el ' + diaDe(d.modificado) : ''].filter(Boolean).join(' · ') + '</p>' : '';
+    var bt = function (id, cls, txt, extra) { return '<button type="button" class="btn ' + cls + ' btn-chico"' + (id ? ' id="' + id + '"' : '') + (extra || '') + '>' + txt + '</button>'; };
     cont.innerHTML = info + (d.socio ? socioDeFicha(d.socio, op.oficina) : '') +
-      '<div class="pos-campos cli-nombre">' + campo('ancho', 'Nombre o razón social', '<input type="text" id="cfNombre" maxlength="120" autocomplete="off" value="' + esc(d.nombre || '') + '">') + '</div>' +
+      '<div class="cli-cab">' +
+        campo('cli-cod', 'Código', '<input type="text" id="cfCodigo" readonly tabindex="-1" placeholder="Nuevo" title="El número de cliente: lo da el sistema al guardar" value="' + esc(d.numero ? String(d.numero) : '') + '">') +
+        campo('cli-nom', 'Nombre', '<input type="text" id="cfNombre" maxlength="120" autocomplete="off" placeholder="Nombre y apellido, o la razón social" value="' + esc(d.nombre || '') + '">') +
+      '</div>' +
       '<nav class="pestanas cli-pestanas" aria-label="La ficha">' + [['generales', 'Datos generales'], ['direcciones', 'Direcciones'], ['telefonos', 'Teléfonos'], ['persona', 'Datos persona']].map(function (p) {
         return '<button type="button" class="pestana" data-pest="' + p[0] + '">' + p[1] + '<span class="cli-cuantos" data-cuantos="' + p[0] + '"></span></button>';
       }).join('') + '</nav>' +
-      '<div class="cli-panel" data-panel="generales"><div class="pos-campos">' +
-        campo('', 'Tipo de documento', '<select id="cfTipo">' + opciones(DOC_TIPOS, d.doc_tipo || 'dni') + '</select>') +
-        campo('', 'Número', '<input type="text" id="cfDoc" maxlength="20" autocomplete="off" value="' + esc(d.doc ? (d.doc_tipo === 'cuit' ? cuit(d.doc) : d.doc) : '') + '">') +
-        campo('', 'Condición frente al IVA', '<select id="cfCond">' + opciones(Object.keys(CONDICION).map(function (k) { return [k, CONDICION[k]]; }), d.condicion || 'consumidor_final') + '</select>') +
-        campo('', 'Mail', '<input type="email" id="cfMail" maxlength="120" autocomplete="off" value="' + esc(d.mail || '') + '">') +
-        campo('ancho', 'Observaciones', '<textarea id="cfObs" rows="3" maxlength="1000">' + esc(d.observaciones || '') + '</textarea>') +
-        (d.id ? '<label class="pos-check ancho"><input type="checkbox" id="cfActivo"' + (d.activo === false ? '' : ' checked') + '> Activo (si no, no aparece en la venta)</label>' : '') +
+      '<div class="cli-panel" data-panel="generales"><div class="cli-gen">' +
+        '<div class="cli-col"><div class="cli-doc">' +
+            campo('', 'Tipo', '<select id="cfTipo">' + opciones(DOC_TIPOS, d.doc_tipo || 'dni') + '</select>') +
+            campo('', 'Número', '<input type="text" id="cfDoc" maxlength="20" autocomplete="off" value="' + esc(d.doc ? (d.doc_tipo === 'cuit' ? cuit(d.doc) : d.doc) : '') + '">') +
+          '</div>' +
+          campo('', 'Condición frente al IVA', '<select id="cfCond">' + opciones(Object.keys(CONDICION).map(function (k) { return [k, CONDICION[k]]; }), d.condicion || 'consumidor_final') + '</select>') +
+        '</div>' +
+        '<div class="cli-col">' +
+          '<div class="pos-f cli-estado"><span>Estado</span><label class="pos-check" title="Si no está activo, no aparece en la venta">' +
+            '<input type="checkbox" id="cfActivo"' + (d.activo === false ? '' : ' checked') + '> Activo</label></div>' +
+          campo('', 'Mail', '<input type="email" id="cfMail" maxlength="120" autocomplete="off" value="' + esc(d.mail || '') + '">') +
+        '</div>' +
+        campo('cli-obs', 'Observaciones', '<textarea id="cfObs" rows="3" maxlength="1000">' + esc(d.observaciones || '') + '</textarea>') +
       '</div><p class="cli-ayuda" id="cfAyudaDoc"></p></div>' +
-      '<div class="cli-panel" data-panel="direcciones" hidden><div id="cfDirs"></div><p><button type="button" class="pos-link" id="cfDirMas">+ Agregar dirección</button></p></div>' +
-      '<div class="cli-panel" data-panel="telefonos" hidden><div id="cfTels"></div><p><button type="button" class="pos-link" id="cfTelMas">+ Agregar teléfono</button></p></div>' +
-      '<div class="cli-panel" data-panel="persona" hidden><div class="pos-campos">' +
-        campo('', 'Cumpleaños', '<input type="date" id="cfCumple" max="' + hoy + '" min="1900-01-01" value="' + esc(d.cumple || '') + '">') +
-        campo('', 'Talle de pantalón', '<input type="text" id="cfTp" maxlength="10" autocomplete="off" value="' + esc(d.talle_pantalon || '') + '">') +
-        campo('', 'Talle de remera', '<input type="text" id="cfTr" maxlength="10" autocomplete="off" value="' + esc(d.talle_remera || '') + '">') +
-        campo('', 'Número de calzado', '<input type="text" id="cfCz" maxlength="10" autocomplete="off" value="' + esc(d.calzado || '') + '">') +
-      '</div></div>' +
+      '<div class="cli-panel" data-panel="direcciones" hidden><div id="cfDirs"></div><div class="cli-sub" id="cfDirSub" hidden></div>' +
+        '<p class="cli-agregar">' + bt('cfDirMas', 'btn-sec', 'Agregar dirección…') + '</p></div>' +
+      '<div class="cli-panel" data-panel="telefonos" hidden><div id="cfTels"></div><div class="cli-sub" id="cfTelSub" hidden></div>' +
+        '<p class="cli-agregar">' + bt('cfTelMas', 'btn-sec', 'Agregar teléfono…') + '</p></div>' +
+      '<div class="cli-panel" data-panel="persona" hidden><div class="cli-persona">' +
+        campo('cli-cumple', 'Cumpleaños', '<input type="date" id="cfCumple" max="' + hoy + '" min="1900-01-01" value="' + esc(d.cumple || '') + '">') +
+        '<div class="cli-talles">' +
+          campo('', 'Talle de pantalón', '<input type="text" id="cfTp" maxlength="10" autocomplete="off" value="' + esc(d.talle_pantalon || '') + '">') +
+          campo('', 'Talle de remera', '<input type="text" id="cfTr" maxlength="10" autocomplete="off" value="' + esc(d.talle_remera || '') + '">') +
+          campo('', 'Número de calzado', '<input type="text" id="cfCz" maxlength="10" autocomplete="off" value="' + esc(d.calzado || '') + '">') +
+        '</div></div></div>' +
       '<div class="pos-error" id="cfError"></div>' +
-      '<div class="pos-pie">' + (op.ventana ? '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' :
-                                 '<button type="button" class="btn btn-sec btn-chico" id="cfOtro">Guardar y nuevo</button>') +
-        '<button type="button" class="btn btn-pri btn-chico" id="cfGuardar">' + (op.ventana ? 'Guardar y elegirlo' : 'Guardar') + '</button></div>';
+      '<div class="pos-pie cli-pie">' + bt('cfGuardar', 'btn-pri', 'Guardar') + (op.ventana ? '' : bt('cfOtro', 'btn-sec', 'Guardar y nuevo')) +
+        bt(op.ventana ? '' : 'cfCerrar', 'btn-sec', 'Cerrar', op.ventana ? ' data-cerrar' : '') + '</div>';
     var q = function (s) { return cont.querySelector(s); };
 
     function ponerPest(p) {
-      pest = p;
       cont.querySelectorAll('.cli-pestanas .pestana').forEach(function (b) { if (b.getAttribute('data-pest') === p) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
       cont.querySelectorAll('.cli-panel').forEach(function (x) { x.hidden = x.getAttribute('data-panel') !== p; });
     }
-    cont.querySelectorAll('.cli-pestanas .pestana').forEach(function (b) { b.onclick = function () { leerListas(); ponerPest(b.getAttribute('data-pest')); }; });
+    cont.querySelectorAll('.cli-pestanas .pestana').forEach(function (b) { b.onclick = function () { ponerPest(b.getAttribute('data-pest')); }; });
     function cuantos() {
       q('[data-cuantos="direcciones"]').textContent = dirs.length ? ' (' + dirs.length + ')' : '';
       q('[data-cuantos="telefonos"]').textContent = tels.length ? ' (' + tels.length + ')' : '';
@@ -5073,58 +5112,123 @@
     q('#cfCond').onchange = function () { if (this.value !== 'consumidor_final' && q('#cfTipo').value !== 'cuit') q('#cfTipo').value = 'cuit'; ayudaDoc(); };
     ayudaDoc();
 
-    /* Las direcciones y los teléfonos: renglones que se agregan y se quitan; uno es el de las facturas / el predeterminado. */
+    /* Las direcciones y los teléfonos: la lista (uno es el de las facturas / el predeterminado) y el formulario chico. */
+    function dirTexto(x) {
+      var calle = [x.calle, x.numero].filter(Boolean).join(' ');
+      var piso = [x.piso ? 'piso ' + x.piso : '', x.depto ? 'depto. ' + x.depto : ''].filter(Boolean).join(' ');
+      return [[calle, piso].filter(Boolean).join(', '), [x.localidad, x.cp ? '(' + x.cp + ')' : ''].filter(Boolean).join(' '), x.provincia].filter(Boolean).join(' · ');
+    }
+    function quitarBt(tipo, i, que) {
+      return '<td class="cli-x"><button type="button" class="tk-quitar" data-quitar-' + tipo + '="' + i + '" title="Quitar ' + que + '" aria-label="Quitar ' + que + '">' + icono('x') + '</button></td>';
+    }
+    function marcado(tipo, i) { return sub && sub.tipo === tipo && sub.i === i ? ' class="sel"' : ''; }
     function pintarDirs() {
-      q('#cfDirs').innerHTML = dirs.length ? dirs.map(function (x, i) {
-        return '<div class="cli-renglon" data-dir="' + i + '"><div class="pos-campos">' +
-          campo('cli-calle', 'Calle', '<input type="text" data-k="calle" maxlength="80" value="' + esc(x.calle || '') + '">') +
-          campo('cli-corto', 'Número', '<input type="text" data-k="numero" maxlength="10" value="' + esc(x.numero || '') + '">') +
-          campo('cli-corto', 'Piso', '<input type="text" data-k="piso" maxlength="5" value="' + esc(x.piso || '') + '">') +
-          campo('cli-corto', 'Depto.', '<input type="text" data-k="depto" maxlength="5" value="' + esc(x.depto || '') + '">') +
-          campo('', 'Localidad', '<input type="text" data-k="localidad" maxlength="60" value="' + esc(x.localidad || '') + '">') +
-          campo('cli-corto', 'Código postal', '<input type="text" data-k="cp" maxlength="10" value="' + esc(x.cp || '') + '">') +
-          campo('', 'Provincia', '<input type="text" data-k="provincia" maxlength="60" value="' + esc(x.provincia || '') + '">') +
-          '<label class="pos-check"><input type="radio" name="cfDirFac" data-k="factura"' + (x.factura ? ' checked' : '') + '> Para las facturas</label>' +
-          '</div><button type="button" class="tk-quitar" data-quitar-dir="' + i + '" title="Quitar esta dirección" aria-label="Quitar esta dirección">' + icono('x') + '</button></div>';
-      }).join('') : '<p class="cli-vacio">Sin direcciones. La de las facturas va en la factura A.</p>';
-      cont.querySelectorAll('[data-quitar-dir]').forEach(function (b) {
-        b.onclick = function () { leerListas(); dirs.splice(Number(b.getAttribute('data-quitar-dir')), 1); pintarDirs(); cuantos(); };
-      });
+      q('#cfDirs').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla cli-tabla"><thead><tr><th>Dirección</th><th class="cli-si">Usar en facturas</th><th class="cli-x"></th></tr></thead><tbody>' +
+        (dirs.length ? dirs.map(function (x, i) {
+          return '<tr data-dir="' + i + '" tabindex="0" title="Tocala para cambiarla"' + marcado('dir', i) + '><td>' + esc(dirTexto(x) || '—') + '</td>' +
+            '<td class="cli-si">' + (x.factura ? 'Sí' : '') + '</td>' + quitarBt('dir', i, 'esta dirección') + '</tr>';
+        }).join('') : '<tr class="cli-vacia"><td colspan="3">Sin direcciones. La de las facturas va en la factura A.</td></tr>') + '</tbody></table></div>';
     }
     function pintarTels() {
-      q('#cfTels').innerHTML = tels.length ? tels.map(function (x, i) {
-        return '<div class="cli-renglon" data-tel="' + i + '"><div class="pos-campos">' +
-          campo('', 'Número', '<input type="tel" data-k="numero" maxlength="25" placeholder="Con la característica" value="' + esc(x.numero || '') + '">') +
-          campo('', 'Contacto', '<input type="text" data-k="contacto" maxlength="60" value="' + esc(x.contacto || '') + '">') +
-          campo('', 'Horario', '<input type="text" data-k="horario" maxlength="40" value="' + esc(x.horario || '') + '">') +
-          '<label class="pos-check"><input type="radio" name="cfTelPre" data-k="predeterminado"' + (x.predeterminado ? ' checked' : '') + '> Predeterminado</label>' +
-          '</div><button type="button" class="tk-quitar" data-quitar-tel="' + i + '" title="Quitar este teléfono" aria-label="Quitar este teléfono">' + icono('x') + '</button></div>';
-      }).join('') : '<p class="cli-vacio">Sin teléfonos.' + (d.socio ? ' El WhatsApp del Club no hace falta cargarlo acá.' : '') + '</p>';
-      cont.querySelectorAll('[data-quitar-tel]').forEach(function (b) {
-        b.onclick = function () { leerListas(); tels.splice(Number(b.getAttribute('data-quitar-tel')), 1); pintarTels(); cuantos(); };
-      });
+      q('#cfTels').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla cli-tabla"><thead><tr><th>Número</th><th>Contacto</th><th>Horario</th>' +
+        '<th class="cli-si">Predeterminado</th><th class="cli-x"></th></tr></thead><tbody>' +
+        (tels.length ? tels.map(function (x, i) {
+          return '<tr data-tel="' + i + '" tabindex="0" title="Tocalo para cambiarlo"' + marcado('tel', i) + '><td>' + esc(x.numero || '—') + '</td><td>' + esc(x.contacto || '') + '</td>' +
+            '<td>' + esc(x.horario || '') + '</td><td class="cli-si">' + (x.predeterminado ? 'Sí' : '') + '</td>' + quitarBt('tel', i, 'este teléfono') + '</tr>';
+        }).join('') : '<tr class="cli-vacia"><td colspan="5">Sin teléfonos.' + (d.socio ? ' El WhatsApp del Club no hace falta cargarlo acá.' : '') + '</td></tr>') + '</tbody></table></div>';
     }
-    function leerRenglones(sel, xs) {
-      cont.querySelectorAll(sel).forEach(function (r, i) {
-        r.querySelectorAll('[data-k]').forEach(function (e) { xs[i][e.getAttribute('data-k')] = e.type === 'radio' ? e.checked : e.value.trim(); });
-      });
+    function pintarListas() { pintarDirs(); pintarTels(); cuantos(); }
+    function boxDe(tipo) { return q(tipo === 'dir' ? '#cfDirSub' : '#cfTelSub'); }
+    function dirForm(x) {
+      var c = function (cls, lbl, k, max, ph) { return campo(cls, lbl, '<input type="text" data-k="' + k + '" maxlength="' + max + '" autocomplete="off"' + (ph ? ' placeholder="' + ph + '"' : '') + ' value="' + esc(x[k] || '') + '">'); };
+      return '<div class="cli-dir">' + c('cli-calle', 'Calle', 'calle', 80) + c('', 'Número', 'numero', 10) + c('', 'Piso', 'piso', 5) + c('', 'Departamento', 'depto', 5) +
+        c('cli-loc', 'Localidad', 'localidad', 60) + c('', 'Código postal', 'cp', 10) + c('cli-prov', 'Provincia', 'provincia', 60) + '</div>' +
+        '<label class="pos-check"><input type="checkbox" data-k="factura"' + (x.factura ? ' checked' : '') + '> Usar esta dirección para las facturas</label>';
     }
-    function leerListas() { leerRenglones('[data-dir]', dirs); leerRenglones('[data-tel]', tels); }
-    q('#cfDirMas').onclick = function () {
-      leerListas();
-      if (dirs.length >= 10) { errorEn(cont, 'cfError', 'Hasta 10 direcciones.'); return; }
-      dirs.push({ factura: !dirs.length });
-      pintarDirs(); cuantos();
-      var r = cont.querySelectorAll('[data-dir]'); r[r.length - 1].querySelector('[data-k="calle"]').focus();
-    };
-    q('#cfTelMas').onclick = function () {
-      leerListas();
-      if (tels.length >= 10) { errorEn(cont, 'cfError', 'Hasta 10 teléfonos.'); return; }
-      tels.push({ predeterminado: !tels.length });
-      pintarTels(); cuantos();
-      var r = cont.querySelectorAll('[data-tel]'); r[r.length - 1].querySelector('[data-k="numero"]').focus();
-    };
-    pintarDirs(); pintarTels(); cuantos(); ponerPest('generales');
+    function telForm(x) {
+      return '<div class="cli-tel">' +
+        campo('', 'Número', '<input type="tel" data-k="numero" maxlength="25" autocomplete="off" placeholder="Con la característica" value="' + esc(x.numero || '') + '">') +
+        campo('', 'Contacto', '<input type="text" data-k="contacto" maxlength="60" autocomplete="off" value="' + esc(x.contacto || '') + '">') +
+        campo('', 'Horario', '<input type="text" data-k="horario" maxlength="40" autocomplete="off" value="' + esc(x.horario || '') + '">') + '</div>' +
+        '<label class="pos-check"><input type="checkbox" data-k="predeterminado"' + (x.predeterminado ? ' checked' : '') + '> Predeterminado</label>';
+    }
+    /** «Agregar…» (i = -1) o tocar un renglón (i): el formulario chico, debajo de la lista. */
+    function abrirSub(tipo, i) {
+      if (sub && !cerrarSub(true)) return;   // el que estaba abierto pasa a la lista (si está bien)
+      var lista = tipo === 'dir' ? dirs : tels;
+      if (i < 0 && lista.length >= 10) { errorEn(cont, 'cfError', tipo === 'dir' ? 'Hasta 10 direcciones.' : 'Hasta 10 teléfonos.'); return; }
+      var x = i >= 0 ? lista[i] : tipo === 'dir' ? { factura: !dirs.length } : { predeterminado: !tels.length };
+      sub = { tipo: tipo, i: i };
+      var box = boxDe(tipo);
+      box.innerHTML = '<div class="cli-sub-tit">' + (tipo === 'dir' ? (i < 0 ? 'Agregar dirección' : 'Cambiar la dirección') : (i < 0 ? 'Agregar teléfono' : 'Cambiar el teléfono')) + '</div>' +
+        (tipo === 'dir' ? dirForm(x) : telForm(x)) +
+        '<div class="pos-pie cli-pie">' + bt('', 'btn-pri', 'Guardar', ' data-sub-ok') + bt('', 'btn-sec', 'Cancelar', ' data-sub-no') + '</div>';
+      box.hidden = false;
+      box.oninput = function () { errorEn(cont, 'cfError', ''); };   // lo que faltaba ya lo están escribiendo
+      q(tipo === 'dir' ? '#cfDirMas' : '#cfTelMas').hidden = true;
+      errorEn(cont, 'cfError', '');
+      pintarListas();
+      box.querySelector('[data-k]').focus();
+    }
+    /** Cierra el formulario chico. Con aplicar, lo escrito pasa a la lista: si falta algo avisa, lo deja abierto y da false.
+        Uno nuevo y vacío se cierra sin avisar al guardar la ficha; con su «Guardar» o Enter (avisar), dice qué falta. */
+    function cerrarSub(aplicar, avisar) {
+      if (!sub) return true;
+      var tipo = sub.tipo, i = sub.i, box = boxDe(tipo), lista = tipo === 'dir' ? dirs : tels, marca = tipo === 'dir' ? 'factura' : 'predeterminado', x = {};
+      box.querySelectorAll('[data-k]').forEach(function (e) { x[e.getAttribute('data-k')] = e.type === 'checkbox' ? e.checked : e.value.trim(); });
+      var vacio = Object.keys(x).every(function (k) { return k === marca || !x[k]; });
+      if (aplicar && !(i < 0 && vacio && !avisar)) {
+        var mal = tipo === 'dir' ? (!x.calle ? 'Falta la calle de la dirección.' : '') :
+                  String(x.numero || '').replace(/\D/g, '').length < 6 ? 'Falta el número de teléfono, con la característica.' : '';
+        if (mal) {
+          ponerPest(tipo === 'dir' ? 'direcciones' : 'telefonos');
+          errorEn(cont, 'cfError', mal);
+          box.querySelector(tipo === 'dir' ? '[data-k="calle"]' : '[data-k="numero"]').focus();
+          return false;
+        }
+        if (x[marca]) lista.forEach(function (y) { y[marca] = false; });   // uno solo es el de las facturas / el predeterminado
+        if (i >= 0) Object.assign(lista[i], x); else lista.push(x);
+      }
+      sub = null;
+      box.hidden = true;
+      box.innerHTML = '';
+      q(tipo === 'dir' ? '#cfDirMas' : '#cfTelMas').hidden = false;
+      errorEn(cont, 'cfError', '');
+      pintarListas();
+      return true;
+    }
+    function quitar(tipo, i) {
+      var lista = tipo === 'dir' ? dirs : tels;
+      if (sub && sub.tipo === tipo) {
+        if (sub.i === i) cerrarSub(false);
+        else if (sub.i > i) sub.i--;
+      }
+      var marca = tipo === 'dir' ? 'factura' : 'predeterminado', eraLa = lista[i] && lista[i][marca];
+      lista.splice(i, 1);
+      if (eraLa && lista.length && !lista.some(function (y) { return y[marca]; })) lista[0][marca] = true;   // siempre queda una marcada
+      pintarListas();
+    }
+    q('#cfDirMas').onclick = function () { abrirSub('dir', -1); };
+    q('#cfTelMas').onclick = function () { abrirSub('tel', -1); };
+    ['dir', 'tel'].forEach(function (tipo) {
+      var lista = q(tipo === 'dir' ? '#cfDirs' : '#cfTels');
+      lista.onclick = function (e) {
+        var x = e.target.closest('[data-quitar-' + tipo + ']');
+        if (x) { quitar(tipo, Number(x.getAttribute('data-quitar-' + tipo))); return; }
+        var tr = e.target.closest('tr[data-' + tipo + ']');
+        if (tr) abrirSub(tipo, Number(tr.getAttribute('data-' + tipo)));
+      };
+      lista.onkeydown = function (e) {
+        var tr = e.target.closest && e.target.closest('tr[data-' + tipo + ']');
+        if (e.key === 'Enter' && tr && e.target === tr) { e.preventDefault(); e.stopPropagation(); abrirSub(tipo, Number(tr.getAttribute('data-' + tipo))); }
+      };
+    });
+    cont.addEventListener('click', function (e) {
+      if (e.target.closest('[data-sub-ok]')) cerrarSub(true, true);
+      else if (e.target.closest('[data-sub-no]')) cerrarSub(false);
+    });
+    pintarListas();
+    ponerPest('generales');
 
     /* Revisar antes de mandar (la base revisa lo mismo): si algo falta, se abre la pestaña donde está. */
     function revisar(x) {
@@ -5135,6 +5239,7 @@
       if (x.doc && x.doc_tipo === 'dni' && (dig.length < 7 || dig.length > 8)) return ['generales', 'cfDoc', 'El DNI tiene 7 u 8 números.'];
       if (x.doc && x.doc_tipo === 'libreta' && (dig.length < 6 || dig.length > 8)) return ['generales', 'cfDoc', 'La libreta tiene de 6 a 8 números.'];
       if (x.doc && x.doc_tipo === 'pasaporte' && !/^[A-Z0-9]{6,12}$/.test(x.doc.toUpperCase().replace(/\s/g, ''))) return ['generales', 'cfDoc', 'El pasaporte tiene de 6 a 12 letras y números.'];
+      if (op.paraA && x.condicion === 'consumidor_final') return ['generales', 'cfCond', 'Para la factura A, elegí la condición de IVA (responsable inscripto, monotributo o exento) y poné el CUIT.'];
       if (x.condicion !== 'consumidor_final' && (x.doc_tipo !== 'cuit' || !x.doc)) return ['generales', 'cfDoc', 'Para responsable inscripto, monotributo o exento hace falta el CUIT.'];
       if (x.mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.mail)) return ['generales', 'cfMail', 'El mail no está bien escrito.'];
       for (var i = 0; i < x.direcciones.length; i++) if (!x.direcciones[i].calle) return ['direcciones', null, 'En cada dirección falta la calle (o quitá la que sobra).'];
@@ -5143,12 +5248,12 @@
       return null;
     }
     function guardar(otro) {
-      leerListas();
+      if (!cerrarSub(true)) return;   // la dirección o el teléfono a medio cargar entra también
       var x = {
         id: d.id || null, nombre: q('#cfNombre').value.trim(), doc_tipo: q('#cfTipo').value, doc: q('#cfDoc').value.trim(), condicion: q('#cfCond').value,
         mail: q('#cfMail').value.trim().toLowerCase(), observaciones: q('#cfObs').value.trim(), cumple: q('#cfCumple').value || null,
         talle_pantalon: q('#cfTp').value.trim(), talle_remera: q('#cfTr').value.trim(), calzado: q('#cfCz').value.trim(),
-        direcciones: dirs, telefonos: tels, activo: q('#cfActivo') ? q('#cfActivo').checked : true
+        direcciones: dirs, telefonos: tels, activo: q('#cfActivo').checked
       };
       if (!d.id) {
         x.local_id = op.local || (localInicial() || {}).id || null;
@@ -5174,30 +5279,82 @@
     }
     q('#cfGuardar').onclick = function () { guardar(false); };
     if (q('#cfOtro')) q('#cfOtro').onclick = function () { guardar(true); };
+    if (q('#cfCerrar')) q('#cfCerrar').onclick = function () { if (op.alCerrar) op.alCerrar(); };
     cont.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio') { e.preventDefault(); guardar(false); }
+      var enSub = e.target.closest && e.target.closest('.cli-sub');
+      /* En el formulario chico, Enter lo guarda en la lista y Escape lo cierra (sin cerrar la ficha). */
+      if (enSub && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cerrarSub(false); return; }
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio') {
+        e.preventDefault();
+        if (enSub) cerrarSub(true, true); else guardar(false);
+      }
     });
-    setTimeout(function () { var f = q(d.nombre ? (d.doc || d.socio ? '#cfNombre' : '#cfDoc') : '#cfNombre'); if (f && cont.isConnected) f.focus(); }, 0);
+    setTimeout(function () {
+      var f = q(op.paraA && !d.doc ? '#cfDoc' : d.nombre ? (d.doc || d.socio ? '#cfNombre' : '#cfDoc') : '#cfNombre');
+      if (f && cont.isConnected) f.focus();
+    }, 0);
   }
 
   /* «Crear cliente» desde la lupita de la venta: la ficha entera en una ventana; al guardarlo queda elegido en la venta.
-     Si la venta tiene un socio sin ficha, la ficha nueva es la suya (con su nombre y su mail) y queda atada a él. */
-  function abrirCrearCliente(texto) {
+     Si la venta tiene un socio sin ficha, la ficha nueva es la suya (con su nombre y su mail) y queda atada a él; si el socio
+     ya tenía ficha, el cliente nuevo es otra persona y el socio sale de la venta (v459). paraA: viene de elegir «Factura A»
+     (el CUIT y responsable inscripto ya elegidos). */
+  function abrirCrearCliente(texto, paraA) {
     var so = V.socio && !V.cliente_id ? V.socio : null;
     var d = clienteDeTexto(so ? '' : texto);
     if (so) { d.nombre = so.nombre; d.mail = (V.cliente && V.cliente.email) || ''; }
-    var caja = ventana('<h3 id="posVentTit">Crear cliente</h3><p class="pos-bajada">' +
-        (so ? 'La ficha de <b>' + esc(so.nombre) + '</b>, atada a su tarjeta del Club: con los datos para la factura y lo que quieras sumar.' :
-              'Queda en Clientes para la próxima vez. Para la factura A: el CUIT y la condición de IVA.') + '</p><div id="ccForm"></div>', true);
+    if (paraA) { d.doc_tipo = 'cuit'; d.condicion = 'responsable_inscripto'; if (d.doc && d.doc.length !== 11) d.doc = ''; }
+    var caja = ventana('<h3 id="posVentTit">Ficha de cliente</h3><p class="pos-bajada">' +
+        (so ? 'La ficha de <b>' + esc(so.nombre) + '</b>, atada a su tarjeta del Club' + (paraA ? ': para la factura A, el CUIT y la condición de IVA.' : ': con los datos para la factura y lo que quieras sumar.') :
+         paraA ? 'La factura A necesita la razón social, el CUIT y la condición de IVA. Queda en Clientes para la próxima vez.' :
+              'Queda en Clientes para la próxima vez y elegido en esta venta. Para la factura A: el CUIT y la condición de IVA.') + '</p><div id="ccForm"></div>', true);
     formCliente(caja.querySelector('#ccForm'), d, {
-      ventana: true, local: V.local_id, socio: so ? so.codigo : null,
+      ventana: true, local: V.local_id, socio: so ? so.codigo : null, paraA: !!paraA,
       alGuardar: function (c) {
+        if (!so) soltarSocio();
         elegirCliente(c, null);
+        if (paraA) ponerA();
         cerrarVentana();
         pintar();
-        avisar('ok', 'Listo: ' + c.nombre + ' quedó cargado en Clientes (Nº ' + c.numero + ') y elegido en la venta.');
+        avisar('ok', 'Listo: ' + c.nombre + ' quedó cargado en Clientes (Nº ' + c.numero + ') y elegido en la venta' + (paraA && V.letra === 'A' ? ', con factura A.' : '.'));
       }
     });
+  }
+  /* «Factura A» sin los datos (v459; antes abría «Datos para la factura», que no quedaba en Clientes): con un cliente de la
+     lista, su ficha para completar el CUIT y la condición de IVA; si no, la ficha nueva con eso ya elegido. */
+  function pedirDatosA() {
+    if (S.sin197) { abrirCliente(true); return; }   // la base sin los clientes (SQL 197): el formulario de antes
+    if (V.cliente_id) abrirFichaVenta(V.cliente_id, true);
+    else abrirCrearCliente('', true);
+  }
+  /** La ficha del cliente elegido, desde la venta: se completa, se guarda en Clientes y sigue elegido. */
+  function abrirFichaVenta(id, paraA) {
+    var caja = ventana('<h3 id="posVentTit">Ficha de cliente</h3><p class="pos-bajada">' +
+        (paraA ? 'La factura A necesita el CUIT y la condición de IVA: completalos y guardá.' : 'Lo que cambies queda en Clientes.') + '</p>' +
+        '<div id="ccForm"><p class="cargando">Cargando…</p></div>', true);
+    llamar('pos_cliente', { p_id: id, p_socio: null }).then(function (d) {
+      var box = caja.querySelector('#ccForm');
+      if (!box || !caja.isConnected) return;
+      formCliente(box, d, {
+        ventana: true, local: V.local_id, paraA: !!paraA,
+        alGuardar: function (c) {
+          elegirCliente(c, null);   // el mismo cliente: su socio (si tiene) sigue
+          if (paraA) ponerA();
+          cerrarVentana();
+          pintar();
+          avisar('ok', 'Listo: se guardó la ficha de ' + c.nombre + (paraA && V.letra === 'A' ? ', con factura A.' : '.'));
+        }
+      });
+    }).catch(function (e) {
+      var box = caja.querySelector('#ccForm');
+      if (box) box.innerHTML = '<div class="pos-cartel mal">' + esc(sin197(e)) + '</div>';
+    });
+  }
+  /** Eligieron «Factura A» y el cliente ya tiene el CUIT y la condición: queda en A, como elegida a mano. */
+  function ponerA() {
+    if (!clienteParaA(V.cliente)) return;
+    V.letra = 'A';
+    V.letraMano = true;
   }
   /** El cliente elegido en la venta: sus datos para la factura (el DNI o el CUIT, la condición, el mail y el teléfono).
       Con su socio (s, como lo trae la lupita), también el socio. Lo de mandarle la factura queda como estaba. */

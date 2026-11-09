@@ -1685,23 +1685,69 @@ tr.cl-inactivo td { color: var(--txt-3); }
              background: var(--surface-2); font-size: 13px; color: var(--txt-2); }
 .cli-socio b { color: var(--txt); }
 .cli-socio small { flex-basis: 100%; color: var(--txt-3); font-size: 12px; }
-.cli-nombre { margin-bottom: 12px; }
-.pestanas.cli-pestanas { margin-bottom: 12px; }
-.cli-pestanas .pestana { border: 0; background: none; cursor: pointer; padding: 8px 16px; font-size: 13.5px; }
-.cli-pestanas .pestana[aria-current="page"] { background: var(--surface); }
-.cli-cuantos { font-weight: 600; color: var(--txt-3); }
-.cli-panel { min-height: 120px; }
 .cli-ayuda { margin: 8px 2px 0; font-size: 12.5px; color: var(--txt-3); }
 .cli-vacio { margin: 4px 2px 8px; font-size: 13px; color: var(--txt-3); }
 .cli-renglon { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 8px; align-items: end; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .cli-renglon .pos-campos { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cli-renglon .cli-calle { grid-column: span 2; }
 .cli-renglon .pos-check { min-height: 38px; }
+/* La ficha como la «Ficha de cliente» de BlueSoft (v459): Código angosto y Nombre a lo ancho; en Datos generales dos
+   columnas (Tipo + Número y la condición | Estado y Mail) y las Observaciones abajo; Direcciones y Teléfonos, una lista
+   con «Agregar…» abajo y el formulario chico; los botones abajo a la izquierda. */
+.cli-cab { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 9px 12px; margin-bottom: 12px; }
+.cli-cab #cfCodigo { font-variant-numeric: tabular-nums; color: var(--txt-2); background: var(--surface-2); }
+.pestanas.cli-pestanas { margin-bottom: 12px; }
+.cli-pestanas .pestana { border: 0; background: none; cursor: pointer; padding: 8px 16px; font-size: 13.5px; }
+.cli-pestanas .pestana[aria-current="page"] { background: var(--surface); }
+.cli-cuantos { font-weight: 600; color: var(--txt-3); }
+.cli-panel { min-height: 120px; }
+.cli-gen { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 24px; }
+.cli-col { display: grid; gap: 9px; align-content: start; }
+.cli-doc { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; }
+.cli-estado .pos-check { min-height: 38px; }
+.cli-obs { grid-column: 1 / -1; }
 .cli-panel textarea { resize: vertical; }
+.cli-tabla tbody tr[data-dir], .cli-tabla tbody tr[data-tel] { cursor: pointer; }
+.cli-tabla tbody tr[data-dir]:hover td, .cli-tabla tbody tr[data-tel]:hover td, .cli-tabla tbody tr.sel td { background: var(--surface-2); }
+.cli-tabla .cli-si { width: 1%; white-space: nowrap; }
+.cli-tabla .cli-x { width: 40px; padding-top: 3px; padding-bottom: 3px; text-align: right; }
+.cli-tabla .cli-vacia td { padding: 16px 10px; color: var(--txt-3); font-size: 13px; }
+.cli-agregar { margin: 10px 0 0; }
+.cli-sub { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line-alta); border-radius: var(--r-sm); background: var(--surface-2); }
+.cli-sub-tit { margin: 0 0 8px; font: 700 13.5px var(--sans); color: var(--txt); }
+.cli-sub .pos-check { margin-top: 6px; }
+.cli-sub .cli-pie { margin-top: 8px; }
+.cli-dir { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px 10px; }
+.cli-dir .cli-calle { grid-column: span 3; }
+.cli-dir .cli-loc { grid-column: span 2; }
+.cli-dir .cli-prov { grid-column: span 3; }
+.cli-tel { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 9px 10px; }
+.cli-persona { display: grid; gap: 9px; }
+.cli-cumple { max-width: 220px; }
+.cli-talles { display: grid; grid-template-columns: repeat(3, minmax(0, 170px)); gap: 10px; }
+.pos-pie.cli-pie { justify-content: flex-start; }
 @media (max-width: 620px) {
-  .cli-renglon .pos-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cli-cab { grid-template-columns: 110px minmax(0, 1fr); }
+  .cli-gen { grid-template-columns: 1fr; }
+  .cli-doc { grid-template-columns: 110px minmax(0, 1fr); }
+  .cli-dir { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cli-tel { grid-template-columns: minmax(0, 1fr); }
+  .cli-dir .cli-calle, .cli-dir .cli-loc, .cli-dir .cli-prov { grid-column: 1 / -1; }
+  .cli-talles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .cli-pestanas .pestana { padding: 8px 6px; font-size: 12.5px; }
 }
+/* La ventana «Cliente» de la venta (v459): las tres píldoras en una fila, un poco más grandes; «Sumarse al Club» con el QR. */
+.pos-pie.so-pie { flex-wrap: nowrap; margin-top: 16px; }
+.so-pie .btn-chico { min-height: 42px; padding: 0 18px; font-size: 14.5px; }
+.so-qr { display: grid; justify-items: center; gap: 8px; margin: 4px 0 10px; }
+.so-qr-placa { width: min(300px, 70vw); aspect-ratio: 1; display: grid; place-items: center; padding: 10px; border-radius: var(--r-sm);
+               background: #fff; border: 2px solid var(--line-alta); }
+.so-qr-placa svg { display: block; width: 100%; height: 100%; }
+.so-qr-placa .so-nada { color: #555; text-align: center; }
+.so-qr-url { margin: 0; font-size: 14px; color: var(--txt-2); }
+.so-qr-url b { color: var(--txt); }
+.so-qr-paso { margin: 0; font-size: 13.5px; color: var(--txt-2); line-height: 1.45; }
+@media (max-width: 460px) { .pos-pie.so-pie { flex-wrap: wrap; } }
 /* ── Los productos (SQL 202): todos los de BlueSoft, con el alta y la edición (Gestión → Productos) ── */
 tr[data-pd] { cursor: pointer; }
 tr[data-pd]:hover td { background: var(--surface-2); }
