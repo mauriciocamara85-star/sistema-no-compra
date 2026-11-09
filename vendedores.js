@@ -567,6 +567,12 @@ function pestanasVendedor() {
    la del día si ningún vendedor la había abierto. Todo aviso o enlace que lleve a otra parte los deja en la caja. Para
    sumar un local a todo Equipo VDH: su id acá y su código en orden_local_completo (SQL 238), que frena los controles. */
 var LOCALES_CON_TODO = ['7ce69820-6c1b-48a2-bdaa-4a546f448522'];   // Rivadavia (MAR DEL PLATA)
+/* (8/11) Los locales con Getnet. Su pantalla «Reportes totales» trae un «Importe total» por sección y ninguno general (Parque
+   Brown 7/11 y 8/11, Unicenter 4/11): antes de la foto del posnet se les pide el ticket impreso, que trae el TOTAL GENERAL.
+   Mauricio: "eso iría a todos los locales … si se lo podés decir [sólo] a Parque Brown, buenísimo" (Unicenter y DOT también
+   tienen Getnet: DOT ya manda el ticket). */
+var LOCALES_CON_GETNET = ['cf783678-15cb-4a79-bde1-ae3c3a2b72fb', 'bbbf96cf-82a8-49b2-bf58-d21212a24583', '8835ca44-79d4-40bd-a2a3-77dc9325584b'];   // Parque Brown, Unicenter, DOT
+function conGetnet(caja) { return !!caja && LOCALES_CON_GETNET.indexOf(caja.local_id) > -1; }
 function soloCaja() {
   var p = yo();
   return !!p && !!p.local_id && (p.rol === 'vendedor' || p.rol === 'supervisor') && LOCALES_CON_TODO.indexOf(p.local_id) < 0;
@@ -3116,7 +3122,7 @@ function dibujarCaja(caja, fotos, corrige) {
         if (b.disabled) return;
         if (esperaLectura()) { avisar(_cajaIA ? 'Esperá: el sistema está leyendo la foto anterior.' : 'Esperá: se está subiendo la foto anterior.'); return; }
         if (supervisor || _espejo) { sacar(b); return; }
-        instructivoCaja(b.dataset.tipo, Number(b.dataset.parte) || 1, { fecha: caja.fecha }, function () { sacar(b); });
+        instructivoCaja(b.dataset.tipo, Number(b.dataset.parte) || 1, { fecha: caja.fecha, getnet: conGetnet(caja) }, function () { sacar(b); });
       };
     });
     /* La foto que sigue, con el borde verde (la misma que pide la barra de abajo). */
@@ -3173,7 +3179,7 @@ function dibujarCaja(caja, fotos, corrige) {
     if (!motivo || !t) return;
     var s = siguiente(), malas = s.foto && s.foto.tipo === nueva.tipo ? s.foto.malas : 1;
     instructivoCaja(nueva.tipo, parte, {
-      fecha: caja.fecha, motivo: motivo,
+      fecha: caja.fecha, motivo: motivo, getnet: conGetnet(caja),
       mano: trabar && malas >= 2 ? function () { entrarManual(MOTIVOS_MANO[0]); } : null,
       textoMano: nueva.tipo === 'sistema' && nueva.ia_estado === 'ok' ? 'Escribir el efectivo a mano' : null
     }, function () { var b = app.querySelector('#fotosCaja [data-tipo="' + nueva.tipo + '"][data-parte="' + parte + '"]'); if (b) sacar(b); });
@@ -3596,6 +3602,9 @@ var INSTRUCTIVO_CAJA = {
             'Que entre <b>entero</b>, de la fecha al total. El ticket, estirado y sin dobleces.',
             '<b>Derecho y con luz</b>, sin sombra ni reflejos.'],
     nota: '¿Dos posnet? Sacalos <b>juntos</b> en la misma foto o el otro aparte con «+ Otro posnet»: se suman solos.',
+    /* (8/11) En los locales con Getnet (LOCALES_CON_GETNET), el paso 1, en la foto del posnet y en la del otro posnet. Va en
+       el paso y no en la nota: a 360x640 la nota queda abajo de «Abrir la cámara» y no se ve sin bajar. */
+    pasoGetnet: 'En el <b>Getnet</b> (el rojo), tocá <b>«Imprimir»</b> y sacale al <b>ticket</b>: la pantalla no trae el total.',
     otra: { titulo: 'Foto del otro posnet', bajada: 'El cierre de lote del segundo posnet.', nota: '' } },
   mp: { titulo: 'Foto de Mercado Pago', bajada: 'Lo cobrado {hoy}, en la app de Mercado Pago.',
     pasos: ['Abrí la <b>Actividad {de_hoy}</b>, la de los cobros, con el total.',
@@ -3622,7 +3631,7 @@ var FALLOS_CAJA = {
   sistema: [/no (es )?la pantalla|otra pantalla|terminal|posnet|no corresponde/,
             /cortad|recort|no entra|fuera de|parte de abajo|no se ve|incomplet|toda la|recuadro|falta/,
             /reflej|borros|desenfoc|movid|torcid|inclinad|angulo|costado|oscur|brillo|moire|total efectivo/],
-  lote: [/cupon|comprobante|no (es )?el cierre|venta (con|individual)|transferencia/,
+  lote: [/cupon|comprobante|no (es )?el cierre|venta (con|individual)|transferencia|getnet/,
          /cortad|recort|entero|incomplet|no se ve|doblad|fuera de|falta/,
          /sombra|luz|oscur|borros|desenfoc|movid|torcid|reflej|inclinad|arrugad/],
   mp: [/otra pantalla|abrir (la )?caja|sesion|no (es )?el resumen|no se ven (los )?montos|ningun monto/,
@@ -3663,7 +3672,7 @@ function instructivoCaja(tipo, parte, op, alAbrir) {
            '<div class="instr-no"><span class="instr-etq no">✕ Así no</span><div class="instr-nos">' +
            d.no.map(function (n) { return '<figure><div class="instr-mini">' + n[1] + '<i>✕</i></div><figcaption>' + esc(n[0]) + '</figcaption></figure>'; }).join('') +
            '</div></div>' : '') +
-      '<ol class="instr-pasos">' + (o.pasos || t.pasos).map(function (p, i) {
+      '<ol class="instr-pasos">' + (o.pasos || t.pasos).map(function (p, i) { if (i === 0 && op.getnet && t.pasoGetnet) p = t.pasoGetnet;
         return '<li' + (marca.indexOf(i) > -1 ? ' class="fallo"' : '') + '><i>' + (i + 1) + '</i><span>' + dia(p) + '</span></li>';
       }).join('') + '</ol>' +
       ((o.nota != null ? o.nota : t.nota) ? '<p class="instr-nota">' + (o.nota != null ? o.nota : t.nota) + '</p>' : '') +
