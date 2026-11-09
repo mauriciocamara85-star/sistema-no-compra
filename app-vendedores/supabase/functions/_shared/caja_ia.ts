@@ -48,7 +48,7 @@ const QUE_ES: Record<TipoFoto, string> = {
  *  lee, se rechaza: aceptarla dejaría el casillero vacío y trabado, peor que pedir otra foto. */
 const LO_PRINCIPAL: Record<TipoFoto, string> = {
   sistema: 'los montos de "Resultados del día"',
-  lote: "el total del cierre de lote",
+  lote: "el total del cierre de lote (en la pantalla «Reportes totales» del Getnet, los «Importe total» de sus secciones)",
   mp: "el total del día o los cobros del día en la lista",
   gocuotas: "el total del día o los cobros de la lista",
 };
@@ -90,12 +90,27 @@ export function esquemaCaja(tipo: TipoFoto) {
               // (7/11, San Justo 6/11) Lo cobrado, lo anulado y lo devuelto por separado: la resta la hace el código
               // (sumarPosnets). Antes la IA daba las compras ($ 627.510) y el sistema decía el neto ($ 556.110).
               total: numeroONulo(
-                "Las compras (ventas) de ese posnet tal como figuran, SIN restar anulaciones ni devoluciones (en Payway o Sistema POS: el monto de «Co» en TOTALES EN PESOS; en Getnet: VENTAS del TOTAL GENERAL)",
+                "Las compras (ventas) de ese posnet tal como figuran, SIN restar anulaciones ni devoluciones (en Payway o Sistema POS: el monto de «Co» en TOTALES EN PESOS; en el ticket del Getnet: VENTAS del TOTAL GENERAL; en la pantalla «Reportes totales» del Getnet, null: van las secciones)",
               ),
               anulaciones: numeroONulo("Lo anulado en ese cierre (en Payway o Sistema POS: el monto de «An» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
               devoluciones: numeroONulo("Lo devuelto en ese cierre (en Payway o Sistema POS: el monto de «Dv» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
+              // (8/11, Parque Brown 7/11 y 8/11) La pantalla del Getnet no tiene total general: la IA anota cada sección
+              // y el código las suma (pantallaGetnet).
+              secciones: {
+                type: "array",
+                description: "SÓLO en la pantalla «Reportes totales» del Getnet (no en un ticket impreso ni en otro posnet): cada sección que se ve, de arriba a abajo. Vacío en cualquier otro caso",
+                items: {
+                  type: "object",
+                  properties: {
+                    titulo: { type: "string", description: 'El título de la sección tal como se ve («Ventas de Crédito», «Ventas de Débito», «Operaciones de QR PCT», «Devoluciones»); "" si quedó fuera de la foto' },
+                    importe: numeroONulo("El «Importe total» de esa sección; null si no se ve"),
+                  },
+                  required: ["titulo", "importe"],
+                  additionalProperties: false,
+                },
+              },
             },
-            required: ["nombre", "total", "anulaciones", "devoluciones"],
+            required: ["nombre", "total", "anulaciones", "devoluciones", "secciones"],
             additionalProperties: false,
           },
         },
@@ -134,8 +149,10 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
 ${tipo === "sistema" ? `- Arriba, en «CAJA», dice qué caja es: copialo en "caja". Tiene que ser la caja de ventas: la «Caja Fuerte» es otra pantalla.
-` : ""}${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
+` : ""}${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son el mismo cierre (el mismo terminal y el mismo número de lote, por ejemplo el original y el «DUPLICADO»), va una sola vez. Dos tickets del mismo terminal con distinto número de lote son dos cierres distintos: van los dos, cada uno con su total.
 - En cada posnet, el total son las compras tal como figuran, sin restar nada. Si el cierre trae anulaciones («An») o devoluciones («Dv») con monto, anotalas aparte en "anulaciones" y "devoluciones" (0 si no hay): no las restes, la cuenta la hace el sistema.
+- La pantalla «Reportes totales» del Getnet (el posnet rojo) NO tiene un total general: cada sección («Ventas de Crédito», «Ventas de Débito», «Operaciones de QR PCT», «Devoluciones») trae su propio «Importe total», y ninguno de ellos es el total del posnet. En esa pantalla anotá en "secciones" cada sección que se ve, de arriba a abajo, con su título tal como aparece ("" si el título quedó fuera de la foto) y su «Importe total» (null si no se ve). «Devoluciones» va aunque no se vea su importe. El total de ese posnet va en null, y anulaciones y devoluciones en 0: la cuenta la hace el sistema. En esa pantalla, lo principal que tiene que leerse son esos «Importe total».
+- En el ticket impreso del Getnet («Consulta de Totales») sí vale el TOTAL GENERAL, y "secciones" va vacío. En cualquier otro posnet, "secciones" va vacío.
 ` : ""}${tipo === "mp" ? `- Si se ve la lista de cobros, anotá cada uno en "operaciones", en el orden de la pantalla: la hora tal como aparece, el número de operación si se ve y el monto. Un renglón cortado por el borde de la foto va sólo si se leen la hora y el monto. No los sumes: la cuenta la hace el sistema.
 - En "operaciones" van sólo los cobros del día de la caja: si la lista separa los días («Hoy», «Ayer» o una fecha), los de otros días no van. "lista_cortada" = true sólo si pueden quedar cobros de ese día fuera de la foto (si abajo ya empiezan los de otro día, la lista del día está completa). Si no se ve de qué día son (ni «Hoy» ni una fecha), "lista_cortada" = true.
 ` : ""}${tipo === "mp" || tipo === "gocuotas" ? `- Si la pantalla dice que no hay cobros ni ventas (por ejemplo «No tenés ninguna venta»), la foto vale y el total es 0.
@@ -232,11 +249,20 @@ export function ventasEnCero(r: Record<string, unknown>) {
  *  código, no la IA). Si uno no se lee, el total queda sin leer y va a dudas: mejor que lo carguen a mano. */
 export function sumarPosnets(r: Record<string, unknown>) {
   const lista = Array.isArray(r.posnets) ? r.posnets as Record<string, unknown>[] : [];
-  const posnets = lista.map((p) => netoDelPosnet(p, r));
+  const posnets: Record<string, unknown>[] = lista.map((p) => netoDelPosnet(p, r));
   r.posnets = posnets;
+  // (8/11) La pantalla del Getnet sin todas sus secciones no sirve: la foto no vale y se pide el ticket. Así no queda
+  // contado un pedazo (el 8/11, sólo el crédito) que después se suma con el ticket del mismo posnet.
+  if (posnets.some((p) => p.pantalla === "incompleta")) {
+    r.foto_valida = false;
+    r.motivo = MOTIVO_GETNET;
+    r.total = null;
+    return;
+  }
   if (posnets.length < 2) {
     // (7/11) Con anulaciones vale el neto del posnet, no el total de arriba (que la IA copia del ticket, sin restar).
-    if (posnets[0] && "compras" in posnets[0]) r.total = posnets[0].total;
+    // (8/11) Lo mismo con la pantalla del Getnet: vale la suma de sus secciones, no el importe que la IA puso arriba.
+    if (posnets[0] && ("compras" in posnets[0] || posnets[0].pantalla)) r.total = posnets[0].total;
     else if (r.total == null && posnets[0]?.total != null) r.total = posnets[0].total;
     return;
   }
@@ -253,17 +279,64 @@ export function sumarPosnets(r: Record<string, unknown>) {
  *  anulado y lo devuelto. La resta la hace el código. Sin anulaciones el posnet queda como siempre ({nombre, total}); con
  *  anulaciones, total = el neto (la base y la app suman ese) y quedan aparte compras, anulaciones y devoluciones. Una
  *  anulación sin leer (null) cuenta como que no hubo, como antes. Si lo anulado pasa lo cobrado, no cierra: sin leer. */
-export function netoDelPosnet(p: Record<string, unknown> | null | undefined, r: Record<string, unknown>) {
+export function netoDelPosnet(p: Record<string, unknown> | null | undefined, r: Record<string, unknown>): Record<string, unknown> {
   const nombre = typeof p?.nombre === "string" ? p.nombre.trim() : "";
-  const compras = aNumero(p?.total);
-  const anulaciones = Math.abs(aNumero(p?.anulaciones) ?? 0), devoluciones = Math.abs(aNumero(p?.devoluciones) ?? 0);
-  if (compras == null || anulaciones + devoluciones === 0) return { nombre, total: compras };
+  // (8/11) La pantalla «Reportes totales» del Getnet: las compras salen de sus secciones, no del total que puso la IA.
+  const pantalla = pantallaGetnet(p?.secciones);
+  if (pantalla && !pantalla.completa) return { nombre, total: null, pantalla: "incompleta", secciones: pantalla.secciones };
+  const extra = pantalla ? { pantalla: "completa", secciones: pantalla.secciones } : {};
+  const compras = pantalla ? pantalla.compras : aNumero(p?.total);
+  // En la pantalla no hay «An» ni «Dv»: lo devuelto es el importe de «Devoluciones» y el «Importe total» de cada
+  // sección es lo que se cobró (si un día aparece una anulación en esa pantalla, mirar si el importe ya la descuenta).
+  const anulaciones = pantalla ? 0 : Math.abs(aNumero(p?.anulaciones) ?? 0);
+  const devoluciones = pantalla ? pantalla.devoluciones : Math.abs(aNumero(p?.devoluciones) ?? 0);
+  if (compras == null || anulaciones + devoluciones === 0) return { nombre, total: compras, ...extra };
   const neto = Math.round((compras - anulaciones - devoluciones) * 100) / 100;
   if (neto < 0) {
     r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), `No cierra lo anulado del posnet ${nombre || "sin nombre"}`];
-    return { nombre, total: null, compras, anulaciones, devoluciones };
+    return { nombre, total: null, compras, anulaciones, devoluciones, ...extra };
   }
-  return { nombre, total: neto, compras, anulaciones, devoluciones };
+  return { nombre, total: neto, compras, anulaciones, devoluciones, ...extra };
+}
+
+/** Lo que ve quien cierra cuando la pantalla del Getnet no entra entera (una frase, como los porqués de la IA). */
+export const MOTIVO_GETNET = "Falta una parte del Getnet: tocá Imprimir y sacale al ticket.";
+
+/** De qué sección es un título de la pantalla del Getnet ("" = el título quedó fuera de la foto). */
+export function seccionGetnet(titulo: unknown): "" | "credito" | "debito" | "qr" | "devoluciones" | "otra" {
+  const t = String(titulo ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  if (!t) return "";
+  if (/devol/.test(t)) return "devoluciones";
+  if (/debito/.test(t)) return "debito";
+  if (/credito/.test(t)) return "credito";
+  if (/\bqr\b/.test(t)) return "qr";
+  return "otra";
+}
+
+/** (8/11, Parque Brown 7/11 y 8/11) La pantalla «Reportes totales» del Getnet no trae un total general: cada sección
+ *  (Crédito, Débito, QR, Devoluciones, en ese orden) tiene su propio «Importe total». La IA tomaba el primero: el 7/11
+ *  leyó el crédito ($ 887.000) sin el débito ($ 101.000) y salió un faltante que no era; el 8/11 la pantalla mostraba
+ *  sólo el crédito ($ 1.415.550) y se sumó con el ticket del mismo Getnet ($ 1.762.550). Mauricio: "tendría que haber
+ *  sumado los dos importes". La IA anota cada sección y el código suma.
+ *  La pantalla vale sólo si se ve entera: abajo «Devoluciones» (la última) y arriba el título de la primera sección, o
+ *  un importe sin título seguido de «Ventas de Débito» (antes del débito sólo puede estar el crédito). Si no, puede
+ *  faltar una sección entera y la foto no vale: se pide el ticket, que trae el TOTAL GENERAL.
+ *  null si no es esa pantalla (sin secciones, o si la IA anotó como secciones los totales de un ticket). */
+export function pantallaGetnet(v: unknown): {
+  completa: boolean; compras: number | null; devoluciones: number; secciones: { titulo: string; importe: number | null }[];
+} | null {
+  const lista = Array.isArray(v) ? v.filter((s) => s && typeof s === "object") as Record<string, unknown>[] : [];
+  if (!lista.length) return null;
+  const secciones = lista.map((s) => ({ titulo: typeof s.titulo === "string" ? s.titulo.trim() : "", importe: aNumero(s.importe) }));
+  if (secciones.some((s) => /total/i.test(s.titulo))) return null;
+  const tipos = secciones.map((s) => seccionGetnet(s.titulo));
+  const ventas = secciones.filter((_, i) => tipos[i] !== "devoluciones");
+  const devol = secciones.filter((_, i) => tipos[i] === "devoluciones");
+  const completa = tipos[tipos.length - 1] === "devoluciones" && devol.length === 1 && ventas.length > 0 &&
+    (tipos[0] !== "" || tipos[1] === "debito") && !tipos.slice(1).includes("") &&
+    ventas.every((s) => s.importe != null);
+  const compras = completa ? Math.round(ventas.reduce((t, s) => t + (s.importe as number), 0) * 100) / 100 : null;
+  return { completa, compras, devoluciones: Math.abs(devol[0]?.importe ?? 0), secciones };
 }
 
 /** (7/11, Unicenter 6/11) La foto del cierre de la «Caja Fuerte» no sirve: tiene la misma pantalla, pero no las ventas

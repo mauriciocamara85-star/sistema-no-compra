@@ -284,7 +284,8 @@ Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con
 });
 
 import {
-  aNumero, cajaDeVentas, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets,
+  aNumero, cajaDeVentas, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, MOTIVO_GETNET, pantallaGetnet,
+  sistemaCaja, sumarPosnets,
   ventasDeLaLista, ventasEnCero,
 } from "./caja_ia.ts";
 
@@ -415,7 +416,7 @@ Deno.test("caja: dos posnet en la foto del lote se suman en el código, no en la
   const lote = esquemaCaja("lote") as { properties: Record<string, unknown>; required: string[] };
   igual("posnets" in lote.properties && lote.required.includes("posnets"), true, "el lote pide la lista de posnets");
   igual(["sistema", "mp", "gocuotas"].some((t) => "posnets" in esquemaCaja(t as "mp").properties), false, "los demás no");
-  igual(uniones(lote), 4, "el total y, de cada posnet, el total, lo anulado y lo devuelto (7/11)");
+  igual(uniones(lote), 5, "el total y, de cada posnet, el total, lo anulado, lo devuelto (7/11) y el importe de cada sección del Getnet (8/11)");
   igual(sistemaCaja("lote", "2026-11-04", "Parque Brown").includes('"posnets"'), true, "el lote lo explica");
   igual(sistemaCaja("mp", "2026-11-04", "Parque Brown").includes("posnets"), false, "Mercado Pago no");
 
@@ -519,7 +520,7 @@ Deno.test("caja: la foto de la Caja Fuerte no es la caja de ventas (7/11, Unicen
 
 Deno.test("caja: el lote vale neto, las compras menos lo anulado y lo devuelto (7/11, San Justo 6/11)", async () => {
   const lote = esquemaCaja("lote") as { properties: { posnets: { items: { required: string[] } } } };
-  igual(lote.properties.posnets.items.required, ["nombre", "total", "anulaciones", "devoluciones"], "cada posnet pide lo anulado y lo devuelto");
+  igual(lote.properties.posnets.items.required, ["nombre", "total", "anulaciones", "devoluciones", "secciones"], "cada posnet pide lo anulado y lo devuelto (y las secciones del Getnet, 8/11)");
   igual(sistemaCaja("lote", "2026-11-06", "San Justo").includes("«An»"), true, "el pedido lo explica");
   const suma = (r: Record<string, unknown>) => (sumarPosnets(r), r);
   // La lectura de San Justo 6/11 con lo anulado aparte (el ticket: Co 006 $ 627.510, An 001 $ 71.400).
@@ -554,4 +555,72 @@ Deno.test("caja: el lote vale neto, las compras menos lo anulado y lo devuelto (
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
   });
   igual(r.total, 556110, "la lectura completa");
+});
+
+Deno.test("caja: la pantalla del Getnet suma sus secciones y, si no se ve entera, pide el ticket (8/11, Parque Brown 7/11 y 8/11)", async () => {
+  igual(sistemaCaja("lote", "2026-11-08", "Parque Brown").includes("«Reportes totales» del Getnet"), true, "el pedido explica la pantalla");
+  igual(sistemaCaja("lote", "2026-11-08", "Parque Brown").includes("Consulta de Totales"), true, "y el ticket");
+  igual(sistemaCaja("mp", "2026-11-08", "Parque Brown").includes("Reportes totales"), false, "Mercado Pago no");
+  igual(MOTIVO_GETNET.split(/\s+/).length <= 12, true, "el porqué en 12 palabras como mucho");
+  // (8/11, DOT) Los lotes 024 y 025 del mismo Payway: dos cierres. Dos de las tres lecturas dejaron afuera el 024.
+  igual(sistemaCaja("lote", "2026-11-08", "DOT").includes("distinto número de lote son dos cierres distintos"), true, "dos lotes del mismo terminal van los dos");
+  const s = (titulo: string, importe: unknown) => ({ titulo, importe });
+  const suma = (r: Record<string, unknown>) => (sumarPosnets(r), r);
+
+  // 7/11, la foto real: Payway (ticket en pantalla) y la pantalla del Getnet con crédito (sin título: quedó arriba),
+  // débito y Devoluciones (sin importe a la vista). El sistema decía $ 1.812.200; antes se leía $ 1.711.200.
+  const d7 = suma({ foto_valida: true, motivo: null, total: 824200, dudas: [], posnets: [
+    { nombre: "Payway", total: 824200, anulaciones: 0, devoluciones: 0, secciones: [] },
+    { nombre: "Getnet", total: null, anulaciones: 0, devoluciones: 0,
+      secciones: [s("", 887000), s("Ventas de Débito", "$ 101.000,00"), s("Devoluciones", null)] }] });
+  igual([d7.foto_valida, d7.total, (d7.posnets as Record<string, unknown>[]).map((p) => p.total)], [true, 1812200, [824200, 988000]],
+    "7/11: crédito + débito = $ 988.000, más el Payway: $ 1.812.200, lo del sistema");
+  igual((d7.posnets as Record<string, unknown>[])[0], { nombre: "Payway", total: 824200 }, "el Payway queda como siempre");
+  igual((d7.posnets as Record<string, unknown>[])[1].pantalla, "completa", "se anota que vino de la pantalla");
+
+  // 8/11: las tres pantallas, ninguna entera. Antes la 1.ª valía $ 1.415.550 (sólo el crédito) y se sumaba con el ticket.
+  const cortadas = [
+    [s("", 1415550)],                                                                 // 1.ª: sólo el crédito
+    [s("", 1415550), s("Ventas de Débito", 65000), s("Operaciones de QR PCT", null)], // 3.ª: el QR cortado abajo
+    [s("", 65000), s("Operaciones de QR PCT", 282000), s("Devoluciones", null)],      // 4.ª: falta el crédito de arriba
+  ];
+  for (const [i, secciones] of cortadas.entries()) {
+    const r = suma({ foto_valida: true, motivo: null, total: 1415550, dudas: [], posnets: [{ nombre: "Getnet", total: null, anulaciones: 0, devoluciones: 0, secciones }] });
+    igual([r.foto_valida, r.motivo, r.total], [false, MOTIVO_GETNET, null], `8/11, pantalla ${i + 1}: no vale y pide el ticket`);
+  }
+  // El ticket del 8/11 (TOTAL GENERAL $ 1.762.550) se lee como siempre.
+  const ticket = suma({ foto_valida: true, motivo: null, total: 1762550, dudas: [], posnets: [{ nombre: "Getnet", total: 1762550, anulaciones: 0, devoluciones: 0, secciones: [] }] });
+  igual([ticket.foto_valida, ticket.total], [true, 1762550], "el ticket del Getnet: el TOTAL GENERAL");
+  // La pantalla entera (con el título de arriba): crédito + débito + QR.
+  const entera = suma({ foto_valida: true, motivo: null, total: 1415550, dudas: [], posnets: [{ nombre: "Getnet", total: 1415550, anulaciones: 0, devoluciones: 0,
+    secciones: [s("Ventas de Crédito", 1415550), s("Ventas de Débito", 65000), s("Operaciones de QR PCT", 282000), s("Devoluciones", 0)] }] });
+  igual([entera.foto_valida, entera.total], [true, 1762550], "8/11 si hubiera entrado entera: $ 1.762.550 (no el importe que la IA puso arriba)");
+  // Una pantalla con una devolución: se resta, como en el ticket.
+  const devol = suma({ foto_valida: true, motivo: null, total: null, dudas: [], posnets: [{ nombre: "Getnet", total: null, anulaciones: 5000, devoluciones: 0,
+    secciones: [s("Ventas de Crédito", 100000), s("Devoluciones", 10000)] }] });
+  igual([devol.total, (devol.posnets as Record<string, unknown>[])[0].compras], [90000, 100000], "lo devuelto se resta; lo «anulado» que pone la IA no (no hay en la pantalla)");
+
+  // Lo que no es la pantalla, o es dudoso.
+  igual(pantallaGetnet([]), null, "sin secciones: no es la pantalla");
+  igual(pantallaGetnet("basura"), null, "una lista rara no rompe");
+  igual(pantallaGetnet([s("QR PCT", 282000), s("TOTAL", 1762550), s("TOTAL GENERAL", 1762550)]), null, "los totales de un ticket no son secciones");
+  igual(pantallaGetnet([s("Ventas de Crédito", 100000), s("Ventas de Débito", null), s("Devoluciones", null)])?.completa, false, "un importe sin leer: no vale");
+  igual(pantallaGetnet([s("", 100000), s("Devoluciones", null)])?.completa, false, "un importe sin título antes de Devoluciones puede ser cualquiera: no vale");
+  igual(pantallaGetnet([s("Ventas de Débito", 50000), s("Devoluciones", null)])?.compras, 50000, "sólo débito, con su título: vale");
+  igual(pantallaGetnet([s("Ventas de Crédito", 100000), s("", 5), s("Devoluciones", 0)])?.completa, false, "un título perdido en el medio: no vale");
+
+  // La lectura completa, como la contesta la API.
+  const r = await leerFotoCaja({
+    tipo: "lote", fecha: "2026-11-07", local: "Parque Brown", foto: { media_type: "image/jpeg", data: "eA==" }, modelo: "m", apiKey: "k",
+    pedir: (async () => new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({
+        foto_valida: true, motivo: "", fecha: "2026-11-07", total: 824200, lista_cortada: false, dudas: [],
+        posnets: [{ nombre: "Payway", total: 824200, anulaciones: 0, devoluciones: 0, secciones: [] },
+                  { nombre: "Getnet", total: null, anulaciones: 0, devoluciones: 0,
+                    secciones: [{ titulo: "", importe: 887000 }, { titulo: "Ventas de Débito", importe: 101000 }, { titulo: "Devoluciones", importe: null }] }],
+      }) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
+  });
+  igual([r.foto_valida, r.motivo, r.total], [true, null, 1812200], "la lectura completa del 7/11");
 });
