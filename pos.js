@@ -10694,12 +10694,21 @@
                                                     opciones(valoresDe(8).map(function (t) { return [t, t]; }), '') + '</select>') : '') +
         campo('rm-buscar', 'Producto', '<input type="search" id="rgBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" ' +
               'title="En qué remitos va un producto y cuántas llegaron. El código o el nombre; o escaneá la etiqueta">') +
+        /* 9/11 (Mauricio: «una opción para filtrar los envíos y los recibidos dentro de la fábrica… un menú desplegable»):
+           lo que la fábrica manda, lo que le llega de los locales (las devoluciones) o lo que va de un local a otro. BlueSoft
+           lo tiene en dos pantallas (Remitos de Venta y Devoluciones); acá es la misma lista, así que va al final de los
+           filtros, sin mover los de BlueSoft. Filtra lo que ya vino, sin volver a la base. */
+        campo('', 'Movimiento', '<select id="rgMov" title="Lo que manda la fábrica, lo que le devuelven los locales o lo que va de un local a otro">' +
+              '<option value="">Todos</option>' + opciones([['envio', 'Enviados por la fábrica'], ['devolucion', 'Recibidos (devoluciones)'],
+                                                            ['local', 'Entre locales']], '') + '</select>') +
       '</div><div id="rgLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="rg-pie"><div class="tkl-pie" id="rgPie"></div><div id="rgBarra"></div></div>';
     engancharIr(c);
     var per = periodoPos($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
     ['rgLocal', 'rgEstado'].forEach(function (id) { $(id).onchange = cargar; });
     ['rgTransp', 'rgTemp'].forEach(function (id) { if ($(id)) $(id).onchange = function () { if (dat) pintar(); }; });
+    /* Con «Producto», la búsqueda se vuelve a pintar con el Movimiento; si no, se filtra lo que ya vino. */
+    $('rgMov').onchange = function () { if (productoBuscado($('rgBuscar').value)) cargar(); else if (dat) pintar(); };
     var tBus = null, tRef = null;
     $('rgBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
     $('rgBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
@@ -10736,13 +10745,14 @@
         });
       });
     }
-    /** Lo que se ve: lo que vino, con el Número, el Transporte y la Temporada (filtran acá, sin volver a pedir). */
+    /** Lo que se ve: lo que vino, con el Número, el Transporte, la Temporada y el Movimiento (filtran acá, sin volver a pedir). */
     function filtradas() {
-      var ref = normal($('rgRef').value), tr = $('rgTransp') ? $('rgTransp').value : '', te = $('rgTemp') ? $('rgTemp').value : '';
+      var ref = normal($('rgRef').value), tr = $('rgTransp') ? $('rgTransp').value : '', te = $('rgTemp') ? $('rgTemp').value : '', mv = $('rgMov').value;
       return todas.filter(function (f) {
         return (!ref || normal(refRemito(f) + ' ' + (f.referencia || '')).indexOf(ref) >= 0 || String(f.numero) === ref.replace(/^r-?/, '')) &&
                (!tr || (tr === '-' ? !f.transporte_id : f.transporte_id === tr)) &&
-               (!te || (te === '-' ? !f.temporada : f.temporada === te));
+               (!te || (te === '-' ? !f.temporada : f.temporada === te)) &&
+               (!mv || movRemito(f) === mv);
       });
     }
     /* Abajo, como BlueSoft: los remitos (sus «líneas»), los productos y los bultos (sin el Monto: el remito no lleva
@@ -10886,12 +10896,12 @@
     }
     /* SQL 204: con «Producto», un renglón por remito con lo que vino de ese producto. El estado se filtra acá. */
     function buscar(q) {
-      var r = per.rango(), n = ++pedido, est = $('rgEstado').value;
+      var r = per.rango(), n = ++pedido, est = $('rgEstado').value, mv = $('rgMov').value;
       $('rgLista').innerHTML = '<p class="cargando">Buscando…</p>';
       llamar('pos_remitos_producto', { p_buscar: q, p_desde: r.desde, p_hasta: r.hasta, p_local: $('rgLocal').value || null }).then(function (d) {
         if (n !== pedido || !$('rgLista')) return;
         var fs = (d.filas || []).filter(function (f) {
-          return !est || f.estado === est || (est === 'recibido' && f.estado === 'con_diferencias');
+          return (!est || f.estado === est || (est === 'recibido' && f.estado === 'con_diferencias')) && (!mv || movRemito(f) === mv);
         });
         $('rgLista').innerHTML = tablaRemitosProducto(fs, d.mas, q, true);
         $('rgLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
@@ -11722,6 +11732,11 @@
   }
   /** Un remito que sale de la fábrica a un local (el que tiene transporte, bultos y «Enviar»). */
   function deLaFabrica(r) { return !r.origen_local_id && !!r.destino_local_id; }
+  /** Para el filtro «Movimiento» de Fábrica → Remitos: «envio» (de la fábrica a un local), «devolucion» (de un local a la
+      fábrica: el remito sin destino, SQL 167) o «local» (de un local a otro). */
+  function movRemito(r) {
+    return deLaFabrica(r) ? 'envio' : r.origen_local_id && !r.destino_local_id ? 'devolucion' : r.origen_local_id && r.destino_local_id ? 'local' : '';
+  }
 
   /* ── Imprimir: la hoja se arma en un iframe escondido y se abre el diálogo de imprimir del navegador (sin ventanas
      nuevas, que el bloqueador frena). Queda un minuto y se borra. ── */
