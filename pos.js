@@ -1745,6 +1745,7 @@
 
   function verVenta() {
     V = cargarBorrador();
+    if (V.socio) { delete V.socio.tiene; traerTiene(V.socio); }   // SQL 265: sus puntos y lo del Club, al día
     S.prox = {};   // SQL 252: el número se vuelve a pedir (otra caja pudo haber vendido)
     var c = $('cuerpo'), prueba = enPrueba();
     c.classList.add('lleno');
@@ -1986,13 +1987,14 @@
     var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total - c.interes - c.gcCobro, so.factor) : 0;
     /* Los puntos del socio: los anota la venta; los suma recién con la regla del Club prendida (SQL 171). */
     /* SQL 265: ya no se cargan en Cobrar (Cobrar se sacó de los locales): con el 265 corrido, el POS los suma al guardar. */
-    var prem = puntosPremios();
+    var prem = puntosPremios(), nPrem = V.lineas.filter(function (l) { return l.premio; }).length;
+    var tiene = so ? textoTiene(so.ben) : '';   // SQL 265: se arma cada vez (al sacar un premio, el enlace vuelve)
     var club = !so ? '' : '<span class="tk-nota-club"><b>Club:</b> ' + (enPrueba() ? 'en modo prueba no se suman puntos.' :
       !c.total ? esc(String(so.nombre || '').split(' ')[0]) + ' suma puntos con lo que compre.' :
       'esta venta le da ' + miles(pts) + (pts === 1 ? ' punto' : ' puntos') + ' a ' + esc(String(so.nombre || '').split(' ')[0]) +
       (clubIni().suma ? ': se suman al guardar.' : '. Todavía no se suman: falta correr el SQL 265.')) +
-      (prem ? ' El premio le descuenta ' + miles(prem) + ' puntos.' : '') +
-      (so.tiene ? ' <button type="button" class="pos-link" id="vClubVer">' + esc(so.tiene) + '</button>' : '') + '</span> ';
+      (prem ? (nPrem > 1 ? ' Los premios le descuentan ' : ' El premio le descuenta ') + miles(prem) + ' puntos.' : '') +
+      (tiene ? ' <button type="button" class="pos-link" id="vClubVer">' + esc(tiene) + '</button>' : '') + '</span> ';
     $('vNota').innerHTML = club + (enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
       V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo: si el cliente pide factura, elegí «Factura B» en Comprobante.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
@@ -2625,21 +2627,29 @@
     return '<div class="so-ben"><span class="so-nom"><b>' + esc(titulo) + '</b>' + (detalle ? '<small>' + esc(detalle) + '</small>' : '') + '</span>' +
       (no ? '<em>' + esc(no) + '</em>' : '<button type="button" class="btn btn-sec btn-chico" data-ben="' + tipo + '" data-i="' + i + '">' + verbo + '</button>') + '</div>';
   }
-  /** «Tiene para usar: …» de la nota del Club ('' si no tiene nada). */
+  /** «Tiene para usar: …» de la nota del Club ('' si no tiene nada). r = lo que dio pos_club_beneficios (so.ben).
+      Se arma de nuevo cada vez que se pinta la venta, con lo que ya está puesto. Mauricio (8/11): "si los puntos me
+      alcanzan para dos premios, podría elegir… uno o dos… Borré el premio y no tengo la opción de volver a poner otro…
+      mientras tengan los puntos para algún premio, tendría que aparecer siempre para canjear". Mientras un premio espera
+      su prenda no se ofrece otro (el renglón de arriba de la grilla tiene sus botones). */
   function textoTiene(r) {
-    var p = [], n = (r.cupones || []).length, libres = (Number(r.puntos) || 0) - puntosPremios();
+    if (!r) return '';
+    var p = [], n = (r.cupones || []).length, ya = puntosPremios(), libres = (Number(r.puntos) || 0) - ya;
     if (r.cumple && !r.cumple.usado && r.cumple.tipo === 'descuento' && !V.cumple) p.push('regalo de cumpleaños');
     if (n && !V.cupon) p.push(n === 1 ? '1 cupón' : n + ' cupones');
-    if ((r.premios || []).some(function (z) { return !z.vuelve && Number(z.puntos) <= libres; })) p.push('puntos para un premio');
+    if (!V.premioPend && (r.premios || []).some(function (z) { return !z.vuelve && Number(z.puntos) <= libres; })) {
+      p.push(ya ? 'puntos para otro premio' : 'puntos para un premio');
+    }
     return p.length ? 'Tiene para usar: ' + p.join(', ') : '';
   }
-  /** Al elegir el socio: si tiene algo para usar, la nota del Club lo dice (con el botón que abre la lupita). */
+  /** Al elegir el socio (o al volver a la venta con uno puesto): lo que tiene del Club, para la nota de abajo (el enlace
+      abre la lupita). */
   function traerTiene(so) {
     if (S.sin265) return;
     llamar('pos_club_beneficios', { p_socio: so.codigo }).then(function (r) {
       if (!V || V.socio !== so) return;
       so.puntos = Number(r.puntos) || 0;
-      so.tiene = textoTiene(r);
+      so.ben = r;
       pintar();
     }).catch(function (e) { if (falta265(e)) S.sin265 = true; });
   }
@@ -2661,10 +2671,11 @@
     llamar('pos_club_beneficios', { p_socio: so.codigo }).then(function (r) {
       if (!caja.isConnected) return;
       so.puntos = Number(r.puntos) || 0;
-      so.tiene = textoTiene(r);
+      so.ben = r;
       var pt = caja.querySelector('#soPts');
       if (pt) pt.textContent = miles(so.puntos) + ' puntos';
-      var usados = puntosPremios(), libres = so.puntos - usados, usar = [];
+      var usados = puntosPremios(), libres = so.puntos - usados, usar = [],
+          nPrem = V.lineas.filter(function (l) { return l.premio; }).length;
       if (r.cumple) {
         usar.push(filaBen('cumple', 0, 'Regalo de cumpleaños', (r.cumple.texto || '') + (r.cumple.hasta ? ' · hasta el ' + fechaCorta(r.cumple.hasta).slice(0, 5) : ''),
           r.cumple.usado ? 'Ya lo usó' : r.cumple.tipo !== 'descuento' ? 'Se entrega aparte' : V.cumple ? 'Ya está en la venta' : '', 'Usar'));
@@ -2677,7 +2688,8 @@
         return filaBen('premio', i, z.nombre, miles(z.puntos) + ' puntos' + (z.detalle ? ' · ' + z.detalle : ''), no, 'Entregar');
       });
       box.innerHTML = ((usar.length ? '<div class="pos-ds-titulo">Para usar en esta venta</div>' + usar.join('') : '') +
-        (premios.length ? '<div class="pos-ds-titulo">Premios · tiene ' + miles(libres) + ' puntos' + (usados ? ' (sin los ' + miles(usados) + ' del premio de esta venta)' : '') + '</div>' +
+        (premios.length ? '<div class="pos-ds-titulo">Premios · tiene ' + miles(libres) + ' puntos' +
+          (usados ? ' (sin los ' + miles(usados) + (nPrem > 1 ? ' de los premios' : ' del premio') + ' de esta venta)' : '') + '</div>' +
           premios.join('') : '')) || '<p class="so-nada">Por ahora no tiene cupones, regalo de cumpleaños ni premios para usar.</p>';
       box.onclick = function (e) {
         var b = e.target.closest('[data-ben]');
@@ -2685,7 +2697,6 @@
         var t = b.getAttribute('data-ben'), i = Number(b.getAttribute('data-i'));
         if (t === 'cumple') {
           V.cumple = { porcentaje: Number(r.cumple.porcentaje), texto: r.cumple.texto || '' };
-          so.tiene = textoTiene(r);
           cerrarVentana();
           pintar();
           var d = cuenta(V).descuentos.filter(function (x) { return x.tipo === 'cumple'; })[0];
@@ -2693,7 +2704,6 @@
         } else if (t === 'cupon') {
           cerrarVentana();
           ponerCupon(r.cupones[i], '');
-          so.tiene = textoTiene(r);
           pintar();
         } else if (t === 'premio') {
           var z = r.premios[i];
@@ -2719,7 +2729,6 @@
                         color_nom: nombreColor(x.color, x.p[0]), cantidad: 1, precio: 0, propio: true, premio: pr }
                     : { codigo: '', descripcion: 'Premio del Club: ' + pr.nombre, rubro: '', talle: '', color: '', color_nom: '', cantidad: 1, precio: 0,
                         propio: true, libre: true, premio: pr });
-    if (V.socio) V.socio.tiene = '';   // lo vuelve a decir la lupita, con los puntos que le quedan
     var campoP = $('vProd');
     if (campoP && campoP.limpiar) campoP.limpiar();
     pintar();
