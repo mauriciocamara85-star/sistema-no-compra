@@ -22,13 +22,46 @@
 -- haya revisado.
 -- ════════════════════════════════════════════════════════════════════════
 
-/* 'Sin stock' y 'No lo hacemos' NO son lo mismo, y separarlos es lo que
-   permite contestar dos preguntas distintas: qué hay que reponer (depósito)
-   y qué habría que fabricar (producto). Ver motivo-nuevo.sql. */
+/* Desde el 9/11/2026 (SQL 269), los ocho de la «Nueva venta fallida» del POS,
+   con las mismas palabras: el vendedor aprende una sola lista. En la base de
+   verdad se renombraron los de antes (Sin stock → No teníamos el producto,
+   Sin talle → No teníamos el talle, No lo hacemos → Falta de tipo de
+   producto, Precio → Por precio, No le gustó → No le gustaron los productos,
+   Fue a comparar → Entró a mirar, Otro → Otro motivo) y se sumó Falta de
+   color; por eso allá los dos primeros quedaron al revés de este orden.
+
+   'No teníamos el producto' y 'Falta de tipo de producto' NO son lo mismo, y
+   separarlos es lo que permite contestar dos preguntas distintas: qué hay que
+   reponer (depósito) y qué habría que fabricar (producto). Ver
+   motivo-nuevo.sql. */
 create type motivo_no_compra as enum (
-  'Sin talle', 'Sin stock', 'No lo hacemos', 'Precio', 'No le gustó',
-  'Fue a comparar', 'Otro'
+  'No teníamos el producto', 'No teníamos el talle', 'Falta de color',
+  'Falta de tipo de producto', 'Por precio', 'No le gustaron los productos',
+  'Entró a mirar', 'Otro motivo'
 );
+
+/* El motivo desde el texto que manda la app, con los nombres de antes del
+   9/11/2026 traducidos: una compu que todavía tiene la versión anterior
+   abierta, o un registro que quedó esperando señal, se guarda igual en vez de
+   rechazarse (la fila sin señal descarta lo que la base rechaza). La usan
+   cargar_registro y corregir_registro, que son security definer: no hace
+   falta abrirla a anon. SQL 269. */
+create or replace function motivo_nc(p text)
+returns motivo_no_compra
+language sql stable
+set search_path = public
+as $$
+  select (case nullif(p, '')
+    when 'Sin stock' then 'No teníamos el producto'
+    when 'Sin talle' then 'No teníamos el talle'
+    when 'No lo hacemos' then 'Falta de tipo de producto'
+    when 'Precio' then 'Por precio'
+    when 'No le gustó' then 'No le gustaron los productos'
+    when 'Fue a comparar' then 'Entró a mirar'
+    when 'Otro' then 'Otro motivo'
+    else nullif(p, '') end)::motivo_no_compra
+$$;
+revoke execute on function motivo_nc(text) from public, anon, authenticated;
 
 create type estado_seguimiento as enum (
   'En seguimiento', 'Esperando respuesta',

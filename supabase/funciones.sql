@@ -79,7 +79,7 @@ begin
                          talle, obs, motivo, producto_codigo, color)
   values (trim(p_sucursal), trim(p_vendedor), p_whatsapp, p_nombre, p_mail,
           p_producto, p_talle, p_obs,
-          nullif(p_motivo, '')::motivo_no_compra,
+          motivo_nc(p_motivo),            -- SQL 269: traduce los nombres de antes
           /* Cadena vacía y NULL son lo mismo acá, y conviene que en la base
              sean una sola cosa: el índice es parcial sobre "not null", y un
              '' colado lo ensuciaría con filas que no aportan nada. */
@@ -155,7 +155,7 @@ begin
          producto        = p_producto,
          talle           = p_talle,
          obs             = p_obs,
-         motivo          = nullif(p_motivo, '')::motivo_no_compra,
+         motivo          = motivo_nc(p_motivo),  -- SQL 269
          producto_codigo = nullif(trim(coalesce(p_producto_codigo, '')), ''),
          color           = nullif(trim(coalesce(p_color, '')), '')
    where id = p_id

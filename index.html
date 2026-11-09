@@ -284,11 +284,15 @@
      observaciones. */
   .bloque-motivo { border-color: var(--acc-line); }
   .chips-motivo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  /* Un punto menos de letra y menos padding lateral que un chip normal: es lo
-     que hace que "Fue a comparar" entre en un renglón en un celular de 390px
-     en vez de partirse en dos. */
+  /* Un punto menos de letra y menos padding lateral que un chip normal. Los
+     motivos son los de la venta fallida del POS (9/11/2026) y varios no
+     entran en un renglón ("No le gustaron los productos"): se parten en dos,
+     alineados a la izquierda junto al ícono y con el renglón apretado, para
+     que dos renglones midan casi lo mismo que uno. */
   .chips-motivo .chip {
     justify-content: flex-start;
+    text-align: left;
+    line-height: 1.2;
     border-radius: var(--r-sm);
     min-height: 48px;
     padding: 10px 12px;
@@ -582,9 +586,9 @@
     #paso2 { grid-column: 2; grid-row: 1; }
     #paso3 { grid-column: 1 / -1; grid-row: 2; }
 
-    /* Tres y tres. Seis en una fila sólo entran cuando el bloque se lleva la
+    /* De a tres. Más en una fila sólo entran cuando el bloque se lleva la
        pantalla entera, y acá comparte con la columna de números: a menos de
-       ~150px por chip, "Fue a comparar" se parte en dos renglones. */
+       ~150px por chip, los motivos largos se parten en dos renglones. */
     .chips-motivo { grid-template-columns: repeat(3, 1fr); }
 
     /* El botón no sigue al ancho de la página: 1000px de rojo es un
@@ -643,7 +647,7 @@
     #paso1 { grid-column: 1; grid-row: 1; }
     #paso2 { grid-column: 2; grid-row: 1; }
     #paso3 { grid-column: 3; grid-row: 1; }
-    /* Los seis motivos en dos columnas adentro de su tercio. */
+    /* Los ocho motivos en dos columnas adentro de su tercio: cuatro filas. */
     .chips-motivo { grid-template-columns: repeat(2, 1fr); }
 
     .paso { padding: 16px; }
@@ -765,7 +769,7 @@
     .paso-cab { margin-bottom: 10px; }
     .paso .campos { gap: 10px; }
     .paso input, .paso textarea { padding: 11px 13px; }
-    .chips-motivo .chip { min-height: 40px; }
+    .chips-motivo .chip { min-height: 40px; padding: 6px 10px; line-height: 1.15; }
     #paso3 textarea { min-height: 46px; }
     .campos-seguim { margin-top: 8px; padding-top: 8px; }
     .paso-cab { margin-bottom: 8px; }
@@ -792,13 +796,13 @@
     .equipo { padding: 10px 14px; }
     .eq-pie { margin-top: 6px; padding-top: 6px; }
 
-    /* El séptimo motivo —"No lo hacemos"— agrega una cuarta fila de chips
-       y con eso la página se pasaba 8px del alto de esta pantalla. Se
-       recuperan achicando el chip dos puntos y el aire uno: acá se usa con
-       mouse, no con el dedo, así que 36px de alto alcanzan. Medido:
-       666/658 antes, 655/658 después. */
+    /* Cuatro filas de chips, y en esta pantalla seis de los ocho motivos van
+       en dos renglones: con el chip de siempre la página se pasaba 44px
+       (9/11/2026). Medio punto menos de letra y casi sin aire arriba y
+       abajo: dos renglones miden lo mismo que uno (38px), y acá se usa con
+       mouse, no con el dedo. */
     .chips-motivo { gap: 5px; }
-    .chips-motivo .chip { min-height: 36px; }
+    .chips-motivo .chip { padding: 4px 9px; font-size: 13px; line-height: 1.12; gap: 7px; }
 
     .tablero-cab { display: none; }
     .paso-sub { display: none; }
@@ -1366,33 +1370,49 @@
            'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
   }
 
-  /* Cortos a propósito: entran en una línea en el celular, y sobre todo el
-     texto del botón es EXACTAMENTE lo que queda guardado y lo que después se
-     ve en el panel y en el Resumen.
+  /* Los mismos ocho motivos, con las mismas palabras y en el mismo orden que
+     la «Nueva venta fallida» del POS (los de BlueSoft): el vendedor aprende
+     una sola lista (9/11/2026, SQL 269). El texto del botón es EXACTAMENTE
+     lo que queda guardado y lo que después se ve en el panel y en
+     Estadísticas.
 
      Tienen que coincidir con el enum motivo_no_compra (ver schema.sql). Ya
      no es una lista que el backend revisa: es un TIPO, y la base rechaza el
-     registro entero si el texto no es uno de esos seis, exacto. */
+     registro entero si el texto no es uno de esos ocho, exacto. */
   var MOTIVOS = [
-    { v: 'Sin talle',
-      i: '<path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2"/>' },
-    { v: 'Sin stock',
+    /* Antes «Sin stock»: la prenda existe y no había acá. */
+    { v: 'No teníamos el producto',
       i: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>' },
-    /* Distinto de "Sin stock": ahí la prenda existe y no había acá; acá el
-       producto no se fabrica. Uno es del depósito y el otro de la fábrica,
-       y hasta hoy los dos caían en el mismo chip. El ícono es un círculo
-       tachado y no una caja, justamente para no parecerse al de stock. */
-    { v: 'No lo hacemos',
+    { v: 'No teníamos el talle',
+      i: '<path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2"/>' },
+    { v: 'Falta de color',
+      i: '<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7Z"/>' },
+    /* Antes «No lo hacemos»: el producto no se fabrica (el de la fábrica, no
+       el del depósito). El ícono es un círculo tachado y no una caja, para
+       no parecerse al de «No teníamos el producto». */
+    { v: 'Falta de tipo de producto',
       i: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>' },
-    { v: 'Precio',
+    { v: 'Por precio',
       i: '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2c0 .5.2 1 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/>' },
-    { v: 'No le gustó',
+    { v: 'No le gustaron los productos',
       i: '<circle cx="12" cy="12" r="10"/><path d="M16 16s-1.5-2-4-2-4 2-4 2M9 9h.01M15 9h.01"/>' },
-    { v: 'Fue a comparar',
-      i: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>' },
-    { v: 'Otro',
+    { v: 'Entró a mirar',
+      i: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' },
+    { v: 'Otro motivo',
       i: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>' }
   ];
+  var MOTIVO_TIPO = 'Falta de tipo de producto';
+
+  /* Los nombres de antes del 9/11/2026. Lo cargado antes en este celular
+     («lo último» para corregir) puede traer uno de estos: se muestra con el
+     nombre nuevo. La base hace lo mismo (motivo_nc, SQL 269) con lo que
+     llegue de una compu que todavía no se actualizó o de la fila sin señal. */
+  var MOTIVO_ANTES = {
+    'Sin stock': 'No teníamos el producto', 'Sin talle': 'No teníamos el talle',
+    'No lo hacemos': MOTIVO_TIPO, 'Precio': 'Por precio', 'No le gustó': 'No le gustaron los productos',
+    'Fue a comparar': 'Entró a mirar', 'Otro': 'Otro motivo'
+  };
+  function motivoDeHoy(v) { return MOTIVO_ANTES[v] || v || ''; }
 
   /* En dos filas a propósito. Once chips en una sola tira obligaban a barrer
      todo el renglón para encontrar el talle: las letras y los números son dos
@@ -1414,7 +1434,7 @@
   /* Sube a mano al publicar. Cuando un vendedor dice "a mí no me anda",
      esto dice qué versión tiene ESE celular: la app es PWA y puede quedar
      una vieja cacheada. */
-  var VERSION = '2026.10.08';
+  var VERSION = '2026.11.09';
 
   var local = '', motivo = '', talles = [];
   /* El producto del catálogo, o null si se escribió a mano. Lo segundo NO es
@@ -1455,7 +1475,7 @@
   /**
    * El ejemplo del campo Producto cambia con el motivo.
    *
-   * Con 'No lo hacemos' no se está anotando una prenda del catálogo: se está
+   * Con 'Falta de tipo de producto' no se está anotando una prenda del catálogo: se está
    * anotando QUÉ pide la gente que VDH no fabrica, y eso sólo sirve si todos
    * lo escriben igual. Un ejemplo de una palabra es lo único que se puede
    * hacer hasta que estén los chips de rubro, que es lo que de verdad lo
@@ -1465,7 +1485,7 @@
   /* Se llama una vez al arrancar, junto con el resto del formulario. */
   function pistaProducto() {
     var campo = $('f_producto');
-    var noHacemos = motivo === 'No lo hacemos';
+    var noHacemos = motivo === MOTIVO_TIPO;
     campo.placeholder = noHacemos ? 'Una palabra: chaleco, buzo, sweater…'
                                   : 'Buscá o escaneá la etiqueta';
     $('lblProducto').textContent = noHacemos ? 'Qué te pidieron' : 'Producto';
@@ -2707,7 +2727,7 @@
       var d = u.datos;
       /* El renglón de abajo es el que deja ver el error sin abrir nada: casi
          siempre lo que está mal es el producto o el talle. */
-      var que = [d.producto, d.talle, d.motivo].filter(function (x) { return x; }).join(' · ');
+      var que = [d.producto, d.talle, motivoDeHoy(d.motivo)].filter(function (x) { return x; }).join(' · ');
       return '<div class="ult">' +
         '<span class="ult-quien">' + esc(d.nombre || 'Sin nombre') + ' · ' + esc(d.whatsapp || '') + '</span>' +
         '<span class="ult-cuando">' + esc(haceCuanto(u.cuando)) + '</span>' +
@@ -2750,7 +2770,7 @@
     talles = (d.talle || '').split(' / ').filter(function (t) { return t; });
     pintarTalles();
 
-    motivo = d.motivo || '';
+    motivo = motivoDeHoy(d.motivo);
     pistaProducto();
     Array.prototype.forEach.call($('chipsMotivo').children, function (b) {
       b.classList.toggle('sel', b.dataset.v === motivo);

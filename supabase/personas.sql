@@ -88,7 +88,7 @@ begin
                          talle, obs, motivo, producto_codigo, color, cargado_por)
   values (trim(p_sucursal), trim(p_vendedor), p_whatsapp, p_nombre, p_mail,
           p_producto, p_talle, p_obs,
-          nullif(p_motivo, '')::motivo_no_compra,
+          motivo_nc(p_motivo),            -- SQL 269: traduce los nombres de antes
           nullif(trim(coalesce(p_producto_codigo, '')), ''),
           nullif(trim(coalesce(p_color, '')), ''),
           orden_yo_id())
