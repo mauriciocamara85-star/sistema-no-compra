@@ -95,7 +95,12 @@ export function esquemaCaja(tipo: TipoFoto) {
               anulaciones: numeroONulo("Lo anulado en ese cierre (en Payway o Sistema POS: el monto de «An» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
               devoluciones: numeroONulo("Lo devuelto en ese cierre (en Payway o Sistema POS: el monto de «Dv» en TOTALES EN PESOS); 0 si no hay o figura en $ 0"),
               // (8/11, Parque Brown 7/11 y 8/11) La pantalla del Getnet no tiene total general: la IA anota cada sección
-              // y el código las suma (pantallaGetnet).
+              // y el código las suma (pantallaGetnet). Con una sola sección a la vista la IA la tomaba como el total
+              // ($ 1.415.550, sólo el crédito): la pregunta directa va aparte (es un booleano: no suma anyOf).
+              pantalla_getnet: {
+                type: "boolean",
+                description: "true si este posnet se ve en la pantalla «Reportes totales» del Getnet (la del botón rojo «Imprimir» abajo), aunque se vea una sola sección; false si es un ticket impreso u otro posnet",
+              },
               secciones: {
                 type: "array",
                 description: "SÓLO en la pantalla «Reportes totales» del Getnet (no en un ticket impreso ni en otro posnet): cada sección que se ve, de arriba a abajo. Vacío en cualquier otro caso",
@@ -110,7 +115,7 @@ export function esquemaCaja(tipo: TipoFoto) {
                 },
               },
             },
-            required: ["nombre", "total", "anulaciones", "devoluciones", "secciones"],
+            required: ["nombre", "total", "anulaciones", "devoluciones", "pantalla_getnet", "secciones"],
             additionalProperties: false,
           },
         },
@@ -151,8 +156,8 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 ${tipo === "sistema" ? `- Arriba, en «CAJA», dice qué caja es: copialo en "caja". Tiene que ser la caja de ventas: la «Caja Fuerte» es otra pantalla.
 ` : ""}${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son el mismo cierre (el mismo terminal y el mismo número de lote, por ejemplo el original y el «DUPLICADO»), va una sola vez. Dos tickets del mismo terminal con distinto número de lote son dos cierres distintos: van los dos, cada uno con su total.
 - En cada posnet, el total son las compras tal como figuran, sin restar nada. Si el cierre trae anulaciones («An») o devoluciones («Dv») con monto, anotalas aparte en "anulaciones" y "devoluciones" (0 si no hay): no las restes, la cuenta la hace el sistema.
-- La pantalla «Reportes totales» del Getnet (el posnet rojo) NO tiene un total general: cada sección («Ventas de Crédito», «Ventas de Débito», «Operaciones de QR PCT», «Devoluciones») trae su propio «Importe total», y ninguno de ellos es el total del posnet. En esa pantalla anotá en "secciones" cada sección que se ve, de arriba a abajo, con su título tal como aparece ("" si el título quedó fuera de la foto) y su «Importe total» (null si no se ve). «Devoluciones» va aunque no se vea su importe. El total de ese posnet va en null, y anulaciones y devoluciones en 0: la cuenta la hace el sistema. En esa pantalla, lo principal que tiene que leerse son esos «Importe total».
-- En el ticket impreso del Getnet («Consulta de Totales») sí vale el TOTAL GENERAL, y "secciones" va vacío. En cualquier otro posnet, "secciones" va vacío.
+- La pantalla «Reportes totales» del Getnet (el posnet rojo) NO tiene un total general: cada sección («Ventas de Crédito», «Ventas de Débito», «Operaciones de QR PCT», «Devoluciones») trae su propio «Importe total», y ninguno de ellos es el total del posnet, ni siquiera cuando se ve una sola sección con su «Importe total» justo arriba del botón «Imprimir» (abajo siguen las otras). En esa pantalla poné "pantalla_getnet" = true y anotá en "secciones" cada sección que se ve, de arriba a abajo, con su título tal como aparece ("" si el título quedó fuera de la foto) y su «Importe total» (null si no se ve). «Devoluciones» va aunque no se vea su importe. El total de ese posnet va en null, y anulaciones y devoluciones en 0: la cuenta la hace el sistema. En esa pantalla, lo principal que tiene que leerse son esos «Importe total».
+- En el ticket impreso del Getnet («Consulta de Totales») sí vale el TOTAL GENERAL: "pantalla_getnet" = false y "secciones" vacío. Si en la foto están el ticket impreso y la pantalla del mismo Getnet, es un solo posnet: anotalo una vez, con el TOTAL GENERAL del ticket ("pantalla_getnet" = false), y no anotes la pantalla. En cualquier otro posnet (también la pantalla «Cierre de lote» del Payway), "pantalla_getnet" = false y "secciones" vacío.
 ` : ""}${tipo === "mp" ? `- Si se ve la lista de cobros, anotá cada uno en "operaciones", en el orden de la pantalla: la hora tal como aparece, el número de operación si se ve y el monto. Un renglón cortado por el borde de la foto va sólo si se leen la hora y el monto. No los sumes: la cuenta la hace el sistema.
 - En "operaciones" van sólo los cobros del día de la caja: si la lista separa los días («Hoy», «Ayer» o una fecha), los de otros días no van. "lista_cortada" = true sólo si pueden quedar cobros de ese día fuera de la foto (si abajo ya empiezan los de otro día, la lista del día está completa). Si no se ve de qué día son (ni «Hoy» ni una fecha), "lista_cortada" = true.
 ` : ""}${tipo === "mp" || tipo === "gocuotas" ? `- Si la pantalla dice que no hay cobros ni ventas (por ejemplo «No tenés ninguna venta»), la foto vale y el total es 0.
@@ -283,6 +288,8 @@ export function netoDelPosnet(p: Record<string, unknown> | null | undefined, r: 
   const nombre = typeof p?.nombre === "string" ? p.nombre.trim() : "";
   // (8/11) La pantalla «Reportes totales» del Getnet: las compras salen de sus secciones, no del total que puso la IA.
   const pantalla = pantallaGetnet(p?.secciones);
+  // La IA dice que es la pantalla pero no anotó secciones (o sólo totales de ticket): no se sabe si está entera.
+  if (!pantalla && p?.pantalla_getnet === true) return { nombre, total: null, pantalla: "incompleta", secciones: [] };
   if (pantalla && !pantalla.completa) return { nombre, total: null, pantalla: "incompleta", secciones: pantalla.secciones };
   const extra = pantalla ? { pantalla: "completa", secciones: pantalla.secciones } : {};
   const compras = pantalla ? pantalla.compras : aNumero(p?.total);

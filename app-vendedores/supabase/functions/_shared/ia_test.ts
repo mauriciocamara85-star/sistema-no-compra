@@ -520,7 +520,7 @@ Deno.test("caja: la foto de la Caja Fuerte no es la caja de ventas (7/11, Unicen
 
 Deno.test("caja: el lote vale neto, las compras menos lo anulado y lo devuelto (7/11, San Justo 6/11)", async () => {
   const lote = esquemaCaja("lote") as { properties: { posnets: { items: { required: string[] } } } };
-  igual(lote.properties.posnets.items.required, ["nombre", "total", "anulaciones", "devoluciones", "secciones"], "cada posnet pide lo anulado y lo devuelto (y las secciones del Getnet, 8/11)");
+  igual(lote.properties.posnets.items.required, ["nombre", "total", "anulaciones", "devoluciones", "pantalla_getnet", "secciones"], "cada posnet pide lo anulado y lo devuelto (y si es la pantalla del Getnet y sus secciones, 8/11)");
   igual(sistemaCaja("lote", "2026-11-06", "San Justo").includes("«An»"), true, "el pedido lo explica");
   const suma = (r: Record<string, unknown>) => (sumarPosnets(r), r);
   // La lectura de San Justo 6/11 con lo anulado aparte (el ticket: Co 006 $ 627.510, An 001 $ 71.400).
@@ -560,6 +560,8 @@ Deno.test("caja: el lote vale neto, las compras menos lo anulado y lo devuelto (
 Deno.test("caja: la pantalla del Getnet suma sus secciones y, si no se ve entera, pide el ticket (8/11, Parque Brown 7/11 y 8/11)", async () => {
   igual(sistemaCaja("lote", "2026-11-08", "Parque Brown").includes("«Reportes totales» del Getnet"), true, "el pedido explica la pantalla");
   igual(sistemaCaja("lote", "2026-11-08", "Parque Brown").includes("Consulta de Totales"), true, "y el ticket");
+  // (8/11, Unicenter 4/11) El ticket y la pantalla del mismo Getnet en una foto: vale el ticket (la pantalla sola no se ve entera).
+  igual(sistemaCaja("lote", "2026-11-04", "Unicenter").includes("están el ticket impreso y la pantalla del mismo Getnet"), true, "ticket y pantalla juntos: el ticket");
   igual(sistemaCaja("mp", "2026-11-08", "Parque Brown").includes("Reportes totales"), false, "Mercado Pago no");
   igual(MOTIVO_GETNET.split(/\s+/).length <= 12, true, "el porqué en 12 palabras como mucho");
   // (8/11, DOT) Los lotes 024 y 025 del mismo Payway: dos cierres. Dos de las tres lecturas dejaron afuera el 024.
@@ -588,6 +590,12 @@ Deno.test("caja: la pantalla del Getnet suma sus secciones y, si no se ve entera
     const r = suma({ foto_valida: true, motivo: null, total: 1415550, dudas: [], posnets: [{ nombre: "Getnet", total: null, anulaciones: 0, devoluciones: 0, secciones }] });
     igual([r.foto_valida, r.motivo, r.total], [false, MOTIVO_GETNET, null], `8/11, pantalla ${i + 1}: no vale y pide el ticket`);
   }
+  // La 1.ª del 8/11 tal como la leyó la IA en la prueba real: dijo que era la pantalla, pero sin secciones (una sola a la
+  // vista, con su «Importe total» arriba de «Imprimir»): no se sabe si está entera, así que tampoco vale.
+  const sinSecciones = suma({ foto_valida: true, motivo: null, total: 1415550, dudas: [], posnets: [{ nombre: "Getnet", total: 1415550, anulaciones: 0, devoluciones: 0, pantalla_getnet: true, secciones: [] }] });
+  igual([sinSecciones.foto_valida, sinSecciones.motivo, sinSecciones.total], [false, MOTIVO_GETNET, null], "8/11: «es la pantalla» sin secciones: no vale");
+  const payway = suma({ foto_valida: true, motivo: null, total: 211800, dudas: [], posnets: [{ nombre: "Payway", total: 211800, anulaciones: 0, devoluciones: 0, pantalla_getnet: false, secciones: [] }] });
+  igual([payway.foto_valida, payway.total], [true, 211800], "la pantalla del Payway: como siempre");
   // El ticket del 8/11 (TOTAL GENERAL $ 1.762.550) se lee como siempre.
   const ticket = suma({ foto_valida: true, motivo: null, total: 1762550, dudas: [], posnets: [{ nombre: "Getnet", total: 1762550, anulaciones: 0, devoluciones: 0, secciones: [] }] });
   igual([ticket.foto_valida, ticket.total], [true, 1762550], "el ticket del Getnet: el TOTAL GENERAL");
