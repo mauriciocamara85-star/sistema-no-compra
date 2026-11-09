@@ -2440,7 +2440,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; sacarA(); cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = aConsumidorFinal;
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -2527,12 +2527,24 @@
       pintar();
     };
     var sacar = caja.querySelector('#soSacar');
-    if (sacar) sacar.onclick = function () { soltarClub(); V.socio = null; cerrarVentana(); pintar(); };
-    caja.querySelector('#soFinal').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; sacarA(); cerrarVentana(); pintar(); };
+    if (sacar) sacar.onclick = aConsumidorFinal;
+    caja.querySelector('#soFinal').onclick = aConsumidorFinal;
     if (so) cargarClubSocio(caja, so);   // SQL 265
     caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
     caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
     caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
+  }
+  /* Sacar al cliente de la venta: vuelve a Consumidor final (el «Cliente Genérico» de BlueSoft), sin nombre, documento
+     ni socio. Mauricio (8/11): "cuando lo saqué, el cliente quedó con el nombre… si lo sacás, tendría que aparecer
+     directamente consumidor final". «Sacarlo de la venta» (el socio) borraba sólo el socio y dejaba su nombre. */
+  function aConsumidorFinal() {
+    soltarClub();
+    V.cliente = null;
+    V.socio = null;
+    V.cliente_id = null;
+    sacarA();
+    cerrarVentana();
+    pintar();
   }
   /** Lo elegido de la lupita ({cliente, socio}) pasa a la venta. */
   function tomarHallado(h) {
