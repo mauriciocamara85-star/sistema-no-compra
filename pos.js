@@ -1331,8 +1331,9 @@
   }
   function ventaNueva(antes) {
     var l = (antes && localMio(antes.local_id)) || localInicial();
+    /* 8/11: arranca en Efectivo, así que en X (ver letraPorForma). */
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
-             lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], puestas: {}, manuales: [],
+             lista_id: listaDe(l), letra: 'X', cliente: null, socio: null, lineas: [], puestas: {}, manuales: [],
              forma: 'efectivo', pago: {}, multiples: null, observaciones: '',
              deposito_id: null,     // SQL 252: null = el predeterminado (cada venta nueva arranca en él)
              cupon: null, cumple: null, premioPend: null };   // SQL 265: el Club en la venta
@@ -1349,6 +1350,18 @@
     return ventaNueva();
   }
   function guardarBorrador() { guardarJSON(K_BORRADOR, V); }
+  /** Mauricio (8/11, como BlueSoft): "si vos ponés tarjeta, se pasa a B automáticamente… si ponés efectivo, te aparece
+      en X". Al elegir la forma de pago, el comprobante se acomoda solo: Efectivo → X; cualquier otro medio → Factura B
+      (la X va sólo con efectivo). Después se puede volver a poner B a mano: "el cliente puede pedir la factura B, aunque
+      pague en efectivo". La factura A (un responsable inscripto) no se toca. letraMano = la eligió el vendedor en
+      «Comprobante»; la que pone la forma de pago no cuenta como elegida (un cliente con CUIT la pasa a A). */
+  function letraPorForma() {
+    if (V.letra === 'A') return;
+    V.letra = V.forma === 'efectivo' ? 'X' : 'B';
+    V.letraMano = false;
+  }
+  /** La A ya no va (se sacó el cliente o no tiene CUIT de inscripto): vuelve a lo que dice la forma de pago. */
+  function sacarA() { if (V.letra === 'A') { V.letra = 'B'; letraPorForma(); } }
 
   /* ── La cuenta del ticket ──────────────────────────────────────────────
      Las promos NO se aplican solas (Mauricio, 29/10: "que no aparezca
@@ -1694,9 +1707,9 @@
   function pagarConGc(r) {
     if (!V) return;
     if (V.lineas.some(function (l) { return l.giftcard; })) { avisar('err', 'Una Gift Card no se compra con otra Gift Card: sacá la que se vende o cobrá esta venta con otro medio.'); return; }
-    if (V.letra === 'X') { avisar('err', 'La X va sólo con efectivo: para cobrar con la ' + nombreGc(r) + ', elegí factura B.'); return; }
     V.forma = 'giftcard';
     V.multiples = null;
+    letraPorForma();   // 8/11: la X pasa sola a B
     V.pago = { gc: Object.assign({}, r, { ok: !motivoGc(r, 'pagar') }) };
     pintarPago();
     pintar();
@@ -1786,6 +1799,7 @@
     $('vLetra').onchange = function () {
       if (this.value === 'A' && !clienteParaA(V.cliente)) { this.value = V.letra; abrirCliente(true); return; }
       V.letra = this.value;
+      V.letraMano = true;   // 8/11: la eligió el vendedor (ver letraPorForma)
       /* La X va sólo con efectivo (como en BlueSoft: "X: en efectivo, sin factura"). */
       if (V.letra === 'X' && V.forma !== 'efectivo') {
         V.forma = 'efectivo';
@@ -1806,6 +1820,7 @@
       if (this.value === 'multiple') { this.value = V.forma; abrirMultiple(); return; }
       V.forma = this.value;
       V.multiples = null;
+      letraPorForma();   // 8/11: Efectivo → X, lo demás → B
       pintarPago();
       pintar();
       if (V.forma === 'giftcard' && $('vGc')) $('vGc').focus();   // SQL 200: lista para la pistola
@@ -1900,9 +1915,8 @@
     $('vLetra').value = V.letra;
     $('vCliente').innerHTML = (V.socio ? marcaClub(V.socio) : '') + '<span>' + esc(textoCliente(V.cliente)) + '</span>';
     $('vCliente').title = (V.socio ? 'Socio del Club ' + V.socio.nivel + ' · ' : '') + textoCliente(V.cliente);
+    /* 8/11: la forma de pago ya no se traba con la X: elegir otro medio la pasa sola a Factura B (letraPorForma). */
     $('vForma').value = V.forma;
-    $('vForma').disabled = V.letra === 'X';
-    $('vForma').title = V.letra === 'X' ? 'La X va sólo con efectivo' : '';
     $('tNeto').textContent = plata(c.neto);
     $('tDesc').textContent = c.descuento ? '−' + plata(c.descuento) : '$0';
     $('tCant').textContent = c.cantidad;
@@ -1980,7 +1994,7 @@
       (prem ? ' El premio le descuenta ' + miles(prem) + ' puntos.' : '') +
       (so.tiene ? ' <button type="button" class="pos-link" id="vClubVer">' + esc(so.tiene) + '</button>' : '') + '</span> ';
     $('vNota').innerHTML = club + (enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
-      V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo.' :
+      V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo: si el cliente pide factura, elegí «Factura B» en Comprobante.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
       (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : ''));
@@ -2424,7 +2438,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; sacarA(); cerrarVentana(); pintar(); };
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -2435,8 +2449,9 @@
         envio: envio,
         acepta: caja.querySelector('#clAcepta').checked
       };
-      /* Con la X elegida, un responsable inscripto no la pasa solo a factura A: la X la eligió el vendedor. */
-      var quiereA = paraA || V.letra === 'A' || (V.letra !== 'X' && x.condicion === 'responsable_inscripto');
+      /* Con la X elegida, un responsable inscripto no la pasa solo a factura A: la X la eligió el vendedor. La que puso
+         la forma de pago (8/11, letraPorForma), sí. */
+      var quiereA = paraA || V.letra === 'A' || (!(V.letra === 'X' && V.letraMano) && x.condicion === 'responsable_inscripto');
       var mal = '';
       if (x.doc && x.doc.length !== 11 && (x.doc.length < 7 || x.doc.length > 8)) mal = 'El CUIT tiene 11 números y el DNI, 7 u 8.';
       else if (quiereA && x.condicion === 'consumidor_final') mal = 'A un consumidor final se le hace factura B. Cambiá la condición o elegí Factura B.';
@@ -2448,7 +2463,7 @@
       if (!errorEn(caja, 'clError', mal)) return;
       V.cliente = x.nombre || x.doc || x.email || x.tel ? x : null;
       if (quiereA) V.letra = 'A';
-      else if (V.letra === 'A' && !clienteParaA(V.cliente)) V.letra = 'B';
+      else if (!clienteParaA(V.cliente)) sacarA();
       cerrarVentana();
       pintar();
     }
@@ -2511,7 +2526,7 @@
     };
     var sacar = caja.querySelector('#soSacar');
     if (sacar) sacar.onclick = function () { soltarClub(); V.socio = null; cerrarVentana(); pintar(); };
-    caja.querySelector('#soFinal').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#soFinal').onclick = function () { soltarClub(); V.cliente = null; V.socio = null; V.cliente_id = null; sacarA(); cerrarVentana(); pintar(); };
     if (so) cargarClubSocio(caja, so);   // SQL 265
     caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
     caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
@@ -2820,7 +2835,6 @@
 
   /* "Pago múltiple" de BlueSoft: varios medios en el mismo ticket. */
   function abrirMultiple() {
-    if (V.letra === 'X') { avisar('info', 'La X va sólo con efectivo.'); return; }
     /* Con varios medios no va la promo de un medio (el 10 % es pagando TODO en efectivo). */
     var c = cuenta(Object.assign({}, V, { forma: 'multiple' })), tot = c.subtotal;   // SQL 215: los montos van sin el interés
     if (!tot) { avisar('info', 'Primero cargá los productos.'); return; }
@@ -2938,6 +2952,7 @@
         return p;
       });
       V.forma = 'multiple';
+      letraPorForma();   // 8/11: la X pasa sola a B
       cerrarVentana();
       pintarPago();
       pintar();
@@ -5168,9 +5183,9 @@
     V.cliente = { nombre: c.nombre, doc: doc, condicion: c.condicion || 'consumidor_final', email: c.mail || antes.email || '',
                   tel: c.telefono || antes.tel || '', envio: antes.envio || '', acepta: !!antes.acepta };
     V.cliente_id = c.id;
-    if (V.letra === 'X') return;
+    if (V.letra === 'X' && V.letraMano) return;   // 8/11: la X que puso la forma de pago no frena la A
     if (clienteParaA(V.cliente)) V.letra = 'A';
-    else if (V.letra === 'A') V.letra = 'B';
+    else sacarA();
   }
 
   /* ════════════════════════════════════════════════════════════════════
