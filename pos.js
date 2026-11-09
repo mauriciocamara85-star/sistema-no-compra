@@ -1536,6 +1536,12 @@
     return [p];
   }
   function tipoTarjeta(t) { var x = TARJETAS.filter(function (y) { return y[0] === t; })[0]; return x ? x[1] : ''; }
+  /** Las opciones del desplegable «Tarjeta» (venta, cambio, pago múltiple y corregir el pago). Mauricio, 9/11: el «Elegí…»
+      no aparece en la lista, como en el Vendedor (opcionVacia); se ve en el campo hasta que se elige una. lista: [valor, texto]. */
+  function opcionesTarjeta(lista, actual) {
+    var hay = lista.some(function (o) { return String(o[0]) === String(actual || ''); });
+    return opcionVacia('Elegí…', !actual || !hay) + opciones(lista, actual);
+  }
   /* SQL 215: el interés de las cuotas (ver INTERES). total: el del ticket, sin el interés. */
   function reglaInteres(cuotas, total) { var r = INTERES[Number(cuotas)]; return r && total > 0 && (!r.desde || total < r.desde) ? r : null; }
   /** Lo que se suma por pagar monto en esas cuotas, redondeado al peso; sin: le sacaron el tilde (la excepción). */
@@ -2036,7 +2042,7 @@
       x.innerHTML = campo('c6', 'Recibido', '<input type="text" inputmode="decimal" data-plata id="' + pre + 'Recibido" placeholder="Opcional" value="' + plataCampo(p.recibido) + '">') +
         campo('c6 tk-vuelto', 'Vuelto', '<input type="text" id="' + pre + 'Vuelto" readonly>');
     } else if (X.forma === 'tarjeta') {
-      x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
+      x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta">' + opcionesTarjeta(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
         /* 6/11: en la venta, cada cuota con su interés («3 · 8 %», ver textoCuota); por eso Cuotas es más ancha que el Cupón.
            En el cambio no hay interés: sólo el número. */
         campo('c4', 'Cuotas', '<select id="' + pre + 'Cuotas">' + (cb ? opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) :
@@ -2898,7 +2904,7 @@
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="pmOk">Aceptar</button></div>', true);
     function fila(x, i) {
       var mas = x.medio === 'tarjeta'
-        ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), x.tarjeta) + '</select>') +
+        ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta">' + opcionesTarjeta(TARJETAS.map(function (t) { return [t[0], t[0]]; }), x.tarjeta) + '</select>') +
           campo('', 'Cuotas', '<select data-k="cuotas">' + opcionesCuotas(tot, x.cuotas || 1) + '</select>') +   // 6/11: con el % de cada una
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
           /* SQL 215: el interés de las cuotas, puesto; se saca para una excepción. */
@@ -3578,7 +3584,7 @@
       var tarjetas = TARJETAS.map(function (y) { return [y[0], y[0]]; });
       if (x.tarjeta && !TARJETAS.some(function (y) { return y[0] === x.tarjeta; })) tarjetas.push([x.tarjeta, x.tarjeta]);
       var mas = x.medio === 'tarjeta'
-        ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(tarjetas, x.tarjeta) + '</select>') +
+        ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta">' + opcionesTarjeta(tarjetas, x.tarjeta) + '</select>') +
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
           '<p class="cp-cuota">En 1 cuota</p></div>'
         : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
