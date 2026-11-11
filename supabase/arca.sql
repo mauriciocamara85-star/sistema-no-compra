@@ -353,13 +353,15 @@ notify pgrst, 'reload schema';
 --  · RIVADAVIA: punto de venta 34 (el de BlueSoft, de su factura B del 11/11) y el ARCA DE PRUEBA desde que se corre este
 --    SQL. Cada venta A o B que se guarde ahí le pide su factura al ARCA de prueba: SIN VALOR FISCAL. La factura que vale la
 --    sigue haciendo BlueSoft. Las ventas de antes no se tocan.
---  · Cambia cinco funciones para que el CAE de prueba no trabe nada:
+--  · Cambia seis funciones (cinco, para que el CAE de prueba no trabe nada):
 --      arca_factura_preparar     → las ventas normales de la sucursal habilitada, desde arca_desde (antes, sólo las de prueba).
 --      pos_inicio                → el POS sabe qué sucursal factura y desde cuándo.
 --      pos_iva_ventas            → el CAE de prueba NO aparece en el reporte IVA Ventas (no es una factura).
 --      pos_venta_pagos_corregir  → «Corregir el pago» sigue andando en una venta con CAE de prueba.
 --      pos_nc_hacer              → la nota de crédito de una venta con CAE de prueba sigue diciendo que la que vale se
 --                                  hace en BlueSoft.
+--      arca_factura_resultado    → la factura aprobada guarda también lo que lleva su PDF y el QR de ARCA (el CUIT que
+--                                  facturó, el documento del cliente, el importe y el domicilio del local).
 --
 -- NO borra nada. Se puede correr más de una vez. Se deshace con deshacer-276.sql. Corre entero o nada.
 
@@ -467,6 +469,54 @@ begin
     'pedido', jsonb_build_object('doc_tipo', v_dt, 'doc_nro', v_dn, 'condicion_iva', v_cond,
                                  'total', v.total, 'neto', v_neto, 'iva', v_iva,
                                  'alicuotas', jsonb_build_array(jsonb_build_object('id', 5, 'base', v_neto, 'importe', v_iva))));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.arca_factura_resultado(p_venta uuid, p_estado text, p_numero bigint, p_fecha text, p_cae text, p_cae_vence text, p_observaciones jsonb, p_errores jsonb, p_error text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c   arca_comprobantes;
+  v_f jsonb;
+  v_vence date;
+begin
+  if p_estado not in ('aprobado', 'rechazado', 'sin_respuesta') then raise exception 'El resultado no es válido.'; end if;
+  select * into c from arca_comprobantes where venta_id = p_venta for update;
+  if not found then raise exception 'Ese pedido a ARCA no existe.'; end if;
+  if c.estado = 'aprobado' then
+    return jsonb_build_object('ya', true, 'factura', (select v.factura from pos_ventas v where v.id = p_venta));
+  end if;
+  if p_estado = 'aprobado' then
+    if p_numero is null or coalesce(p_cae, '') !~ '^\d{14}$' or coalesce(p_cae_vence, '') !~ '^\d{8}$' then
+      raise exception 'ARCA aprobó la factura pero faltan el número o el CAE.';
+    end if;
+    v_vence := to_date(p_cae_vence, 'YYYYMMDD');
+    update arca_comprobantes
+       set estado = 'aprobado', numero = p_numero, fecha = p_fecha, cae = p_cae, cae_vence = v_vence,
+           observaciones = p_observaciones, errores = p_errores, error = null, actualizado = now()
+     where venta_id = p_venta;
+    v_f := jsonb_build_object('cae', p_cae, 'cae_vence', to_char(v_vence, 'YYYY-MM-DD'),
+                              'tipo', case c.tipo when 1 then 'A' else 'B' end, 'punto_venta', c.punto_venta, 'numero', p_numero,
+                              'fecha', p_fecha, 'ambiente', c.ambiente)
+           /* SQL 276: lo que llevan el PDF de la factura y el QR de ARCA: el CUIT que facturó, el documento y la condición del
+              cliente, el importe y el domicilio del local (el de los remitos de la Fábrica). */
+           || jsonb_strip_nulls(jsonb_build_object(
+                'cuit', c.pedido->>'cuit', 'doc_tipo', (c.pedido->>'doc_tipo')::int, 'doc_nro', c.pedido->>'doc_nro',
+                'condicion_iva', (c.pedido->>'condicion_iva')::int, 'importe', (c.pedido->>'total')::numeric,
+                'domicilio', (select e.direccion from pos_envio_locales e join pos_ventas x on x.local_id = e.local_id where x.id = p_venta),
+                'localidad', (select e.localidad from pos_envio_locales e join pos_ventas x on x.local_id = e.local_id where x.id = p_venta)));
+    update pos_ventas set factura = v_f where id = p_venta;
+    return jsonb_build_object('ok', true, 'factura', v_f);
+  end if;
+  update arca_comprobantes
+     set estado = p_estado,
+         numero = case when p_estado = 'sin_respuesta' then coalesce(p_numero, c.numero) end,   -- rechazada: el número no se usó
+         observaciones = p_observaciones, errores = p_errores,
+         error = left(coalesce(nullif(trim(p_error), ''), 'ARCA no aprobó la factura.'), 500), actualizado = now()
+   where venta_id = p_venta;
+  return jsonb_build_object('ok', false);
 end $function$;
 
 CREATE OR REPLACE FUNCTION public.pos_inicio()

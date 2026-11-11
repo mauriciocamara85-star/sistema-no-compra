@@ -3527,11 +3527,15 @@
       var corr = Object.prototype.hasOwnProperty.call(t, 'correcciones') ? (t.correcciones || []) : null;
       var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !facturaReal(t.factura) && puede('caja') && pagosACorregir(t).length > 0;
       var pideCae = !t.factura && !anulada && leTocaArca(t);   // ARCA (SQL 274 y 276)
-      dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
+      /* Como BlueSoft (11/11): con factura de ARCA, el ticket se llama por su número de ARCA («B-00021654») y el nuestro va en
+         «Referencia»; el recuadro de ARCA (el CAE y su vencimiento, o «Pedir el CAE») va arriba a la derecha. */
+      var fis = numFiscal(t.factura);
+      dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(fis || ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
           (anulada ? '<span class="pill pill-bad">' + (nota ? 'Anulada · ' + esc(refNota(nota)) : 'Anulada') + '</span>' : '<span class="pill pill-ok">Cobrada</span>') +
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
         (t.prueba ? '<div class="pos-cartel prueba">Es una venta de prueba: no cuenta en ningún total y se borra con «Borrar las pruebas».</div>' : '') +
-        '<div class="pos-ticket-datos">' +
+        '<div class="tk-cab"><div class="pos-ticket-datos">' +
+          (fis ? '<div><span>Referencia</span>' + esc(ref(t)) + '</div>' : '') +
           '<div><span>Fecha</span>' + esc(fechaHora(t.fecha)) +
             /* SQL 212: la que se hizo sin internet dice cuándo llegó a la base. */
             (t.sin_internet ? '<br><small class="tk-sin-red">Se hizo sin internet · llegó el ' + esc(fechaHora(t.sin_internet)) + '</small>' : '') + '</div>' +
@@ -3540,11 +3544,10 @@
           '<div><span>Cargó</span>' + esc(t.cargado_por_nombre || '—') + '</div>' +
           '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
           '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
-          '<div><span>ARCA</span>' + arcaTicket(t, anulada) + '</div>' +
           /* SQL 171: el socio del Club y sus puntos. */
           (t.socio ? '<div><span>Club</span>' + (t.socio_nivel ? esc(t.socio_nivel) + ' · ' : '') + 'tarjeta ' + esc(t.socio) + '<br>' + miles(Number(t.socio_puntos) || 0) + ' puntos ' +
             (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar (se cargan en Cobrar)') + '</div>' : '') +
-        '</div>' +
+        '</div>' + arcaBloque(t, anulada) + '</div>' +
         (pideCae ? '<div class="pos-error" id="tkCaeError"></div>' : '') +
         productosTicket(t) +
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Pagos</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
@@ -3564,6 +3567,7 @@
         '<div class="pos-pie">' + izq +
           (corrige ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>' : '') +
           /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
+          (t.factura && t.factura.cae ? '<button type="button" class="btn btn-sec btn-chico" id="tkPdf" title="La factura en una hoja A4, como la de BlueSoft: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
           (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
           (volver ? '<button type="button" class="btn btn-sec btn-chico" id="tkVolver">‹ Volver</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
@@ -3592,6 +3596,8 @@
       if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar, false, volver); };   // SQL 260: desde el cierre, vuelve a la lista
       var nb = dentro.querySelector('#tkNotaBtn');
       if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
+      var pd = dentro.querySelector('#tkPdf');
+      if (pd) pd.onclick = function () { facturaPdf(t); };
       var du = dentro.querySelector('#tkDuplicar');
       if (du) du.onclick = function () { duplicarVenta(t); };
       var co = dentro.querySelector('#tkCorregir');
@@ -3641,6 +3647,133 @@
     return 'Sin CAE todavía<br><button type="button" class="pos-link" id="tkCae" title="' + (deP ? 'Se la pide al ARCA de prueba (sin valor fiscal)' : 'Se la pide a ARCA') +
       '">Pedir el CAE</button>';
   }
+
+  /** El recuadro de ARCA del ticket, arriba a la derecha como en BlueSoft (11/11): con CAE, «Comprobante autorizado» (o «de
+      prueba»), el comprobante, el CAE y su vencimiento; si no, lo de arcaTicket (sin CAE y «Pedir el CAE», la hace BlueSoft, la X). */
+  function arcaBloque(t, anulada) {
+    var f = t.factura, con = !!(f && f.cae), deP = con && f.ambiente === 'homologacion';
+    var cuerpo = con ?
+      '<i>' + (deP ? 'Comprobante de prueba' : 'Comprobante autorizado') + '</i>' +
+      (f.numero ? '<span class="tk-arca-comp">' + esc(compArca(f)) + '</span>' : '') +
+      '<span>CAE: ' + esc(f.cae) + '</span>' + (f.cae_vence ? '<span>Vence: ' + esc(fechaCae(f.cae_vence)) + '</span>' : '') +
+      (deP ? '<small>ARCA de prueba: sin valor fiscal</small>' : '') :
+      '<span>' + arcaTicket(t, anulada) + '</span>';
+    return '<div class="tk-arca' + (con ? ' con' : '') + '"><b class="tk-arca-marca">ARCA</b>' + cuerpo + '</div>';
+  }
+  /** El número de ARCA como lo muestra BlueSoft en el ticket: «B-00021654». Sin CAE, vacío. */
+  function numFiscal(f) {
+    if (!f || !f.cae || !f.numero) return '';
+    var n = String(f.numero).replace(/\D/g, '');
+    return (f.tipo || '') + '-' + ('0000000' + n).slice(-Math.max(8, n.length));
+  }
+
+  /* ── La factura en PDF (11/11, «como BlueSoft») ──
+     La hoja A4 con los mismos datos en los mismos lugares que la que manda BlueSoft por mail (POS Capturas blue → «Factura B
+     de blue soft enviada por mail»): la empresa y el local, la letra con su código, el punto de venta y el número, el cliente,
+     los productos, el «IVA contenido» de la Ley 27.743 (en la B; en la A, el neto y el IVA), los totales, ARCA con el CAE y
+     el QR. El QR es el de la RG 4892, igual al de BlueSoft (leído de su PDF): https://www.afip.gob.ar/fe/qr/?p= y el JSON en
+     base64. La web es vdh.com.ar (él, 11/11: «vanderholl» es el nombre anterior). La del ARCA de prueba lleva una franja
+     «sin valor fiscal». Se abre «Imprimir»: de ahí, «Guardar como PDF» (Chrome le pone de nombre el título de la hoja). */
+  var EMPRESA = { razon: 'Black Fish SRL', cuit: '30715597523', iibb: '30-71559752-3', inicio: '14/03/2017', iva: 'Responsable Inscripto', web: 'vdh.com.ar' };
+  /** El documento del cliente como lo mandó a ARCA (SQL 276 lo guarda en la factura) o, si no está, con la misma regla. */
+  function docArca(t, f) {
+    if (f && f.doc_tipo) return { tipo: Number(f.doc_tipo), nro: String(f.doc_nro || '0') };
+    var d = String(t.cliente_doc || '').replace(/\D/g, '');
+    return d.length === 11 ? { tipo: 80, nro: d } : d.length >= 7 && d.length <= 8 ? { tipo: 96, nro: d } : { tipo: 99, nro: '0' };
+  }
+  /** '20261111' (como lo da ARCA) → '2026-11-11'. */
+  function fechaArca(s) { s = String(s || '').replace(/\D/g, ''); return s.length === 8 ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6) : ''; }
+  /** El enlace del QR de ARCA. Sin el CUIT que facturó (las de antes del SQL 276), no hay QR. */
+  function qrArca(t, f) {
+    var e = String(f.cuit || '').replace(/\D/g, ''), d = docArca(t, f), fe = fechaArca(f.fecha);
+    if (e.length !== 11 || !fe || !f.numero || !/^\d{14}$/.test(String(f.cae))) return '';
+    var j = { ver: 1, fecha: fe, cuit: Number(e), ptoVta: Number(f.punto_venta), tipoCmp: f.tipo === 'A' ? 1 : 6, nroCmp: Number(f.numero),
+              importe: Number(f.importe != null ? f.importe : t.total), moneda: 'PES', ctz: 1, tipoDocRec: d.tipo, nroDocRec: Number(d.nro) || 0,
+              tipoCodAut: 'E', codAut: Number(f.cae) };
+    return 'https://www.afip.gob.ar/fe/qr/?p=' + btoa(JSON.stringify(j));
+  }
+  function facturaPdf(t) {
+    var f = t.factura;
+    if (!f || !f.cae) return;
+    var url = qrArca(t, f);
+    (url ? conQr() : Promise.reject(new Error('sin QR'))).then(function (qrcode) {
+      var q = qrcode(0, 'M');
+      q.addData(url);
+      q.make();
+      return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+    }).catch(function () { return ''; }).then(function (svg) {
+      imprimirHoja('Factura ' + compArca(f), hojaFactura(t, f, svg, url), CSS_FACTURA);
+    });
+  }
+  function hojaFactura(t, f, svg, url) {
+    var n2 = function (x) { return (Number(x) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var deP = f.ambiente === 'homologacion', esA = f.tipo === 'A';
+    var fe = fechaArca(f.fecha).split('-').reverse().join('/');
+    var pv = ('000' + String(f.punto_venta || '').replace(/\D/g, '')).slice(-4), nro = ('0000000' + String(f.numero)).slice(-8);
+    var d = docArca(t, f);
+    var docTxt = d.tipo === 80 ? 'CUIT: ' + cuit(d.nro) : d.tipo === 96 ? 'DNI: ' + d.nro : 'CUIT:';
+    var medios = (t.pagos || []).map(function (g) { return g.medio; }).filter(function (m, i, a) { return a.indexOf(m) === i; });
+    var forma = medios.length > 1 ? 'Múltiple' : medios.length ? (MEDIOS_VENTA[medios[0]] || medios[0]) : '';
+    var total = Number(t.total) || 0, neto = Math.round(total / 1.21 * 100) / 100, iva = Math.round((total - neto) * 100) / 100;
+    var filas = (t.items || []).map(function (i) {
+      return '<tr><td class="n">' + n2(i.cantidad) + '</td><td>' + esc(i.codigo || '') + '</td><td>' + esc(i.descripcion || '') + '</td><td>UN</td>' +
+        '<td class="n">' + n2(i.precio) + '</td><td class="n">' + n2(i.total) + '</td></tr>';
+    }).join('') + (t.descuentos_detalle || []).map(function (x) {
+      return '<tr><td></td><td></td><td>' + esc(x.descripcion) + '</td><td></td><td></td><td class="n">-' + n2(x.monto) + '</td></tr>';
+    }).join('') + (Number(t.interes) ? '<tr><td></td><td></td><td>' + esc(t.interes_nota || 'Interés de las cuotas') + '</td><td></td><td></td><td class="n">' +
+      n2(t.interes) + '</td></tr>' : '');
+    return '<div class="fa">' +
+      (deP ? '<div class="fa-prueba">COMPROBANTE DE PRUEBA · lo aprobó el ARCA de prueba (homologación) · SIN VALOR FISCAL</div>' : '') +
+      '<div class="fa-cab">' +
+        '<div class="fa-emp"><div class="fa-razon">' + esc(EMPRESA.razon) + '</div>' +
+          (f.domicilio ? '<div>' + esc(f.domicilio) + '</div>' : '') + (f.localidad ? '<div>' + esc(f.localidad) + '</div>' : '') +
+          '<div>' + esc(EMPRESA.web) + '</div><div>Condición frente al IVA: ' + esc(EMPRESA.iva) + '</div></div>' +
+        '<div class="fa-letra"><b>' + esc(f.tipo || '') + '</b><small>COD. ' + (esA ? '001' : '006') + '</small></div>' +
+        '<div class="fa-comp"><div class="fa-tit">Factura</div><div>Punto de Venta: ' + pv + '</div>' +
+          '<div class="fa-num">Número Comprobante: ' + nro + '</div>' +
+          '<div class="fa-dos"><span>Fecha: ' + fe + '</span><span>CUIT: ' + cuit(EMPRESA.cuit) + '</span></div>' +
+          '<div>Ingresos Brutos: ' + esc(EMPRESA.iibb) + '</div><div>Inicio de Actividades: ' + esc(EMPRESA.inicio) + '</div></div>' +
+      '</div>' +
+      '<div class="fa-cli"><div><div>Cliente: ' + esc(t.cliente_nombre || 'Consumidor final') + '</div><div>' + esc(docTxt) + '</div></div>' +
+        '<div><div>Condición frente al IVA: ' + esc(CONDICION[t.cliente_condicion] || 'Consumidor final') + '</div><div>Forma de Pago: ' + esc(forma) + '</div>' +
+        '<div>Condición de Pago: No Aplica</div></div></div>' +
+      '<div class="fa-vto"><span>Fecha de vencimiento: ' + fe + '</span></div>' +
+      '<table class="fa-items"><thead><tr><th class="n">Cantidad</th><th>Producto</th><th>Descripción</th><th>UM</th><th class="n">Precio</th><th class="n">Total</th></tr></thead>' +
+        '<tbody>' + filas + '</tbody></table>' +
+      '<div class="fa-abajo">' +
+        (esA ? '<div></div>' : '<div class="fa-ley"><u>Régimen de Transparencia Fiscal al Consumidor (Ley 27.743):</u><div>IVA contenido: $ ' + n2(iva) + '</div></div>') +
+        '<div class="fa-tot">' + (esA ? '<div><span>Neto gravado: $</span><b>' + n2(neto) + '</b></div><div><span>IVA 21 %: $</span><b>' + n2(iva) + '</b></div>' :
+          '<div><span>Neto: $</span><b>' + n2(total) + '</b></div>') +
+          '<div class="fa-total"><span>Total: $</span><b>' + n2(total) + '</b></div></div>' +
+      '</div>' +
+      '<div class="fa-arca"><div><div class="fa-arca-marca">ARCA</div><div class="fa-arca-sub">AGENCIA DE RECAUDACIÓN Y CONTROL ADUANERO</div></div>' +
+        '<div class="fa-arca-txt"><i>' + (deP ? 'Comprobante de prueba (sin valor fiscal)' : 'Comprobante Autorizado') + '</i>' +
+          '<div>CAE: ' + esc(f.cae) + ' &nbsp; VENCIMIENTO: ' + esc(fechaCae(f.cae_vence)) + '</div></div>' +
+        '<div class="fa-qr"' + (url ? ' data-qr="' + esc(url) + '"' : '') + '>' + (svg || '') + '</div></div>' +
+    '</div>';
+  }
+  var CSS_FACTURA = '.fa { display: flex; flex-direction: column; min-height: 268mm; font-size: 9.5pt; line-height: 1.45; }' +
+    '.fa-prueba { border: 1.5px dashed #000; padding: 2mm 3mm; margin-bottom: 3mm; font-weight: 700; text-align: center; letter-spacing: .03em; }' +
+    '.fa-cab { position: relative; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #000; }' +
+    '.fa-emp { padding: 3mm 12mm 3mm 4mm; } .fa-comp { padding: 3mm 4mm 3mm 12mm; border-left: 1px solid #000; }' +
+    '.fa-razon { font-size: 19pt; margin-bottom: 2mm; line-height: 1.15; } .fa-tit { font-size: 17pt; font-weight: 700; line-height: 1.15; }' +
+    '.fa-num { font-size: 12pt; font-weight: 700; } .fa-dos { display: flex; justify-content: space-between; gap: 4mm; }' +
+    '.fa-letra { position: absolute; left: 50%; top: -1px; transform: translateX(-50%); width: 14mm; height: 14mm; border: 1px solid #000; background: #fff;' +
+    ' display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }' +
+    '.fa-letra b { font-size: 20pt; } .fa-letra small { font-size: 5.5pt; margin-top: 1mm; }' +
+    '.fa-cli { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; padding: 6mm 4mm 2mm; line-height: 1.7; }' +
+    '.fa-vto { display: flex; justify-content: flex-end; margin: 1mm 0 5mm; } .fa-vto span { border: 1px solid #000; padding: 2mm 5mm; }' +
+    '.fa-items th { font-size: 8pt; text-transform: none; letter-spacing: 0; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1mm 2mm; }' +
+    '.fa-items td { border-bottom: 0; padding: .6mm 2mm; font-size: 8.5pt; }' +
+    '.fa-abajo { margin-top: auto; display: grid; grid-template-columns: 1fr 72mm; gap: 8mm; align-items: end; padding-top: 6mm; }' +
+    '.fa-ley { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 2mm 0; font-size: 8.5pt; min-height: 12mm; }' +
+    '.fa-tot > div { display: flex; justify-content: space-between; padding: 1mm 0; } .fa-tot b { font-weight: 400; }' +
+    '.fa-total { border-top: 1px solid #000; margin-top: 3mm; padding-top: 2mm !important; font-size: 14pt; }' +
+    '.fa-arca { display: grid; grid-template-columns: 52mm 1fr 30mm; gap: 5mm; align-items: center; margin-top: 4mm; }' +
+    '.fa-arca-marca { font: 900 30pt/1 "Arial Black", Arial, sans-serif; color: #1f2a5a; letter-spacing: .02em; }' +
+    '.fa-arca-sub { font-size: 5pt; font-weight: 700; color: #1f2a5a; margin-top: 1mm; }' +
+    '.fa-arca-txt i { display: block; font-size: 13pt; margin-bottom: 2mm; } .fa-arca-txt div { font-size: 8pt; }' +
+    '.fa-qr svg { display: block; width: 30mm; height: 30mm; }';
 
   /* ════════════════════════════════════════════════════════════════════
      CORREGIR EL PAGO (SQL 248)

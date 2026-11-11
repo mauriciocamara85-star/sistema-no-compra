@@ -604,6 +604,16 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 
 /* El ticket guardado. */
 .pos-ticket-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin: 10px 0 12px; }
+/* El recuadro de ARCA del ticket, arriba a la derecha como en BlueSoft (11/11): el CAE y su vencimiento, o «Pedir el CAE». */
+.tk-cab { display: flex; gap: 16px; align-items: flex-start; }
+.tk-cab > .pos-ticket-datos { flex: 1; min-width: 0; }
+.tk-arca { flex: 0 0 220px; display: grid; gap: 2px; margin: 10px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 13px; color: var(--txt-2); text-align: right; }
+.tk-arca-marca { font: 900 24px/1 'Arial Black', Arial, sans-serif; color: #1f2a5a; letter-spacing: .02em; margin-bottom: 2px; }
+.tk-arca i { color: var(--txt); font-size: 14px; }
+.tk-arca .tk-arca-comp { color: var(--txt); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tk-arca.con { background: var(--ok-soft); border-color: var(--ok-borde); }
+@media (max-width: 700px) { .tk-cab { flex-direction: column; gap: 0; } .tk-arca { flex: none; width: 100%; text-align: left; margin-top: 0; } }
 .pos-ticket-datos div { font-size: 13.5px; }
 .pos-ticket-datos span { display: block; font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
 .pos-ticket-tot { display: grid; justify-content: end; gap: 3px; margin-top: 10px; font-size: 14px; text-align: right; }

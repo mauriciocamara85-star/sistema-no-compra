@@ -13,7 +13,7 @@
  * Por ahora (SQL 274) sólo las ventas de PRUEBA, contra el ARCA de prueba. La base es la que decide.
  */
 // deno-lint-ignore-file no-explicit-any
-import { Ambiente, ArcaError, base, comoPersona, consultar, dormir, hoyArca, pedirCae, ultimoNumero } from './arca.ts';
+import { Ambiente, ArcaError, base, comoPersona, consultar, credencial, dormir, hoyArca, pedirCae, ultimoNumero } from './arca.ts';
 
 export type Respuesta =
   | { ok: true; factura: Record<string, unknown>; ya?: boolean }
@@ -44,12 +44,14 @@ export async function facturar(token: string, ventaId: string): Promise<Respuest
     throw new ArcaError('base', 'La base contestó algo que no se entiende al preparar la factura.');
   }
 
-  /* 2. El turno del punto de venta: si otro está pidiendo, se espera (hasta medio minuto). */
+  /* 2. El turno del punto de venta: si otro está pidiendo, se espera (hasta medio minuto).
+        Con el pedido va el CUIT que factura (el del certificado): la base lo guarda en la factura para su PDF y el QR (SQL 276). */
+  const pedidoTurno = { ...pedido, cuit: credencial(amb).cuit };
   let turno: any;
   const hasta = Date.now() + 30_000;
   for (;;) {
     turno = await base('arca_factura_turno', {
-      p_venta: ventaId, p_ambiente: amb, p_punto_venta: pv, p_tipo: tipo, p_pedido: pedido, p_persona: prep.persona ?? null,
+      p_venta: ventaId, p_ambiente: amb, p_punto_venta: pv, p_tipo: tipo, p_pedido: pedidoTurno, p_persona: prep.persona ?? null,
     });
     if (turno?.ya) return { ok: true, factura: turno.factura, ya: true };
     if (!turno?.esperar) break;
