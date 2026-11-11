@@ -3137,8 +3137,9 @@
       }
       ventanaHecho({ titulo: nombreVenta(S.ultimo) + ' guardada', datos: [S.ultimo.local, plata(c.total)], tono: S.ultimo.serie === 'prueba' ? 'prueba' : '',
         notas: [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], factura: r.factura, facturaError: r.factura_error,
-        /* ARCA, paso 2 (SQL 274): por ahora sólo la de PRUEBA A o B, contra el ARCA de prueba. La base decide. */
-        arca: !r.factura && p.prueba && (p.letra === 'A' || p.letra === 'B') ? r.id : null });
+        /* ARCA: la A o B de prueba (SQL 274) y la normal de la sucursal que factura (SQL 276: Rivadavia, ARCA de prueba).
+           La base decide. */
+        arca: !r.factura && leTocaArca({ letra: p.letra, prueba: p.prueba, local_id: p.local_id }) ? r.id : null });
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -3201,6 +3202,22 @@
       fError ? '<div class="pos-cartel mal"><b>No se pudo crear la factura electrónica.</b> ' + esc(conPunto(fError)) +
         ' La venta quedó guardada, todavía sin CAE.' + (otraVez ? ' Se pide de nuevo desde el ticket, con «Pedir el CAE».' : '') + '</div>' : '';
   }
+  /** SQL 276: ¿la sucursal hace la factura electrónica? { ambiente ('homologacion' = el ARCA de prueba | 'produccion'), desde }
+      o null (la hace BlueSoft). Lo dice Gestión → Sucursales (pos_sucursales.arca y arca_desde, por pos_inicio). */
+  function arcaSucursal(id) {
+    var l = localDe(id);
+    return l && l.arca ? { ambiente: l.arca, desde: l.arca_desde ? new Date(l.arca_desde) : null } : null;
+  }
+  /** ¿A esta venta le toca la factura electrónica? La A o B de prueba (siempre, contra el ARCA de prueba) o la de una
+      sucursal que factura, hecha desde que empezó (lo de antes lo facturó BlueSoft). v: { letra, prueba, local_id, fecha }. */
+  function leTocaArca(v) {
+    if (!v || (v.letra !== 'A' && v.letra !== 'B')) return false;
+    if (v.prueba) return true;
+    var a = arcaSucursal(v.local_id);
+    return !!a && (!a.desde || !v.fecha || new Date(v.fecha) >= a.desde);
+  }
+  /** ¿La factura vale? La del ARCA de prueba no: no frena «Corregir el pago» y la nota que vale se hace en BlueSoft. */
+  function facturaReal(f) { return !!f && f.ambiente !== 'homologacion'; }
   /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
   function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
   /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
@@ -3508,8 +3525,8 @@
         t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkNotaBtn" title="Anula el ticket entero, como «Generar nota crédito» de BlueSoft">Nota de crédito</button>';
       /* SQL 248: «Corregir el pago» (se cobró con un medio y se cargó con otro), mientras la venta no entró en un cierre. Sin el 248, no está. */
       var corr = Object.prototype.hasOwnProperty.call(t, 'correcciones') ? (t.correcciones || []) : null;
-      var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !t.factura && puede('caja') && pagosACorregir(t).length > 0;
-      var pideCae = !t.factura && t.prueba && !anulada && t.letra !== 'X';   // ARCA, paso 2 (SQL 274)
+      var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !facturaReal(t.factura) && puede('caja') && pagosACorregir(t).length > 0;
+      var pideCae = !t.factura && !anulada && leTocaArca(t);   // ARCA (SQL 274 y 276)
       dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
           (anulada ? '<span class="pill pill-bad">' + (nota ? 'Anulada · ' + esc(refNota(nota)) : 'Anulada') + '</span>' : '<span class="pill pill-ok">Cobrada</span>') +
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
@@ -3609,7 +3626,7 @@
     });
   }
 
-  /** El renglón «ARCA» del ticket (SQL 274): la factura con su CAE o, en una de prueba A o B sin CAE, el botón para pedirlo. */
+  /** El renglón «ARCA» del ticket (SQL 274 y 276): la factura con su CAE o, si le toca y no lo tiene, el botón para pedirlo. */
   function arcaTicket(t, anulada) {
     var f = t.factura;
     if (f && f.cae) {
@@ -3618,9 +3635,11 @@
     }
     if (f) return 'Con CAE';
     if (t.letra === 'X') return 'No va (comprobante interno)';
-    if (!t.prueba) return 'Sin factura (la hace BlueSoft)';
+    if (!leTocaArca(t)) return arcaSucursal(t.local_id) ? 'Sin factura (es de antes de la factura electrónica: la hizo BlueSoft)' : 'Sin factura (la hace BlueSoft)';
     if (anulada) return 'Sin CAE (la venta está anulada)';
-    return 'Sin CAE todavía<br><button type="button" class="pos-link" id="tkCae" title="Se la pide al ARCA de prueba (sin valor fiscal)">Pedir el CAE</button>';
+    var deP = t.prueba || (arcaSucursal(t.local_id) || {}).ambiente === 'homologacion';
+    return 'Sin CAE todavía<br><button type="button" class="pos-link" id="tkCae" title="' + (deP ? 'Se la pide al ARCA de prueba (sin valor fiscal)' : 'Se la pide a ARCA') +
+      '">Pedir el CAE</button>';
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -3770,10 +3789,13 @@
      bien («Duplicar»). Sólo A y B; la X se sigue anulando.
      ════════════════════════════════════════════════════════════════════ */
   /** Lo de ARCA de una nota: arca = pendiente | autorizada | sin_factura | no_va (con la nota todavía sin guardar, el que va a tener). */
-  function arcaNota(arca, cae) {
+  /* deP (SQL 276): el ticket tiene el CAE del ARCA de prueba (sin valor fiscal): la nota que vale, también en BlueSoft. */
+  function arcaNota(arca, cae, deP) {
     return arca === 'autorizada' ? 'Con CAE' + (cae ? ' ' + esc(cae) : '') :
       arca === 'pendiente' ? 'Pendiente: se le pide el CAE cuando el POS facture' :
-      arca === 'no_va' ? 'No va (es una prueba)' : 'No va: el ticket no tiene factura de ARCA (la hace BlueSoft). La nota que vale, hacela también en BlueSoft.';
+      arca === 'no_va' ? 'No va (es una prueba)' :
+      deP ? 'No va: el CAE del ticket es del ARCA de prueba (sin valor fiscal). La nota que vale, hacela también en BlueSoft.' :
+      'No va: el ticket no tiene factura de ARCA (la hace BlueSoft). La nota que vale, hacela también en BlueSoft.';
   }
   /** Los datos de la nota (n: la nota guardada, o null mientras se arma), el ticket que anula y sus productos, como la de BlueSoft. */
   function datosNota(t, n) {
@@ -3788,7 +3810,8 @@
         '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
         '<div><span>Forma de pago</span>' + esc(pagos || '—') + '</div>' +
         '<div class="nc-anula"><span>Anula</span>Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' del ' + esc(fechaHora(t.fecha)) + ' · ' + plata(cent(t.total)) + ' (100 %)</div>' +
-        '<div class="nc-arca"><span>ARCA</span>' + arcaNota(n ? n.arca : t.prueba ? 'no_va' : t.factura ? 'pendiente' : 'sin_factura', n && n.cae) + '</div>' +
+        '<div class="nc-arca"><span>ARCA</span>' + arcaNota(n ? n.arca : t.prueba ? 'no_va' : facturaReal(t.factura) ? 'pendiente' : 'sin_factura', n && n.cae,
+          !!(t.factura && t.factura.ambiente === 'homologacion')) + '</div>' +
       '</div>' + productosTicket(t);
   }
 
@@ -4105,8 +4128,15 @@
             '<td class="c">' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
                 esc(refNota({ numero: f.nc, prueba: f.prueba })) + '</span>' : an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="c">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
-            (f.letra === 'X' || f.prueba ? '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
-              : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>' };
+            /* SQL 274 y 276: con CAE («De prueba» si es del ARCA de prueba), «Sin CAE» si le toca y no lo tiene (se pide desde el
+               ticket), y si no, la hace BlueSoft. */
+            (f.letra === 'X' ? '<td class="apagado c" title="La X es un comprobante interno">No va</td>' :
+              f.factura && f.factura.cae ? '<td class="c" title="' + esc(compArca(f.factura) + ' · CAE ' + f.factura.cae +
+                (f.factura.ambiente === 'homologacion' ? ' · ARCA de prueba: sin valor fiscal' : '')) + '">' + (f.factura.ambiente === 'homologacion' ? 'De prueba' : 'Con CAE') + '</td>' :
+              f.factura ? '<td class="c">Con CAE</td>' :
+              !an && leTocaArca(f) ? '<td class="c" title="Se pide desde el ticket, con «Pedir el CAE»">Sin CAE</td>' :
+              f.prueba ? '<td class="apagado c" title="Es una prueba">No va</td>' :
+              '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">—</td>') + '</tr>' };
         }).concat(notas.map(function (n) { return { fecha: n.fecha, h: filaNotaTk(n) }; }))
           .concat(cb.filas.map(function (f) { return { fecha: f.fecha, h: filaCambioTk(f) }; }))
           .sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); })
