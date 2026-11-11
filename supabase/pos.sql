@@ -12073,3 +12073,241 @@ grant execute on function pos_cupon(text) to authenticated;
 
 /* SQL 265: el POS suma los puntos del Club (hasta acá se cargaban en Cobrar, que deja de usarse en los locales). */
 update club_reglas set valor = 'si' where clave = 'pos_suma_puntos';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 272 (11/11/2026) · LOS GASTOS TAMBIÉN PUEDEN SALIR DE LA CAJA FUERTE
+--
+--  Mauricio (11/11, con la foto del «Nuevo gasto»): «En gastos de local tengo el
+--  desplegable con la descripción del gasto y la forma de pago: efectivo, caja
+--  chica o caja fuerte. Si es de caja chica lo descuenta Caja Chica; si es de
+--  caja fuerte lo descuenta la caja fuerte. Las comisiones, por ejemplo, las
+--  pago de caja fuerte.»
+--    · El gasto guarda de qué caja salió: caja vacía = la chica (como siempre);
+--      caja = 'fuerte' = la fuerte.
+--    · El de la caja chica entra solo en el próximo cierre; el de la fuerte no
+--      entra en ningún cierre (todas las cuentas del cierre ya miran sólo lo de
+--      la caja chica) y resta en la caja fuerte de Disponibilidad. Se anula
+--      cuando sea, como el retiro de la caja fuerte.
+--    · El listado trae la caja de cada gasto y el total de los de la fuerte
+--      (totales.gasto_fuerte): con eso la pantalla sabe que puede dejar elegir.
+--  Ese mismo día salieron de la pantalla «Otra salida» y «Otro ingreso» («nunca
+--  lo usamos»); la base los sigue aceptando.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table pos_caja_movimientos drop constraint if exists pos_caja_movimientos_retiro_check;
+alter table pos_caja_movimientos add constraint pos_caja_movimientos_retiro_check check (
+      (case tipo when 'retiro' then caja is not null
+                 when 'gasto'  then caja is null or caja = 'fuerte'   -- SQL 272: el gasto de la caja chica (vacía) o de la fuerte
+                 else caja is null end)
+  and (tipo <> 'retiro' or retira is not null)
+  and (controlado_en is null or tipo in ('caja_fuerte', 'retiro')));
+
+CREATE OR REPLACE FUNCTION public.pos_caja_mov_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_tipo    text := coalesce(p->>'tipo', '');
+  v_rubro   text := nullif(trim(coalesce(p->>'rubro', '')), '');
+  v_desc    text := nullif(trim(coalesce(p->>'descripcion', '')), '');
+  v_monto   numeric := round(nullif(p->>'monto', '')::numeric, 2);
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_caja    text := nullif(trim(coalesce(p->>'caja', '')), '');     -- SQL 191
+  v_retira  text := nullif(trim(coalesce(p->>'retira', '')), '');   -- SQL 191
+  v_id      uuid;
+  v_num     int;
+  v_ya      pos_caja_movimientos;
+begin
+  perform pos_permiso(case when v_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: el retiro, con su casilla
+  perform pos_local_ok(v_local);
+  if v_clave is not null then
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
+  end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte', 'retiro') then
+    raise exception 'El movimiento tiene que ser un gasto, otra salida, otro ingreso, un pase a la caja fuerte o un retiro de fondos.';
+  end if;
+  /* SQL 191: el retiro dice de qué caja sale la plata y quién se la lleva. */
+  if v_tipo = 'retiro' then
+    if v_caja is null or v_caja not in ('chica', 'fuerte') then raise exception 'Elegí de qué caja sale la plata.'; end if;
+    if v_retira is null then raise exception 'Elegí quién retira la plata.'; end if;
+    if length(v_retira) > 80 then raise exception 'El nombre de quien retira es demasiado largo.'; end if;
+  end if;
+  if v_tipo = 'gasto' and v_rubro is null then raise exception 'Elegí el tipo de gasto.'; end if;
+  /* SQL 272: el gasto también dice de qué caja sale la plata. Sin decirlo, de la caja chica, como siempre. El de la caja
+     fuerte se guarda con caja = 'fuerte'; el de la chica queda como hasta ahora (caja vacía). */
+  if v_tipo = 'gasto' then
+    if v_caja is not null and v_caja not in ('chica', 'fuerte') then raise exception 'Elegí de qué caja sale la plata.'; end if;
+    v_caja := case when v_caja = 'fuerte' then 'fuerte' end;
+  end if;
+  if v_tipo in ('salida', 'ingreso') and v_desc is null then raise exception 'Escribí de qué es.'; end if;
+  if length(v_rubro) > 60 or length(v_desc) > 200 then raise exception 'El texto es demasiado largo.'; end if;
+  if v_monto is null or v_monto <= 0 or v_monto >= 100000000 then raise exception 'Escribí el monto.'; end if;
+  /* SQL 179: un número por vez en cada local: si dos guardan al mismo tiempo, el segundo espera (como los cambios). */
+  perform pg_advisory_xact_lock(hashtext('pos_gasto:' || v_local::text || ':' || v_prueba::text));
+  if v_clave is not null then
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
+  end if;
+  select coalesce(max(m.numero), 0) + 1 into v_num from pos_caja_movimientos m
+   where m.local_id = v_local and m.prueba = v_prueba   -- SQL 180: dos talonarios; SQL 191: tres
+     and (case m.tipo when 'caja_fuerte' then 'MS' when 'retiro' then 'RF' else 'G' end) = (case v_tipo when 'caja_fuerte' then 'MS' when 'retiro' then 'RF' else 'G' end);
+  insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave, numero, caja, retira)
+  values (v_local, v_prueba, orden_dia_caja(v_local), v_tipo, case when v_tipo = 'gasto' then v_rubro end, v_desc, v_monto,
+          orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave, v_num,
+          case when v_tipo in ('retiro', 'gasto') then v_caja end, case when v_tipo = 'retiro' then v_retira end)   -- SQL 191; SQL 272: el gasto de la caja fuerte
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v_prueba, 'ya', false);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_movimientos(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_tipo text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_retiros boolean;   -- SQL 262
+begin
+  perform pos_permiso(case when p_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: la lista de los retiros, con su casilla
+  v_retiros := pos_puede('retiros');   -- SQL 262: sin la casilla, «Todos» no trae los retiros
+  perform pos_local_ok(p_local);
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_tipo is not null and p_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte', 'retiro') then raise exception 'Ese tipo de movimiento no existe.'; end if;
+  return (
+    with t as (
+      select m.id, 'mov'::text as origen, m.fecha, m.local_id, m.tipo, m.rubro, m.descripcion, m.monto, m.persona_nombre as persona,
+             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo, m.numero,   -- SQL 179: el número del gasto
+             m.caja, m.retira, m.controlado_en, m.controlado_por   -- SQL 191
+        from pos_caja_movimientos m
+       where m.dia between p_desde and p_hasta and m.prueba = coalesce(p_prueba, false) and (p_local is null or m.local_id = p_local)
+      union all
+      select c.id, 'cierre', c.fecha, c.local_id, 'caja_fuerte', null, null, c.retiro, c.responsable_nombre,
+             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo, null::int,
+             null::text, null::text, null::timestamptz, null::uuid
+        from pos_cierres c
+       where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
+         and (p_local is null or c.local_id = p_local)
+    ), f as (
+      select * from t where (p_tipo is null or t.tipo = p_tipo) and (t.tipo <> 'retiro' or v_retiros)   -- SQL 262
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'origen', z.origen, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id, 'tipo', z.tipo,
+                 'rubro', z.rubro, 'descripcion', z.descripcion, 'monto', z.monto, 'persona', z.persona, 'estado', z.estado,
+                 'motivo', z.anulado_motivo, 'numero', z.numero,
+                 'caja', case when z.tipo = 'gasto' then coalesce(z.caja, 'chica') else z.caja end,   -- SQL 272: el gasto, de la chica o de la fuerte
+                 'retira', z.retira, 'controlado', z.controlado_en is not null, 'controlado_en', z.controlado_en,   -- SQL 191
+                 'controlado_por', (select pe.nombre from orden_personas pe where pe.id = z.controlado_por),
+                 'cierre', (select jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'estado', c.estado)
+                              from pos_cierres c where c.id = z.cierre_id)) order by z.fecha desc)
+          from (select * from f order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'gasto',       coalesce(sum(monto) filter (where vale and tipo = 'gasto'), 0),
+                    'gasto_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'gasto' and caja = 'fuerte'), 0),   -- SQL 272
+                    'salida',      coalesce(sum(monto) filter (where vale and tipo = 'salida'), 0),
+                    'ingreso',     coalesce(sum(monto) filter (where vale and tipo = 'ingreso'), 0),
+                    'caja_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'caja_fuerte'), 0),
+                    'retiro',      coalesce(sum(monto) filter (where vale and tipo = 'retiro'), 0),   -- SQL 191
+                    'controlado',  coalesce(sum(monto) filter (where vale and controlado_en is not null), 0),
+                    'cantidad',    count(*) filter (where vale)) from f),
+      'mas', (select count(*) > 500 from f)
+    )
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_eventos(p_local uuid, p_caja text)
+ RETURNS TABLE(fecha timestamp with time zone, orden integer, dia date, tipo text, ref text, detalle text, persona text, importe numeric, control numeric, ref_id uuid)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_primero  pos_cierres;
+  v_corte    timestamptz;
+begin
+  if p_caja = 'chica' then
+    select * into v_primero from pos_cierres c
+     where c.local_id = p_local and not c.prueba and c.estado = 'cerrada' order by c.fecha limit 1;
+    /* Las ventas cuentan desde el primer cierre, como en pos_caja_abierta (las de antes del POS no entran nunca). */
+    v_corte := coalesce((select min(c.desde) from pos_cierres c where c.local_id = p_local and not c.prueba and c.estado = 'cerrada'),
+                        orden_en_hora(p_local, orden_dia_caja(p_local), '00:00'));
+    if v_primero.id is not null then
+      /* El saldo inicial del primer cierre, antes que todo (orden 0 gana los empates): un gasto cargado antes de ese día
+         también entró en él. */
+      return query select least(v_primero.desde, coalesce((select min(m.fecha) from pos_caja_movimientos m
+                                                             where m.local_id = p_local and not m.prueba and coalesce(m.caja, 'chica') = 'chica'),
+                                                          v_primero.desde)),
+                          0, v_primero.dia, 'inicial'::text, 'Saldo inicial'::text,
+                          ('Con lo que arrancó la caja en el cierre Nº ' || v_primero.numero)::text, v_primero.responsable_nombre,
+                          null::numeric, v_primero.saldo_inicial, v_primero.id;
+    end if;
+    return query
+      select x.fecha, 1, x.dia, 'venta'::text, case when x.letra = 'X' then 'X-' || x.numero else 'Nº ' || x.numero end,
+             ('Venta · ' || x.vendedor)::text, null::text, sum(pg.monto), null::numeric, x.id
+        from pos_ventas x join pos_venta_pagos pg on pg.venta_id = x.id and pg.medio = 'efectivo'
+       where x.local_id = p_local and not x.prueba and x.estado = 'cobrada' and x.fecha >= v_corte
+       group by x.id
+      union all
+      select x.fecha, 1, x.dia, 'cambio'::text, 'C-' || x.numero, ('Cambio · ' || x.vendedor)::text, null::text, sum(pc.monto), null::numeric, x.id
+        from pos_cambios x join pos_cambio_pagos pc on pc.cambio_id = x.id and pc.medio = 'efectivo'
+       where x.local_id = p_local and not x.prueba and x.estado = 'hecho' and x.fecha >= v_corte
+       group by x.id
+      union all
+      select m.fecha, 1, m.dia, m.tipo,
+             case m.tipo when 'caja_fuerte' then 'MS-' when 'retiro' then 'RF-' else 'G-' end || m.numero,
+             case m.tipo when 'gasto' then 'Gasto · ' || coalesce(m.rubro, '')
+                         when 'salida' then 'Otra salida' when 'ingreso' then 'Otro ingreso'
+                         when 'caja_fuerte' then 'A la caja fuerte'
+                         else 'Retiro de fondos' || coalesce(' · lo retiró ' || m.retira, '') end
+               || coalesce(' · ' || m.descripcion, ''),
+             m.persona_nombre, case when m.tipo = 'ingreso' then m.monto else -m.monto end, null::numeric, m.id
+        from pos_caja_movimientos m
+       where m.local_id = p_local and not m.prueba and m.estado = 'ok' and coalesce(m.caja, 'chica') = 'chica'
+      union all
+      select pos_caja_momento(c.local_id, c.dia, c.fecha, c.contado_en), 2, c.dia, 'cierre'::text, 'Cierre Nº ' || c.numero,
+             (case when c.sin_contar then 'Cierre de caja, sin contar' else 'Cierre de caja' end)::text,   -- SQL 247
+             c.responsable_nombre, null::numeric, c.contado, c.id
+        from pos_cierres c
+       where c.local_id = p_local and not c.prueba and c.estado = 'cerrada'
+      union all
+      /* Hasta el SQL 180, lo de la caja fuerte se pasaba al cerrar. */
+      select pos_caja_momento(c.local_id, c.dia, c.fecha, c.contado_en), 3, c.dia, 'pase'::text, 'Cierre Nº ' || c.numero, 'A la caja fuerte, al cerrar'::text,
+             c.responsable_nombre, -c.retiro, null::numeric, c.id
+        from pos_cierres c
+       where c.local_id = p_local and not c.prueba and c.estado = 'cerrada' and c.retiro > 0;
+  elsif p_caja = 'fuerte' then
+    return query
+      select m.fecha, 1, m.dia, m.tipo,
+             case m.tipo when 'caja_fuerte' then 'MS-' when 'gasto' then 'G-' else 'RF-' end || m.numero,
+             case m.tipo when 'caja_fuerte' then 'De la caja chica'
+                         when 'gasto' then 'Gasto · ' || coalesce(m.rubro, '')   -- SQL 272
+                         else 'Retiro de fondos' || coalesce(' · lo retiró ' || m.retira, '') end || coalesce(' · ' || m.descripcion, ''),
+             m.persona_nombre, case when m.tipo = 'caja_fuerte' then m.monto else -m.monto end, null::numeric, m.id
+        from pos_caja_movimientos m
+       where m.local_id = p_local and not m.prueba and m.estado = 'ok'
+         and (m.tipo = 'caja_fuerte' or (m.tipo in ('retiro', 'gasto') and m.caja = 'fuerte'))   -- SQL 272: y los gastos de la caja fuerte
+      union all
+      select pos_caja_momento(c.local_id, c.dia, c.fecha, c.contado_en), 3, c.dia, 'pase'::text, 'Cierre Nº ' || c.numero, 'De la caja chica, al cerrar'::text,
+             c.responsable_nombre, c.retiro, null::numeric, c.id
+        from pos_cierres c
+       where c.local_id = p_local and not c.prueba and c.estado = 'cerrada' and c.retiro > 0
+      union all
+      select a.fecha, 2, a.dia, 'ajuste'::text, 'Ajuste Nº ' || a.numero, ('Ajuste' || coalesce(' · ' || a.observaciones, ''))::text,
+             a.persona_nombre, null::numeric, a.contado, a.id
+        from pos_caja_ajustes a
+       where a.local_id = p_local and a.caja = 'fuerte' and a.estado = 'ok';
+  else
+    raise exception 'La caja tiene que ser la chica o la fuerte.';
+  end if;
+end $function$;

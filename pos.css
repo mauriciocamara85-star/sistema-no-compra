@@ -1500,8 +1500,12 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .rt-bs .rm-bs-grilla { min-height: 0; }
 }
 /* El nuevo gasto como el «Gastos» de BlueSoft (v444): Fecha · Sucursal · Letra · Número · Estado; debajo Responsable; debajo
-   Forma de pago · Caja; la grilla con el renglón (Ítem · Gasto · Descripción · Total) y a la derecha el Total a pagar. */
-.pos-caja .gs-tipos { margin: -4px 0 12px; }
+   Forma de pago · Caja; la grilla con el renglón (Ítem · Gasto · Total) y a la derecha el Total a pagar.
+   v465 (Mauricio, 11/11: «un poquito más grande la pantalla y que sea parecida a la de BlueSoft»): la ventana más ancha
+   (920 → 1120); los datos arriba a la izquierda, sin estirarse a todo el ancho (allá ocupan la mitad izquierda y a la derecha
+   queda libre); y la grilla grande, como allá, que crece con el alto de la pantalla (en la PC del local, 1366×657, hasta
+   donde entra sin barra). Sin los chips de «Otra salida» y «Otro ingreso». En el celular, como antes. */
+.pos-caja.ancha.gs { width: min(1120px, 100%); }
 .tf-datos.gs-datos > .gs-fecha, .tf-datos.gs-datos > .gs-num { grid-column: span 2; }
 .tf-datos.gs-datos > .gs-suc { grid-column: span 4; }
 .tf-datos.gs-datos > .gs-letra { grid-column: span 1; }
@@ -1519,6 +1523,17 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .gs-tot b { font: 700 24px/1.15 var(--display); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
 .pos-caja .gs-obs { margin-top: 10px; }
 .pos-caja .gs-obs textarea { min-height: 56px; }
+@media (min-width: 900px) {
+  .tf-datos.gs-datos { max-width: 820px; margin-bottom: 16px; }
+  .gs .gs-cuerpo { grid-template-columns: minmax(0, 1fr) 250px; gap: 14px; }
+  .gs .tf-valores .pos-marco-tabla { min-height: clamp(150px, calc(100vh - 470px), 340px); }
+  .pos-tabla.gs-tabla td.n { width: 230px; }
+  .pos-tabla.gs-tabla input { width: 200px; }
+  .pos-tabla.gs-tabla select { max-width: 340px; }
+  .gs .gs-tot { padding: 14px 16px; }
+  .gs .gs-tot b { font-size: 28px; }
+  .pos-caja.gs .gs-obs textarea { min-height: 72px; }
+}
 /* El gasto guardado como la «Factura de Compra» de BlueSoft (v445), con el molde del retiro guardado (.rt-bs): a la
    izquierda Concepto · Valor y debajo las observaciones; a la derecha la grilla con el renglón. */
 .rt-bs.gs-bs .rm-bs-cuerpo { grid-template-columns: 300px minmax(0, 1fr); }

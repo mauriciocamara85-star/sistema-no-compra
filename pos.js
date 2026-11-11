@@ -6286,6 +6286,9 @@
   function esperadoCaja(d, saldo) {
     return saldo + cent(d.ventas.efectivo) + cent(d.otros_ingresos) - cent(d.gastos) - cent(d.otras_salidas) - cent(d.a_caja_fuerte || 0) - cent(d.retiros_fondos || 0);
   }
+  /** SQL 272: los gastos también pueden salir de la caja fuerte. Si la base ya lo sabe, el listado trae el total de los de
+      la caja fuerte (totales.gasto_fuerte): recién entonces «Nuevo gasto» deja elegir la caja. Sin el 272, todo de la chica. */
+  function anotar272(d) { if (d && d.totales) S.con272 = d.totales.gasto_fuerte !== undefined; }
   /** Sin el SQL 191 la base no conoce los retiros ni el tilde: lo dice así, y no con el mensaje de la base. */
   function sin191(e) {
     var m = mensajeDe(e);
@@ -6526,7 +6529,7 @@
           (nm ? ' (' + nm + ')' : '') + '</span><b>' + p(x.gastos) + '</b></button>' +
         /* 7/11 (Mauricio, con el cierre de BlueSoft): los movimientos de salida y los retiros de la caja chica van dentro de
            «Otras salidas», sin renglón propio (del 6/11 al 7/11 hubo uno «Movimientos de salida»; antes, «A la caja fuerte»). */
-        '<button type="button" class="cj-r cj-r-btn" id="cjSalidas" title="Ver lo que salió de la caja chica en este cierre: movimientos de salida, retiros de fondos y otras salidas"><span>Otras salidas' +
+        '<button type="button" class="cj-r cj-r-btn" id="cjSalidas" title="Ver lo que salió de la caja chica en este cierre: movimientos de salida y retiros de fondos"><span>Otras salidas' +
           (ns ? ' (' + ns + ')' : '') + '</span><b>' + plata(otrasSalidas(x)) + '</b></button>' +
         fd('descuentos', 'Descuentos', p(x.descuentos), 'info') +
         '<button type="button" class="cj-r cj-r-btn" id="cjIngresos" title="Ver los otros ingresos que entran en este cierre"><span>Otros ingresos' +
@@ -6806,14 +6809,13 @@
       if (otras) {
         if (hay('caja_fuerte') || !ms.length) ir.push(['salidas', 'cjIrSalidas', 'Ir a Movimientos de salida']);
         if (hay('retiro') && puede('retiros')) ir.push(['retiros', 'cjIrRetiros', 'Ir a Retiros de fondos']);   // SQL 262
-        if (hay('salida')) ir.push(['gastos', 'cjIrGastos', 'Ir a Gastos']);
-      } else ir.push(['gastos', 'cjIrGastos', 'Ir a Gastos']);
+      } else if (!ing) ir.push(['gastos', 'cjIrGastos', 'Ir a Gastos']);   // 11/11: los otros ingresos ya no se cargan
       /* Juntos a la izquierda: el «izq» (margin-right: auto) sólo en el último, o cada uno empuja a los demás. */
       ir = ir.map(function (b, i) { return '<a class="btn btn-sec btn-chico' + (i === ir.length - 1 ? ' izq' : '') + '" href="#' + b[0] + '" id="' + b[1] + '">' + b[2] + '</a>'; });
       ventana('<h3 id="posVentTit">' + (otras ? 'Otras salidas' : ing ? 'Otros ingresos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (otras
-          ? 'Lo que salió de la caja chica de ' + de + ' ' + desde + ': se resta en este. Los movimientos de salida (a la caja fuerte) se cargan y se anulan en «Movimientos de salida», ' +
-            'los retiros en «Retiros de fondos» y las otras salidas en «Gastos» (Qué es: «Otra salida»).'
-          : ing ? 'Los de ' + de + ' ' + desde + ': se suman en este. Se cargan y se anulan en «Gastos» (Qué es: «Otro ingreso»).'
+          ? 'Lo que salió de la caja chica de ' + de + ' ' + desde + ': se resta en este. Los movimientos de salida (a la caja fuerte) se cargan y se anulan en «Movimientos de salida» ' +
+            'y los retiros en «Retiros de fondos».'
+          : ing ? 'Los de ' + de + ' ' + desde + ': se suman en este.'
           : 'Los de ' + de + ' ' + desde + ': entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
         (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th><th>Qué es</th>' +
           '<th>Detalle</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
@@ -6824,7 +6826,7 @@
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
           '<div class="pos-ticket-tot"><span>' + ms.length + (ms.length === 1 ? ' movimiento' : ' movimientos') + '</span><b>Total ' + plata(tot) + '</b></div>' :
-          '<div class="pos-cartel">' + (otras ? 'Todavía no salió nada de esta caja: ni movimientos de salida, ni retiros, ni otras salidas.' :
+          '<div class="pos-cartel">' + (otras ? 'Todavía no salió nada de esta caja: ni movimientos de salida ni retiros.' :
             ing ? 'Todavía no hay otros ingresos en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
         '<div class="pos-pie">' + ir.join('') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
@@ -6905,25 +6907,26 @@
     var c = $('cuerpo'), prueba = enPrueba();
     var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Gastos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
-        'Los gastos del local y las otras salidas y entradas de la caja chica. Cada uno entra solo en el próximo cierre de caja.',
+        'Los gastos del local, en efectivo. Los de la caja chica entran solos en el próximo cierre de caja.',
         '<button type="button" class="btn btn-pri btn-chico" id="gsNuevo">Nuevo gasto</button>') +
       '<div class="pos-filtros"><div id="gsPer"></div>' +
         campo('', 'Sucursal', '<select id="gsLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
-        campo('', 'Tipo', '<select id="gsTipo"><option value="">Todos</option>' + opciones(['gasto', 'salida', 'ingreso'].map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
         campo('', 'Gastos', '<select id="gsPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="gsLista"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('gsPer'), { inicial: 'mes', guardar: 'pos_gastos_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre: al volver al cierre, queda la que se eligió acá. */
     $('gsLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
-    ['gsTipo', 'gsPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('gsPrueba').onchange = cargar;
     $('gsNuevo').onclick = function () { abrirMovimiento($('gsLocal').value || (localMio(S.cajaLocal) || localInicial()).id, prueba, cargar); };
     var pedido = 0;
     function deLaPrueba() { return $('gsPrueba').value === '1'; }
     function cargar() {
       var r = per.rango(), n = ++pedido;
       $('gsLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      llamar('pos_caja_movimientos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('gsLocal').value || null, p_tipo: $('gsTipo').value || null,
+      /* 11/11 (Mauricio: «otra salida… lo elimine y otro ingreso también, porque nunca lo usamos»): acá, sólo los gastos. */
+      llamar('pos_caja_movimientos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('gsLocal').value || null, p_tipo: 'gasto',
                                        p_prueba: deLaPrueba() }).then(function (d) {
+        anotar272(d);
         if (n !== pedido || !$('gsLista')) return;
         pintarGastos(d);
       }).catch(function (e) { if ($('gsLista')) $('gsLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
@@ -6933,11 +6936,13 @@
       var filas = (d.filas || []).filter(function (f) { return f.origen !== 'cierre' && f.tipo !== 'caja_fuerte' && f.tipo !== 'retiro'; });
       filas.forEach(function (f) { f.prueba = deLaPrueba(); });
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('gsLocal').value;
+      /* SQL 272: de qué caja salió cada gasto (la chica o la fuerte) y cuánto de cada una. Sin el 272, todos son de la caja chica. */
+      var porCaja = t.gasto_fuerte !== undefined;
       /* Abajo de la grilla, como en BlueSoft (la foto de Mauricio del 8/11: Cantidad de líneas … Monto total, abajo a la izquierda). */
       var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
-        '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' +
-        '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' +
+        (porCaja ? '<div class="pos-kpi"><span>De la caja chica</span><b>' + p(Number(t.gasto || 0) - Number(t.gasto_fuerte || 0)) + '</b></div>' +
+                   '<div class="pos-kpi"><span>De la caja fuerte</span><b>' + p(t.gasto_fuerte) + '</b></div>' : '') +
         '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(filas.filter(function (f) { return f.estado === 'ok'; }).length) + '</b></div></div>';
       var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Los gastos de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
       if (!filas.length) {
@@ -6946,15 +6951,16 @@
       }
       /* Las columnas de "Gastos del Local" de BlueSoft (Comprobante, Fecha, Día, Total, Observaciones), con el tipo de gasto y en qué cierre entró. */
       $('gsLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
-        '<th>Tipo</th><th>Observaciones</th><th>Cargó</th><th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
+        '<th>Tipo</th><th>Observaciones</th><th>Cargó</th>' + (porCaja ? '<th>Caja</th>' : '') + '<th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
-          var an = f.estado !== 'ok';
+          var an = f.estado !== 'ok', fuerte = f.caja === 'fuerte';
           return '<tr data-gasto="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
             '<td><b>' + esc(refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(diaSemana(f.fecha)) + '</td>' + (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
             '<td>' + esc(f.tipo === 'gasto' ? f.rubro || TIPOS_MOV.gasto : TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
             '<td class="vf-det">' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">—</span>') + '</td>' +
-            '<td>' + esc(f.persona || '—') + '</td>' +
+            '<td>' + esc(f.persona || '—') + '</td>' + (porCaja ? '<td>' + esc(CAJAS[f.caja] || CAJAS.chica) + '</td>' : '') +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : f.cierre ? esc(refCierre(f.cierre)) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
+              fuerte ? '<span class="apagado" title="Salió de la caja fuerte: no entra en el cierre de caja">No entra</span>' :
               '<span class="pill pill-ok">Caja abierta</span>') + '</td>' +
             '<td class="n tachar"><b>' + (f.tipo === 'ingreso' ? '+' : '') + p(f.monto) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
@@ -6970,90 +6976,91 @@
   }
 
   /* El nuevo gasto como el «Gastos» de BlueSoft (Mauricio, 8/11: «el nuevo gasto», con la foto de BlueSoft): arriba el
-     título con Cancelar · Guardar a la derecha y, debajo, qué es (Gasto del local, Otra salida u Otro ingreso: lo nuestro);
-     los datos en los lugares de BlueSoft: Fecha · Sucursal · Letra · Número (su «Referencia») · Estado; debajo el
-     Responsable (sin el Proveedor: no se usa); y debajo Forma de pago (Efectivo) · Caja (Caja chica). La grilla con el
-     renglón del gasto, que se elige ahí mismo (en BlueSoft, con «Agregar gasto…»): Ítem · Gasto · Total; debajo, donde
-     BlueSoft tiene «Agregar gasto…», que entra en el próximo cierre; a la derecha el Total a pagar (sin Neto, descuentos,
-     IVA ni recargos); y abajo las Observaciones, donde en BlueSoft escriben de qué fue (v445: antes, en el renglón). Un
-     renglón por gasto (8/11: «dale» a «no por ahora»). Se carga desde Gastos (el mostrador) y desde Gestión →
-     Movimientos, eligiendo la sucursal. A la base va lo mismo que antes. */
+     título con Cancelar · Guardar a la derecha; los datos en los lugares de BlueSoft, arriba a la izquierda: Fecha ·
+     Sucursal · Letra · Número (su «Referencia») · Estado; debajo el Responsable (sin el Proveedor: no se usa); y debajo
+     Forma de pago (Efectivo) · Caja. La grilla, grande como allá, con el renglón del gasto, que se elige ahí mismo (en
+     BlueSoft, con «Agregar gasto…»): Ítem · Gasto · Total; debajo, donde BlueSoft tiene «Agregar gasto…», de qué caja sale
+     y si entra en el cierre; a la derecha el Total a pagar (sin Neto, descuentos, IVA ni recargos); y abajo las
+     Observaciones, donde en BlueSoft escriben de qué fue (v445: antes, en el renglón). Un renglón por gasto (8/11: «dale»
+     a «no por ahora»). Se carga desde Gastos (el mostrador) y desde Gestión → Movimientos, eligiendo la sucursal.
+     v465 (Mauricio, 11/11): sin «Otra salida» ni «Otro ingreso» («nunca lo usamos»): es siempre un gasto del local. La
+     Caja se elige, como en BlueSoft: «si es de caja chica lo descuenta Caja Chica; si es de caja fuerte lo descuenta la
+     caja fuerte. Las comisiones, por ejemplo, las pago de caja fuerte» (SQL 272; sin el 272 queda fija en la caja chica
+     y a la base va lo mismo que antes). Y la ventana, más grande: «un poquito más grande… y parecida a la de BlueSoft». */
   function abrirMovimiento(localId, prueba, alGuardar) {
-    var clave = nuevaClave(), tipo = 'gasto', yo = String((S.ini.yo && S.ini.yo.nombre) || '').trim();
+    var clave = nuevaClave(), yo = String((S.ini.yo && S.ini.yo.nombre) || '').trim();
     var ro = function (cls, lbl, v, extra) { return campo(cls, lbl, '<input type="text" value="' + esc(v) + '" readonly tabindex="-1"' + (extra || '') + '>'); };
     var caja = ventana('<div class="tf-cab"><h3 id="posVentTit">' + (prueba ? 'Gasto de prueba<span class="pos-tag prueba">Modo prueba</span>' : 'Nuevo gasto') + '</h3>' +
         '<div class="tf-acc"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
           '<button type="button" class="btn btn-pri btn-chico" id="gmGuardar">Guardar</button></div></div>' +
-      '<div class="chips gs-tipos" id="gmTipo" role="group" aria-label="Qué es">' + ['gasto', 'salida', 'ingreso'].map(function (t) {
-        return '<button type="button" class="chip" data-tipo="' + t + '">' + TIPOS_MOV[t] + '</button>'; }).join('') + '</div>' +
       '<div class="tf-datos gs-datos">' +
         ro('gs-fecha', 'Fecha', fechaCorta(S.ini.hoy)) +
         campo('gs-suc', 'Sucursal', '<select id="gmLocal" class="desplegable">' + opcionesLocales(localId) + '</select>') +
         ro('gs-letra', 'Letra', 'X') +
         campo('gs-num', 'Número', '<input type="text" value="" placeholder="Al guardarlo" readonly tabindex="-1" title="El número (G-…) lo pone el sistema al guardarlo">') +
-        ro('gs-est', 'Estado', 'Pagado', ' id="gmEstado"') +
+        ro('gs-est', 'Estado', 'Pagado') +
         ro('gs-resp', 'Responsable', yo || '—', ' title="Quien entró: queda como el que lo cargó"') +
         ro('gs-forma', 'Forma de pago', 'Efectivo') +
-        ro('gs-caja', 'Caja', 'Caja chica') +
+        campo('gs-caja', 'Caja', '', ' id="gmCajaF"') +
       '</div>' +
       '<div class="gs-cuerpo"><div class="tf-valores">' +
           '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla gs-tabla"><thead><tr><th class="c">Ítem</th><th>Gasto</th><th class="n">Total</th></tr></thead>' +
             '<tbody><tr><td class="c">1</td><td data-l="Gasto">' +
               '<select id="gmRubro" aria-label="Tipo de gasto"><option value="">Elegí…</option>' + RUBROS_GASTO.map(function (g) {
-                return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select>' +
-              '<b id="gmQue" hidden></b></td>' +
+                return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></td>' +
               '<td class="n" data-l="Total"><input type="text" inputmode="decimal" id="gmMonto" data-plata autocomplete="off" placeholder="$0" aria-label="Total"></td></tr></tbody></table></div>' +
           '<p class="pos-ayuda tf-nota gs-nota" id="gmNota"></p></div>' +
-        '<div class="gs-tot"><span id="gmTotLbl">Total a pagar</span><b id="gmTotal">' + plata(0) + '</b></div>' +
+        '<div class="gs-tot"><span>Total a pagar</span><b id="gmTotal">' + plata(0) + '</b></div>' +
       '</div>' +
       /* 8/11, con la foto del gasto guardado de BlueSoft: lo que se escribe («4hrs luca») va en las Observaciones, abajo; el
          renglón lleva sólo el tipo de gasto. Es la misma descripción de siempre (va a la base igual). */
-      campo('tf-obs gs-obs', 'Observaciones', '<textarea id="gmDesc" maxlength="200" rows="2"></textarea>') +
+      campo('tf-obs gs-obs', 'Observaciones', '<textarea id="gmDesc" maxlength="200" rows="2" placeholder="Si hace falta: para qué fue, de quién…"></textarea>') +
       '<div class="pos-error" id="gmError"></div>', true);
     caja.classList.add('tf', 'gs');
-    function marcar() {
-      caja.querySelectorAll('[data-tipo]').forEach(function (b) {
-        var si = b.getAttribute('data-tipo') === tipo;
-        b.classList.toggle('sel', si);
-        b.setAttribute('aria-pressed', String(si));
-      });
-      var gasto = tipo === 'gasto', entra = tipo === 'ingreso';
-      caja.querySelector('#gmRubro').hidden = !gasto;
-      caja.querySelector('#gmQue').hidden = gasto;
-      caja.querySelector('#gmQue').textContent = TIPOS_MOV[tipo];
-      caja.querySelector('#gmDesc').placeholder = gasto ? 'Si hace falta: para qué fue, de quién…' : '¿De qué es?';
-      caja.querySelector('#gmEstado').value = entra ? 'Cobrado' : 'Pagado';
-      caja.querySelector('#gmTotLbl').textContent = entra ? 'Total que entra' : 'Total a pagar';
-      caja.querySelector('#gmNota').textContent = 'En efectivo, ' + (entra ? 'a' : 'de') + ' la caja chica: entra solo en el próximo cierre de caja.';
+    /* De qué caja sale la plata. Con el SQL 272 se elige (arranca en la caja chica, como en BlueSoft); sin el 272, fija. */
+    function deCaja() { var c = caja.querySelector('#gmCaja'); return c && c.tagName === 'SELECT' ? c.value : 'chica'; }
+    function nota() {
+      caja.querySelector('#gmNota').textContent = deCaja() === 'fuerte'
+        ? 'En efectivo, de la caja fuerte: se descuenta de la caja fuerte y no entra en el cierre de caja.'
+        : 'En efectivo, de la caja chica: entra solo en el próximo cierre de caja.';
     }
-    marcar();
+    function pintarCaja() {
+      caja.querySelector('#gmCajaF').innerHTML = '<span>Caja</span>' + (S.con272
+        ? '<select id="gmCaja" aria-label="De qué caja sale la plata">' + opciones([['chica', CAJAS.chica], ['fuerte', CAJAS.fuerte]], 'chica') + '</select>'
+        : '<input type="text" id="gmCaja" value="' + CAJAS.chica + '" readonly tabindex="-1">');
+      var c = caja.querySelector('#gmCaja');
+      if (c.tagName === 'SELECT') c.onchange = function () { nota(); errorEn(caja, 'gmError', ''); };
+      nota();
+    }
+    pintarCaja();
+    /* Si todavía no se sabe (tocaron «Nuevo gasto» antes de que llegara el listado), se le pregunta a la base con el listado de hoy. */
+    if (S.con272 === undefined) {
+      llamar('pos_caja_movimientos', { p_desde: S.ini.hoy, p_hasta: S.ini.hoy, p_local: localId || null, p_tipo: 'gasto', p_prueba: false }).then(function (d) {
+        anotar272(d);
+        if (S.con272 && caja.isConnected) pintarCaja();
+      }).catch(function () {});
+    }
     caja.querySelector('#gmMonto').oninput = function () {
       var m = leerPlata(this.value);
       caja.querySelector('#gmTotal').textContent = plata(isNaN(m) ? 0 : m);
       errorEn(caja, 'gmError', '');
     };
-    caja.querySelector('#gmTipo').onclick = function (e) {
-      var b = e.target.closest('[data-tipo]');
-      if (!b) return;
-      tipo = b.getAttribute('data-tipo');
-      marcar();
-      errorEn(caja, 'gmError', '');
-      caja.querySelector(tipo === 'gasto' ? '#gmRubro' : '#gmDesc').focus();
-    };
+    caja.querySelector('#gmRubro').onchange = function () { errorEn(caja, 'gmError', ''); };
     setTimeout(function () { caja.querySelector('#gmRubro').focus(); }, 0);
     function guardarMov() {
       var bt = caja.querySelector('#gmGuardar');
       var loc = caja.querySelector('#gmLocal').value, rubro = caja.querySelector('#gmRubro').value;
       var desc = caja.querySelector('#gmDesc').value.trim(), monto = leerPlata(caja.querySelector('#gmMonto').value);
-      var mal = tipo === 'gasto' && !rubro ? 'Elegí el tipo de gasto.' :
-        tipo !== 'gasto' && !desc ? 'Escribí de qué es.' :
-        isNaN(monto) || monto <= 0 ? 'Escribí el total.' : '';
+      var mal = !rubro ? 'Elegí el tipo de gasto.' : isNaN(monto) || monto <= 0 ? 'Escribí el total.' : '';
       if (!errorEn(caja, 'gmError', mal) || bt.disabled) return;
+      var p = { clave: clave, local_id: loc, prueba: !!prueba, tipo: 'gasto', rubro: rubro, descripcion: desc, monto: aPesos(monto) };
+      var de = deCaja();
+      if (S.con272) p.caja = de;   // SQL 272: la chica o la fuerte; sin el 272 no se manda (la base lo toma de la caja chica)
       bt.disabled = true;
-      llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: tipo, rubro: tipo === 'gasto' ? rubro : '', descripcion: desc, monto: aPesos(monto) } }).then(function (r) {
-        var num = refGasto(r, !!prueba);
-        ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [TIPOS_MOV[tipo], plata(monto)], tono: prueba ? 'prueba' : '',
-          notas: [num ? 'Escribile el ' + num + ' al ticket.' : ''] });
+      llamar('pos_caja_mov_guardar', { p: p }).then(function (r) {
+        var num = refGasto({ tipo: 'gasto', numero: r && r.numero }, !!prueba);
+        ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [rubro, plata(monto), S.con272 ? 'de la ' + CAJAS[de].toLowerCase() : ''], tono: prueba ? 'prueba' : '',
+          notas: [num ? 'Escribile el ' + num + ' al ticket.' : '', de === 'fuerte' ? 'Salió de la caja fuerte: no entra en el cierre de caja.' : ''] });
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'gmError', mensajeDe(e)); });
     }
@@ -7388,8 +7395,9 @@
       '<div class="rm-bs-datos">' +
         '<div>' + dato('Comprobante', esc(num || '—')) + dato('Responsable', esc(f.persona || '—')) + dato('Moneda', 'Pesos') + '</div>' +
         '<div>' + dato('Estado', an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">' + (entra ? 'Cobrado' : 'Pagado') + '</span>') +
-          dato('Forma de pago', 'Efectivo') + dato('Caja', 'Caja chica') +
-          dato('Cierre de caja', esc(f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : an ? '—' : 'Entra en el próximo')) + '</div>' +
+          dato('Forma de pago', 'Efectivo') + dato('Caja', esc(CAJAS[f.caja] || CAJAS.chica)) +   // SQL 272: la chica o la fuerte
+          dato('Cierre de caja', esc(f.caja === 'fuerte' ? 'No entra: sale de la caja fuerte' :
+            f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : an ? '—' : 'Entra en el próximo')) + '</div>' +
       '</div>' + (o.carteles || '') +
       '<div class="rm-bs-cuerpo gs-bs-cuerpo">' +
         '<div class="gs-bs-izq">' +
@@ -7828,11 +7836,11 @@
 
   function verMovimientos() {
     var c = $('cuerpo');
-    c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, lo que pasó a la caja fuerte (Movimientos de salida) y los retiros de fondos.',
+    c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, lo que pasó a la caja fuerte (Movimientos de salida) y los retiros de fondos.',
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
         campo('', 'Sucursal', '<select id="mvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'retiro' || puede('retiros'); })
+        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'salida' && k !== 'ingreso' && (k !== 'retiro' || puede('retiros')); })
           .map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +   // SQL 262: el retiro, con su casilla
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
@@ -7845,6 +7853,7 @@
       $('mvLista').innerHTML = '<p class="cargando">Cargando…</p>';
       llamar('pos_caja_movimientos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('mvLocal').value || null, p_tipo: $('mvTipo').value || null,
                                        p_prueba: $('mvPrueba').value === '1' }).then(function (d) {
+        anotar272(d);
         if (n !== pedido || !$('mvLista')) return;
         pintarMovs(d);
       }).catch(function (e) { if ($('mvLista')) $('mvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
@@ -7853,8 +7862,9 @@
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
-        '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' +
-        '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' +
+        /* Las otras salidas y los otros ingresos ya no se cargan (11/11); si quedó alguno de antes, se sigue viendo su total. */
+        (Number(t.salida) ? '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' : '') +
+        (Number(t.ingreso) ? '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' : '') +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
         (t.retiro !== undefined && puede('retiros') ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>' +   // SQL 191
         ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
@@ -7865,8 +7875,9 @@
         '<th>Cargó</th><th>Cierre</th><th>Estado</th>' + (ctl ? '<th class="c">Controlado</th>' : '') + '<th class="n">Monto</th></tr></thead><tbody>' +
         d.filas.map(function (f, i) {
           var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
-            f.tipo === 'retiro' && f.caja === 'fuerte' ? 'No entra (caja fuerte)' : 'Caja abierta';
-          var det = f.tipo === 'retiro' ? [CAJAS[f.caja], f.retira ? 'lo retiró ' + f.retira : '', f.descripcion] : [f.rubro, f.descripcion];
+            (f.tipo === 'retiro' || f.tipo === 'gasto') && f.caja === 'fuerte' ? 'No entra (caja fuerte)' : 'Caja abierta';   // SQL 272: también el gasto
+          var det = f.tipo === 'retiro' ? [CAJAS[f.caja], f.retira ? 'lo retiró ' + f.retira : '', f.descripcion] :
+            [f.rubro, f.tipo === 'gasto' && f.caja === 'fuerte' ? 'de la caja fuerte' : '', f.descripcion];
           return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (prueba ? 'prueba' : '') + '">' +
             '<td><b>' + esc(f.origen === 'cierre' ? '' : refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
             '<td>' + esc(f.origen === 'cierre' ? 'Del cierre ' + refCierre(f.cierre) : det.filter(Boolean).join(' · ')) + '</td>' +
@@ -7889,7 +7900,7 @@
   /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. SQL 191: el retiro de la caja fuerte no entra en ningún
       cierre (se anula cuando sea), y lo que la oficina tildó como controlado no se anula sin sacarle el tilde. */
   function abrirMovDetalle(f, alCambiar) {
-    var an = f.estado !== 'ok', abierto = !f.cierre, deFuerte = f.tipo === 'retiro' && f.caja === 'fuerte';
+    var an = f.estado !== 'ok', abierto = !f.cierre, deFuerte = (f.tipo === 'retiro' || f.tipo === 'gasto') && f.caja === 'fuerte';   // SQL 272: también el gasto
     var ctl = (f.tipo === 'caja_fuerte' || f.tipo === 'retiro') && f.origen !== 'cierre' && f.controlado !== undefined;
     var num = refGasto(f), caja;
     /* La transferencia de fondos guardada, en la misma ventana que la nueva (como BlueSoft). La del Paso 2 de un cierre viejo, no: ésa abre el cierre. */
