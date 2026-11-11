@@ -1521,24 +1521,11 @@ function colsCaja(c, efvo) {
   return colCaja(c, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + colCaja(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') +
          colCaja(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + colCaja(c, efvo, 'real_efectivo', 'desvio_efectivo', 'efectivo');
 }
-/* (SQL 271, 11/11/2026) El día que el local no abrió no es un día «sin cargar». Mauricio, con la foto de Todos los
-   locales en rojo por el feriado del lunes 9/11: "¿No se puede tomar los datos del sistema de ventas de las planillas,
-   si sabe automáticamente qué día no abre?". La base ya lo sabe (orden_local_abre: el peso del día en la planilla de
-   Ventas; sin planilla, los días de la semana) y no lo cuenta en el mes. Acá se le pregunta por cada caja que quedó
-   abierta sin guardar (alguien entró a la caja ese día y quedó el renglón vacío): si ese día el local no abría, dice
-   «No abrió» y no suma en «Días sin cargar». Si la base no contesta, queda como antes. */
-function marcarNoAbrio(cajas) {
-  var dudosas = (cajas || []).filter(function (c) { return c && c.estado === 'pendiente' && c.local_id && c.fecha; });
-  return Promise.all(dudosas.map(function (c) {
-    return llamar('orden_local_abre', { p_local: c.local_id, p_fecha: String(c.fecha).slice(0, 10) })
-      .then(function (abre) { if (abre === false) c.no_abrio = true; }, function () {});
-  })).then(function () { return cajas; });
-}
-/** El estado de una caja sin guardar: «No abrió» si ese día el local no abría y nadie cargó nada; si no, «Sin cargar». */
+/** El estado de una caja sin guardar: «No abrió» si ese día el local no abría y nadie cargó nada (SQL 271:
+    marcarNoAbrio y textoNoAbrio, en impecable-comun.js); si no, «Sin cargar». */
 function estadoSinCargar(c) {
-  var vacia = !['sis_mp', 'real_mp', 'sis_tarjeta', 'real_lote', 'sis_gocuotas', 'real_gocuotas', 'sis_saldo_final_efvo', 'real_efectivo'].some(function (k) { return c[k] != null; });
-  if (!c.no_abrio || !vacia) return '<span class="est pendiente">Sin cargar</span>';
-  return '<span class="est no-abrio">' + (String(c.fecha).slice(0, 10) < hoyAR() ? 'No abrió' : 'No abre') + '</span>';
+  var t = textoNoAbrio(c);
+  return t ? '<span class="est no-abrio">' + t + '</span>' : '<span class="est pendiente">Sin cargar</span>';
 }
 /** La tabla de los días (como la planilla) con la fila del total. */
 function tablaDiasCaja(cajas, tot) {
@@ -1783,7 +1770,7 @@ function dibujarVentanaCaja(k, fs, deIA) {
   var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
     ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
     /* (SQL 271) El renglón vacío de un día que el local no abrió. */
-    (k.estado === 'pendiente' && k.no_abrio ? '<div class="nota">Ese día el local no abrió, según la planilla de Ventas: no cuenta como día sin cargar.</div>' : '') +
+    (textoNoAbrio(k) ? '<div class="nota">' + NOTA_NO_ABRIO + '</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
     (k.diferencia_persona ? '<div class="nota alerta"><b>Diferencia a cargo de ' + esc(k.diferencia_persona_nombre || '—') + ': ' + pesos(k.diferencia_monto) + '</b></div>' : '') +
     /* (SQL 142) Editar cualquier número a mano, por si la IA no leyó algo o leyó mal (19/10, Mauricio:

@@ -187,6 +187,29 @@ function esc(v) {
   });
 }
 
+/* (SQL 271, 11/11/2026) El día que el local no abrió no es un día «sin cargar». Mauricio, con la foto de Todos los
+   locales en rojo por el feriado del lunes 9/11: "¿No se puede tomar los datos del sistema de ventas de las planillas,
+   si sabe automáticamente qué día no abre?". La base ya lo sabe (orden_local_abre: el peso del día en la planilla de
+   Ventas; sin planilla, los días de la semana) y no lo cuenta en el mes. Acá se le pregunta por cada caja que quedó
+   abierta sin guardar (alguien entró a la caja ese día y quedó el renglón vacío) y se le marca no_abrio. Si la base no
+   contesta, queda como antes. Lo usan Supervisión → Cajas (la compu) y Registro → Cajas (la app). */
+function marcarNoAbrio(cajas) {
+  var dudosas = (cajas || []).filter(function (c) { return c && c.estado === 'pendiente' && c.local_id && c.fecha; });
+  return Promise.all(dudosas.map(function (c) {
+    return llamar('orden_local_abre', { p_local: c.local_id, p_fecha: String(c.fecha).slice(0, 10) })
+      .then(function (abre) { if (abre === false) c.no_abrio = true; }, function () {});
+  })).then(function () { return cajas; });
+}
+/** «No abrió» (o «No abre», si es hoy) cuando la caja quedó sin guardar y vacía un día que el local no abría; si no, ''.
+    Con algún número escrito no se dice: abrió igual (un feriado que se trabajó) y le falta guardarla. */
+function textoNoAbrio(c) {
+  if (!c || c.estado !== 'pendiente' || !c.no_abrio) return '';
+  var campos = ['sis_mp', 'real_mp', 'sis_tarjeta', 'real_lote', 'sis_gocuotas', 'real_gocuotas', 'sis_saldo_final_efvo', 'real_efectivo'];
+  if (campos.some(function (k) { return c[k] != null; })) return '';
+  return String(c.fecha).slice(0, 10) < hoyAR() ? 'No abrió' : 'No abre';
+}
+var NOTA_NO_ABRIO = 'Ese día el local no abrió, según la planilla de Ventas: no cuenta como día sin cargar.';
+
 /** La fecha de hoy en Argentina, AAAA-MM-DD (la del teléfono puede estar en otra zona). */
 function hoyAR(d) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit' })

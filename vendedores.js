@@ -4443,7 +4443,7 @@ function pantallaCajasSup() {
     return Promise.all([
       leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&order=fecha.desc&limit=31'),
       leer('/orden_config?select=caja_activa&local_id=eq.' + L)
-    ]).then(function (r) {
+    ]).then(function (r) { return marcarNoAbrio(r[0]).then(function () { return r; }); }).then(function (r) {   // (SQL 271)
       if (!enPapel('cajas')) return;
       var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa);
       var html = cabeza('Registro', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
@@ -4465,7 +4465,7 @@ function pantallaCajasSup() {
 
 function filaCaja(c) {
   var n = (c.alertas || []).length;
-  var est = c.estado === 'controlada' ? ['listo', 'Controlada'] : c.estado === 'cargada' ? ['sorpresa', 'Para controlar'] : ['pendiente', 'Sin cargar'];
+  var est = c.estado === 'controlada' ? ['listo', 'Controlada'] : c.estado === 'cargada' ? ['sorpresa', 'Para controlar'] : ['pendiente', textoNoAbrio(c) || 'Sin cargar'];
   return '<button class="fila fila-boton" data-caja="' + esc(c.id) + '"><span><b>' + esc(diaMes(c.fecha)) + '</b></span>' +
     '<span class="chip ' + est[0] + '">' + est[1] + '</span>' + (n ? '<span class="chip vencido">' + n + (n === 1 ? ' alerta' : ' alertas') + '</span>' : '') + '</button>';
 }
@@ -4484,6 +4484,7 @@ function detalleCaja(c) {
       return '<div class="fila"><span>' + f[0] + '</span><span>' + lado(f[1], f[2]) + '</span><span>' + lado(f[2], f[1]) + '</span><span class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</span></div>';
     }).join('') + '</div>' +
     ((c.alertas || []).length ? '<div class="revision mala"><div class="titulo">Alertas</div>' + c.alertas.map(function (a) { return '<div>' + esc(textoAlerta(a)) + '</div>'; }).join('') + '</div>' : '') +
+    (textoNoAbrio(c) ? '<div class="nota">' + NOTA_NO_ABRIO + '</div>' : '') +   // (SQL 271)
     (c.observaciones ? '<div class="nota">' + esc(c.observaciones) + '</div>' : '') +
     /* (SQL 124) Corregirla con el cierre nuevo o a mano, o cargarla si no la cargaron. */
     (c.estado !== 'controlada' && !soloMira()
@@ -5490,6 +5491,8 @@ llamar = function (nombre, args, tope) {
   if (nombre === 'pos_fichero_mio') return ficheroEspejo();
   /* Sólo lee (SQL 159): la vidriera de la semana de su local. */
   if (nombre === 'orden_vidriera_semana') return _llamarReal(nombre, args, tope);
+  /* Sólo lee (SQL 271): si el local abre un día (para el «No abrió» de las cajas). */
+  if (nombre === 'orden_local_abre') return _llamarReal(nombre, args, tope);
   return trabado();
 };
 escribir = function (ruta, metodo, cuerpo) { return _espejo ? trabado() : _escribirReal(ruta, metodo, cuerpo); };
