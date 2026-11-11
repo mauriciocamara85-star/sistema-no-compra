@@ -1,20 +1,24 @@
 /**
  * Sistema VDH · La puerta de la función «arca» (11/11/2026).
  *
- * ── Paso 1 de ARCA: sólo el puente ────────────────────────────────────────
- * Por ahora esta función NO la llama ninguna pantalla. Sirve para comprobar
- * desde afuera que el servidor habla con ARCA, y entra sólo quien trae la
- * llave de diagnóstico (el secreto ARCA_DIAG, en la cabecera x-arca-llave).
- * El paso 2 le suma «facturar», que llama el POS con la sesión de la persona.
+ * ── El POS (paso 2) ───────────────────────────────────────────────────────
+ *   POST /functions/v1/arca   { accion: 'facturar', venta_id }   con la sesión de la persona (Authorization)
+ *     → { ok: true, factura } | { ok: true, no_va } | { ok: false, error }        (ver facturar.ts)
+ *   La base decide qué factura le toca y si la persona puede ver esa venta.
  *
+ * ── Diagnóstico (paso 1) ──────────────────────────────────────────────────
+ * Sólo con la llave de diagnóstico (el secreto ARCA_DIAG, en la cabecera x-arca-llave):
  *   POST /functions/v1/arca   { accion, ambiente? }     ambiente: 'homologacion' (por defecto) | 'produccion'
- *     · estado  → ¿andan los servidores de ARCA?, ¿está cargado el certificado?, ¿hay permiso vigente?
- *     · ultimo  → { punto_venta, tipo }: el último número autorizado
- *     · probar  → SÓLO en homologación: pide una Factura B de prueba de $1.210 (sin valor fiscal)
+ *     · estado      → ¿andan los servidores de ARCA?, ¿está cargado el certificado?, ¿hay permiso vigente?
+ *     · ultimo      → { punto_venta, tipo }: el último número autorizado
+ *     · consultar   → { punto_venta, tipo, numero }: un comprobante como lo tiene ARCA
+ *     · condiciones → { clase: 'A' | 'B' }: las condiciones de IVA que ARCA acepta para esa clase
+ *     · probar      → SÓLO en homologación: pide una Factura B de prueba de $1.210 (sin valor fiscal)
  *
  * Se publica con --no-verify-jwt: quién entra lo decide esta función.
  */
-import { ArcaError, credencial, esAmbiente, hoyArca, pedirCae, servidores, ticket, ultimoNumero } from './arca.ts';
+import { ArcaError, condicionesIva, consultar, credencial, esAmbiente, hoyArca, pedirCae, servidores, ticket, ultimoNumero } from './arca.ts';
+import { facturar } from './facturar.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -57,12 +61,27 @@ function entero(x: unknown, desde: number, hasta: number): number | null {
 export async function manejar(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
   if (req.method !== 'POST') return responder({ ok: false, error: 'Sólo POST.' }, 405);
-  if (!conLlave(req)) return responder({ ok: false, error: 'No autorizado.' }, 401);
 
   // deno-lint-ignore no-explicit-any
   let p: any;
   try { p = await req.json(); } catch { p = null; }
   if (!p || typeof p !== 'object') return responder({ ok: false, error: 'El pedido no se entiende.' }, 400);
+
+  /* El POS: con la sesión de la persona que entró (la base mira sus permisos). */
+  if (p.accion === 'facturar') {
+    const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+    const anonima = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    if (!token || token === anonima) return responder({ ok: false, error: 'Se cerró tu sesión: entrá de nuevo.', codigo: 'sin_sesion' }, 401);
+    if (typeof p.venta_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(p.venta_id)) return responder({ ok: false, error: 'Falta la venta.' }, 400);
+    try {
+      return responder(await facturar(token, p.venta_id));
+    } catch (e) {
+      const x = porque(e);
+      return responder({ ok: false, ...x }, x.codigo === 'sin_sesion' ? 401 : 200);
+    }
+  }
+
+  if (!conLlave(req)) return responder({ ok: false, error: 'No autorizado.' }, 401);
   const amb = p.ambiente ?? 'homologacion';
   if (!esAmbiente(amb)) return responder({ ok: false, error: 'El ambiente es «homologacion» o «produccion».' }, 400);
 
@@ -86,6 +105,18 @@ export async function manejar(req: Request): Promise<Response> {
       const pv = entero(p.punto_venta, 1, 99999), tipo = entero(p.tipo, 1, 999);
       if (pv === null || tipo === null) return responder({ ok: false, error: 'Faltan el punto de venta o el tipo de comprobante.' }, 400);
       return responder({ ok: true, ambiente: amb, punto_venta: pv, tipo, numero: await ultimoNumero(amb, pv, tipo) });
+    }
+
+    if (p.accion === 'consultar') {
+      const pv = entero(p.punto_venta, 1, 99999), tipo = entero(p.tipo, 1, 999), n = entero(p.numero, 1, 99999999);
+      if (pv === null || tipo === null || n === null) return responder({ ok: false, error: 'Faltan el punto de venta, el tipo o el número.' }, 400);
+      return responder({ ok: true, ambiente: amb, comprobante: await consultar(amb, pv, tipo, n) });
+    }
+
+    if (p.accion === 'condiciones') {
+      const clase = String(p.clase ?? '').toUpperCase();
+      if (!['A', 'B', 'C'].includes(clase)) return responder({ ok: false, error: 'La clase es A, B o C.' }, 400);
+      return responder({ ok: true, ambiente: amb, clase, condiciones: await condicionesIva(amb, clase) });
     }
 
     if (p.accion === 'probar') {

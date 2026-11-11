@@ -195,12 +195,27 @@ async function pedirTicket(amb: Ambiente, servicio: string): Promise<Ticket> {
   return { token, sign, vence: vence.toISOString() };
 }
 
-/* ── La base: dónde se guarda el ticket (SQL 273) ─────────────────────── */
+/* ── La base: dónde se guarda el ticket (SQL 273) y las facturas (SQL 274) ── */
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const ANONIMA = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
-async function base(funcion: string, cuerpo: unknown): Promise<any> {
+/** El SQL que crea cada función de la base, para decir cuál falta correr. */
+function faltaSql(funcion: string): string {
+  return funcion.startsWith('arca_factura_')
+    ? 'Falta correr el SQL 274: es donde se guardan las facturas de ARCA.'
+    : 'Falta correr el SQL 273: es donde se guarda el permiso de ARCA.';
+}
+
+/** Lo que dice la base cuando rechaza algo (PostgREST: { message }). */
+async function porqueBase(r: Response): Promise<string> {
+  const t = await r.text();
+  try { return String(JSON.parse(t).message ?? t).slice(0, 300); } catch { return t.slice(0, 300); }
+}
+
+/** Una función de la base con la service role (sólo el servidor). */
+export async function base(funcion: string, cuerpo: unknown): Promise<any> {
   let r: Response;
   try {
     r = await fetch(URL_BASE + '/rest/v1/rpc/' + funcion, {
@@ -214,13 +229,38 @@ async function base(funcion: string, cuerpo: unknown): Promise<any> {
   }
   if (r.status === 404) {
     await r.body?.cancel();
-    throw new ArcaError('sin_sql', 'Falta correr el SQL 273: es donde se guarda el permiso de ARCA.');
+    throw new ArcaError('sin_sql', faltaSql(funcion));
   }
-  if (!r.ok) throw new ArcaError('base', 'La base contestó ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  if (!r.ok) throw new ArcaError('base', 'La base contestó ' + r.status + ': ' + await porqueBase(r));
   return r.json();
 }
 
-const dormir = (ms: number) => new Promise((listo) => setTimeout(listo, ms));
+/** Una función de la base con la sesión de la persona que entró: la base mira sus permisos, como en el POS. */
+export async function comoPersona(token: string, funcion: string, cuerpo: unknown): Promise<any> {
+  let r: Response;
+  try {
+    r = await fetch(URL_BASE + '/rest/v1/rpc/' + funcion, {
+      method: 'POST',
+      headers: { apikey: ANONIMA, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new ArcaError('base', 'No se pudo hablar con la base.');
+  }
+  if (r.status === 401) {
+    await r.body?.cancel();
+    throw new ArcaError('sin_sesion', 'Se cerró tu sesión: entrá de nuevo.');
+  }
+  if (r.status === 404) {
+    await r.body?.cancel();
+    throw new ArcaError('sin_sql', faltaSql(funcion));
+  }
+  if (!r.ok) throw new ArcaError('venta', await porqueBase(r));
+  return r.json();
+}
+
+export const dormir = (ms: number) => new Promise((listo) => setTimeout(listo, ms));
 
 /**
  * El ticket vigente del ambiente. Si no hay, lo pide: la base deja pasar UN solo pedido por vez (si dos cajas
@@ -376,6 +416,36 @@ export async function pedirCae(amb: Ambiente, c: Comprobante): Promise<Resultado
     observaciones: avisos(detalle, 'Observaciones', 'Obs'),
     errores: avisos(xml, 'Errors', 'Err'),
   };
+}
+
+/** Un comprobante que ARCA ya autorizó, como lo tiene ARCA. null si ARCA no lo tiene (error 602). */
+export type Consultado = { numero: number; fecha: string; total: number; doc_tipo: number; doc_nro: string; cae: string; cae_vence: string; resultado: string };
+
+export async function consultar(amb: Ambiente, puntoVenta: number, tipo: number, numero: number): Promise<Consultado | null> {
+  const xml = await wsfe(amb, 'FECompConsultar',
+    '<ar:FeCompConsReq><ar:CbteTipo>' + tipo + '</ar:CbteTipo><ar:CbteNro>' + numero + '</ar:CbteNro><ar:PtoVta>' + puntoVenta +
+    '</ar:PtoVta></ar:FeCompConsReq>');
+  const errores = avisos(xml, 'Errors', 'Err');
+  if (errores.some((e) => e.codigo === '602')) return null;   // «No existen datos en nuestros registros»
+  if (errores.length) throw new ArcaError('wsfe', 'ARCA: ' + errores.map((e) => e.mensaje + ' (' + e.codigo + ')').join(' · '));
+  const r = etiqueta(xml, 'ResultGet');
+  if (!r) return null;
+  return {
+    numero: Number(etiqueta(r, 'CbteDesde')),
+    fecha: etiqueta(r, 'CbteFch'),
+    total: Number(etiqueta(r, 'ImpTotal')),
+    doc_tipo: Number(etiqueta(r, 'DocTipo')),
+    doc_nro: etiqueta(r, 'DocNro'),
+    cae: etiqueta(r, 'CodAutorizacion'),
+    cae_vence: etiqueta(r, 'FchVto'),
+    resultado: etiqueta(r, 'Resultado'),
+  };
+}
+
+/** Las condiciones frente al IVA que ARCA acepta para una clase de factura ('A', 'B', 'C'). */
+export async function condicionesIva(amb: Ambiente, clase: string): Promise<{ id: number; nombre: string }[]> {
+  const xml = await wsfe(amb, 'FEParamGetCondicionIvaReceptor', '<ar:ClaseCmp>' + escapar(clase) + '</ar:ClaseCmp>');
+  return etiquetas(xml, 'CondicionIvaReceptor').map((x) => ({ id: Number(etiqueta(x, 'Id')), nombre: desescapar(etiqueta(x, 'Desc')) }));
 }
 
 /** Hoy en Argentina, como lo pide ARCA: 'AAAAMMDD'. */

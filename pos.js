@@ -3136,7 +3136,9 @@
         ir('tickets');
       }
       ventanaHecho({ titulo: nombreVenta(S.ultimo) + ' guardada', datos: [S.ultimo.local, plata(c.total)], tono: S.ultimo.serie === 'prueba' ? 'prueba' : '',
-        notas: [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], factura: r.factura, facturaError: r.factura_error });
+        notas: [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], factura: r.factura, facturaError: r.factura_error,
+        /* ARCA, paso 2 (SQL 274): por ahora sólo la de PRUEBA A o B, contra el ARCA de prueba. La base decide. */
+        arca: !r.factura && p.prueba && (p.letra === 'A' || p.letra === 'B') ? r.id : null });
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -3169,17 +3171,12 @@
      tiene mail, y con Enter sigue siendo Aceptar (BlueSoft deja elegido el «No»). Hasta que exista el envío, no hay botón.
      o: titulo; datos (al lado del título: la sucursal, el total); notas (los renglones de abajo; los vacíos no salen); factura y
      facturaError; tono: 'cola' (sin internet, con la nube) o 'prueba', en el amarillo del cartel de la venta (si no, el tilde
-     verde); despues. */
+     verde); despues.
+     ARCA, paso 2 (11/11, SQL 274): la venta se guarda como siempre y DESPUÉS el servidor (la función «arca») le pide la factura
+     a ARCA. Con o.arca (el id de la venta) la ventana sale enseguida y el recuadro se llena cuando contesta: «Pidiéndole el CAE
+     a ARCA…» si tarda, y después la factura o por qué no salió. Si ya la cerraron, el cartelito. */
   function ventanaHecho(o) {
-    var f = o.factura, fError = o.facturaError;
-    var vence = fechaCae(f && f.cae_vence), comp = f && f.numero ? compArca(f) : '';
-    var fac = f && f.cae ?
-      '<div class="vg-fac"><b>Factura electrónica</b><span>Se creó correctamente la factura electrónica.</span><dl>' +
-        (comp ? '<dt>Comprobante</dt><dd>' + esc(comp) + '</dd>' : '') +
-        '<dt>CAE</dt><dd>' + esc(f.cae) + '</dd>' +
-        (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
-      fError ? '<div class="pos-cartel mal"><b>No se pudo crear la factura electrónica.</b> ' + esc(conPunto(fError)) +
-        ' La venta quedó guardada, todavía sin CAE.</div>' : '';
+    var fac = o.arca ? '<div class="vg-fac-lugar"></div>' : htmlFactura(o.factura, o.facturaError);
     var datos = (o.datos || []).filter(Boolean), notas = (o.notas || []).filter(Boolean);
     var caja = ventana('<div class="vg-cab">' + icono(o.tono === 'cola' ? 'nube' : 'ok') + '<div><h3 id="posVentTit">' + esc(o.titulo) + '</h3>' +
         (datos.length ? '<p class="vg-datos">' + datos.map(esc).join(' · ') + '</p>' : '') + '</div></div>' +
@@ -3188,7 +3185,66 @@
     caja.classList.add('vg');
     if (o.tono) caja.classList.add('vg-aviso');
     if (o.despues) _alCerrar = o.despues;
+    if (o.arca) pedirFacturaEn(caja, o.arca);
     return caja;
+  }
+  /** El recuadro de la factura electrónica: la aprobada (comprobante, CAE y vencimiento) o por qué no salió. La del ARCA de
+      prueba lo dice. otraVez: el error se arregla pidiéndola de nuevo (sin respuesta, ocupado), no cambiando la venta. */
+  function htmlFactura(f, fError, otraVez) {
+    var vence = fechaCae(f && f.cae_vence), comp = f && f.numero ? compArca(f) : '', deP = f && f.ambiente === 'homologacion';
+    return f && f.cae ?
+      '<div class="vg-fac"><b>Factura electrónica' + (deP ? ' de prueba' : '') + '</b><span>' +
+        (deP ? 'La aprobó el ARCA de prueba: no tiene valor fiscal.' : 'Se creó correctamente la factura electrónica.') + '</span><dl>' +
+        (comp ? '<dt>Comprobante</dt><dd>' + esc(comp) + '</dd>' : '') +
+        '<dt>CAE</dt><dd>' + esc(f.cae) + '</dd>' +
+        (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
+      fError ? '<div class="pos-cartel mal"><b>No se pudo crear la factura electrónica.</b> ' + esc(conPunto(fError)) +
+        ' La venta quedó guardada, todavía sin CAE.' + (otraVez ? ' Se pide de nuevo desde el ticket, con «Pedir el CAE».' : '') + '</div>' : '';
+  }
+  /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
+  function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
+  /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
+  function pedirFacturaEn(caja, id) {
+    var lugar = caja.querySelector('.vg-fac-lugar'), listo = false;
+    setTimeout(function () {
+      if (!listo && lugar && lugar.isConnected) {
+        lugar.innerHTML = '<div class="vg-fac vg-fac-pide"><b>Factura electrónica</b><span>Pidiéndole el CAE a ARCA…</span></div>';
+      }
+    }, 500);
+    pedirFactura(id).then(function (x) {
+      listo = true;
+      if (lugar && lugar.isConnected) { lugar.innerHTML = x.factura ? htmlFactura(x.factura) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x)); return; }
+      if (x.factura) avisar('ok', 'Factura electrónica ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
+      else if (!x.no_va) avisar('err', 'No se pudo crear la factura electrónica: ' + conPunto(x.error) + ' La venta quedó guardada, todavía sin CAE.');
+    });
+  }
+  /** La función «arca» del servidor le pide a ARCA la factura de la venta. Nunca rechaza: devuelve { ok, factura } (aprobada o
+      ya estaba), { ok, no_va } (no le toca) o { ok: false, error, codigo }. Puede tardar: si otra caja está pidiendo en el mismo
+      punto de venta, espera su turno (hasta medio minuto) y ARCA puede tardar otro tanto. */
+  function pedirFactura(id) {
+    return persona.token().then(function (t) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var reloj = setTimeout(function () { if (ctl) ctl.abort(); }, 90000);
+      return fetch(BASE + '/functions/v1/arca', {
+        method: 'POST',
+        signal: ctl ? ctl.signal : undefined,
+        headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'facturar', venta_id: id })
+      }).then(function (r) {
+        clearTimeout(reloj);
+        if (r.status === 404) return { ok: false, codigo: 'sin_funcion', error: 'Falta publicar la función «arca» en el servidor.' };
+        return r.json().catch(function () { return { ok: false, error: 'El servidor contestó algo que no se entiende.' }; });
+      }, function () {
+        clearTimeout(reloj);
+        return { ok: false, codigo: 'sin_respuesta', error: 'No se pudo hablar con el servidor (¿hay internet?).' };
+      });
+    }, function () {
+      return { ok: false, codigo: 'sin_sesion', error: 'Se cerró tu sesión: entrá de nuevo.' };
+    }).then(function (x) {
+      x = x || {};
+      if (!x.ok && !x.error) x.error = 'No se pudo pedir la factura electrónica.';
+      return x;
+    });
   }
   /** El vencimiento del CAE: '2026-11-17' o '20261117' (como lo da ARCA) → '17/11/2026'. */
   function fechaCae(s) {
@@ -3453,6 +3509,7 @@
       /* SQL 248: «Corregir el pago» (se cobró con un medio y se cargó con otro), mientras la venta no entró en un cierre. Sin el 248, no está. */
       var corr = Object.prototype.hasOwnProperty.call(t, 'correcciones') ? (t.correcciones || []) : null;
       var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !t.factura && puede('caja') && pagosACorregir(t).length > 0;
+      var pideCae = !t.factura && t.prueba && !anulada && t.letra !== 'X';   // ARCA, paso 2 (SQL 274)
       dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
           (anulada ? '<span class="pill pill-bad">' + (nota ? 'Anulada · ' + esc(refNota(nota)) : 'Anulada') + '</span>' : '<span class="pill pill-ok">Cobrada</span>') +
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
@@ -3466,11 +3523,12 @@
           '<div><span>Cargó</span>' + esc(t.cargado_por_nombre || '—') + '</div>' +
           '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
           '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
-          '<div><span>ARCA</span>' + (t.factura ? 'Con CAE' : t.letra === 'X' ? 'No va (comprobante interno)' : t.prueba ? 'No va (es una prueba)' : 'Sin factura (la hace BlueSoft)') + '</div>' +
+          '<div><span>ARCA</span>' + arcaTicket(t, anulada) + '</div>' +
           /* SQL 171: el socio del Club y sus puntos. */
           (t.socio ? '<div><span>Club</span>' + (t.socio_nivel ? esc(t.socio_nivel) + ' · ' : '') + 'tarjeta ' + esc(t.socio) + '<br>' + miles(Number(t.socio_puntos) || 0) + ' puntos ' +
             (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar (se cargan en Cobrar)') + '</div>' : '') +
         '</div>' +
+        (pideCae ? '<div class="pos-error" id="tkCaeError"></div>' : '') +
         productosTicket(t) +
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Pagos</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
         /* SQL 248: cada corrección del pago, con quién, cuándo, por qué y cómo estaba antes. */
@@ -3494,6 +3552,25 @@
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       var vv = dentro.querySelector('#tkVolver');
       if (vv) vv.onclick = volver;
+      /* ARCA, paso 2 (SQL 274): pedirle de nuevo el CAE (no contestó, se cortó internet, se hizo sin internet). */
+      var ce = dentro.querySelector('#tkCae');
+      if (ce) ce.onclick = function () {
+        ce.disabled = true;
+        ce.textContent = 'Pidiéndole el CAE a ARCA…';
+        errorEn(dentro, 'tkCaeError', '');
+        pedirFactura(t.id).then(function (x) {
+          if (x.factura) {
+            avisar('ok', 'Factura electrónica ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
+            if (alCambiar) alCambiar();
+            if (caja.isConnected) abrirTicket(t.id, alCambiar, volver);
+            return;
+          }
+          if (!ce.isConnected) return;
+          ce.disabled = false;
+          ce.textContent = 'Pedir el CAE';
+          errorEn(dentro, 'tkCaeError', x.no_va || ('No se pudo crear la factura electrónica: ' + conPunto(x.error)));
+        });
+      };
       var vn = dentro.querySelector('#tkVerNota');
       if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar, false, volver); };   // SQL 260: desde el cierre, vuelve a la lista
       var nb = dentro.querySelector('#tkNotaBtn');
@@ -3530,6 +3607,20 @@
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Ticket</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
+  }
+
+  /** El renglón «ARCA» del ticket (SQL 274): la factura con su CAE o, en una de prueba A o B sin CAE, el botón para pedirlo. */
+  function arcaTicket(t, anulada) {
+    var f = t.factura;
+    if (f && f.cae) {
+      return esc(compArca(f) || 'Con CAE') + '<br><small>CAE ' + esc(f.cae) + (f.cae_vence ? ' · vence ' + esc(fechaCae(f.cae_vence)) : '') +
+        (f.ambiente === 'homologacion' ? '<br>ARCA de prueba: sin valor fiscal' : '') + '</small>';
+    }
+    if (f) return 'Con CAE';
+    if (t.letra === 'X') return 'No va (comprobante interno)';
+    if (!t.prueba) return 'Sin factura (la hace BlueSoft)';
+    if (anulada) return 'Sin CAE (la venta está anulada)';
+    return 'Sin CAE todavía<br><button type="button" class="pos-link" id="tkCae" title="Se la pide al ARCA de prueba (sin valor fiscal)">Pedir el CAE</button>';
   }
 
   /* ════════════════════════════════════════════════════════════════════

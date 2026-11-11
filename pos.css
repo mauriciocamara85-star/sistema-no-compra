@@ -557,6 +557,9 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-caja .vg-fac dt { color: var(--txt-2); }
 .pos-caja .vg-fac dd { margin: 0; color: var(--txt); font-weight: 700; font-variant-numeric: tabular-nums; }
 .pos-caja.vg .pos-cartel { margin: 4px 0 0; }
+/* ARCA, paso 2 (SQL 274): mientras el servidor le pide el CAE a ARCA. */
+.pos-caja .vg-fac.vg-fac-pide { background: var(--info-soft); border-color: var(--line); }
+.pos-caja .vg-fac.vg-fac-pide > b { color: var(--info-txt); }
 .pos-error { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--bad-txt); }
 .pos-error:empty { display: none; }
 .pos-ayuda { font-size: 12px; color: var(--txt-3); line-height: 1.4; }
