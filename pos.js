@@ -7115,13 +7115,23 @@
         ? 'En efectivo, de la caja fuerte: se descuenta de la caja fuerte y no entra en el cierre de caja.'
         : 'En efectivo, de la caja chica: entra solo en el próximo cierre de caja.';
     }
+    /* v469 (Mauricio, 11/11: «las comisiones las pago de caja fuerte»): al elegir «Sueldo comisiones» la Caja pasa sola a
+       la caja fuerte, y vuelve a la chica si cambian a otro gasto. Si la Caja la eligieron a mano, se respeta lo que pusieron. */
+    var cajaAMano = false;
+    function cajaSegunGasto() {
+      var c = caja.querySelector('#gmCaja');
+      if (!c || c.tagName !== 'SELECT' || cajaAMano) return;
+      c.value = caja.querySelector('#gmRubro').value === 'Sueldo comisiones' ? 'fuerte' : 'chica';
+      nota();
+    }
     function pintarCaja() {
       caja.querySelector('#gmCajaF').innerHTML = '<span>Caja</span>' + (S.con272
         ? '<select id="gmCaja" aria-label="De qué caja sale la plata">' + opciones([['chica', CAJAS.chica], ['fuerte', CAJAS.fuerte]], 'chica') + '</select>'
         : '<input type="text" id="gmCaja" value="' + CAJAS.chica + '" readonly tabindex="-1">');
       var c = caja.querySelector('#gmCaja');
-      if (c.tagName === 'SELECT') c.onchange = function () { nota(); errorEn(caja, 'gmError', ''); };
+      if (c.tagName === 'SELECT') c.onchange = function () { cajaAMano = true; nota(); errorEn(caja, 'gmError', ''); };
       nota();
+      cajaSegunGasto();
     }
     pintarCaja();
     /* Si todavía no se sabe (tocaron «Nuevo gasto» antes de que llegara el listado), se le pregunta a la base con el listado de hoy. */
@@ -7136,7 +7146,7 @@
       caja.querySelector('#gmTotal').textContent = plata(isNaN(m) ? 0 : m);
       errorEn(caja, 'gmError', '');
     };
-    caja.querySelector('#gmRubro').onchange = function () { errorEn(caja, 'gmError', ''); };
+    caja.querySelector('#gmRubro').onchange = function () { errorEn(caja, 'gmError', ''); cajaSegunGasto(); };
     setTimeout(function () { caja.querySelector('#gmRubro').focus(); }, 0);
     function guardarMov() {
       var bt = caja.querySelector('#gmGuardar');
