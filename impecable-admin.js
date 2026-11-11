@@ -1521,6 +1521,25 @@ function colsCaja(c, efvo) {
   return colCaja(c, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + colCaja(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') +
          colCaja(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + colCaja(c, efvo, 'real_efectivo', 'desvio_efectivo', 'efectivo');
 }
+/* (SQL 271, 11/11/2026) El día que el local no abrió no es un día «sin cargar». Mauricio, con la foto de Todos los
+   locales en rojo por el feriado del lunes 9/11: "¿No se puede tomar los datos del sistema de ventas de las planillas,
+   si sabe automáticamente qué día no abre?". La base ya lo sabe (orden_local_abre: el peso del día en la planilla de
+   Ventas; sin planilla, los días de la semana) y no lo cuenta en el mes. Acá se le pregunta por cada caja que quedó
+   abierta sin guardar (alguien entró a la caja ese día y quedó el renglón vacío): si ese día el local no abría, dice
+   «No abrió» y no suma en «Días sin cargar». Si la base no contesta, queda como antes. */
+function marcarNoAbrio(cajas) {
+  var dudosas = (cajas || []).filter(function (c) { return c && c.estado === 'pendiente' && c.local_id && c.fecha; });
+  return Promise.all(dudosas.map(function (c) {
+    return llamar('orden_local_abre', { p_local: c.local_id, p_fecha: String(c.fecha).slice(0, 10) })
+      .then(function (abre) { if (abre === false) c.no_abrio = true; }, function () {});
+  })).then(function () { return cajas; });
+}
+/** El estado de una caja sin guardar: «No abrió» si ese día el local no abría y nadie cargó nada; si no, «Sin cargar». */
+function estadoSinCargar(c) {
+  var vacia = !['sis_mp', 'real_mp', 'sis_tarjeta', 'real_lote', 'sis_gocuotas', 'real_gocuotas', 'sis_saldo_final_efvo', 'real_efectivo'].some(function (k) { return c[k] != null; });
+  if (!c.no_abrio || !vacia) return '<span class="est pendiente">Sin cargar</span>';
+  return '<span class="est no-abrio">' + (String(c.fecha).slice(0, 10) < hoyAR() ? 'No abrió' : 'No abre') + '</span>';
+}
 /** La tabla de los días (como la planilla) con la fila del total. */
 function tablaDiasCaja(cajas, tot) {
   return '<div class="desliza"><table class="tabla-datos tabla-cajas"><thead><tr><th rowspan="2">Día</th>' +
@@ -1528,7 +1547,7 @@ function tablaDiasCaja(cajas, tot) {
     '<tr>' + GRUPOS_CAJA.map(function (m) { return '<th class="n g-' + m[0] + ' ini">Cierre</th><th class="n g-' + m[0] + '">Real</th><th class="n g-' + m[0] + '">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
     cajas.map(function (c) {
       return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' + colsCaja(c, 'sis_saldo_final_efvo') +
-        '<td class="ini">' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : '<span class="est pendiente">Sin cargar</span>') +
+        '<td class="ini">' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : estadoSinCargar(c)) +
         ((c.alertas || []).length ? ' <span class="est vencido">' + c.alertas.length + '</span>' : '') +
         (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
     }).join('') +
@@ -1590,7 +1609,7 @@ function totalCajas(cajas) {
   var de = cajas.filter(function (c) { return c.desvio_efectivo != null; });
   t.sobrante_efectivo = de.length ? de.reduce(function (a, c) { return a + Math.max(-Number(c.desvio_efectivo), 0); }, 0) : null;
   cajas.forEach(function (c) {
-    if (c.estado === 'pendiente') t.dias_sin_cargar++;
+    if (c.estado === 'pendiente' && !c.no_abrio) t.dias_sin_cargar++;   /* (SQL 271) el día que no abrió no cuenta */
     if (c.estado === 'cargada') t.dias_sin_controlar++;
     if ((c.alertas || []).length) t.dias_con_alertas++;
   });
@@ -1621,7 +1640,7 @@ function verCajas() {
     leerCierres('/orden_v_cajas_meses?select=*&local_id=eq.' + L + '&mes=in.(' + mesesQ.join(',') + ')'),
     /* El mes del día de caja: el día 1 antes de que abra el local, todavía es el anterior. */
     llamar('orden_caja_mes_actual', { p_local: _local.id }).catch(function () { return null; })
-  ]).then(function (r) {
+  ]).then(function (r) { return marcarNoAbrio(r[0]).then(function () { return r; }); }).then(function (r) {
     if (_solapa !== 'cajas' || _cajasTodos || _cajasRango) return;
     var cajas = r[0] || [], porMes = {}, activa = !!(r[2] && r[2][0] && r[2][0].caja_activa), cierres = {};
     (r[1] || []).forEach(function (x) { porMes[x.mes] = x; });
@@ -1675,7 +1694,7 @@ function verCajasRango() {
   Promise.all([
     leerTodas('/orden_v_cajas?select=*&local_id=eq.' + L + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc'),
     leer('/orden_config?select=caja_activa&local_id=eq.' + L)
-  ]).then(function (r) {
+  ]).then(function (r) { return marcarNoAbrio(r[0]).then(function () { return r; }); }).then(function (r) {
     if (_solapa !== 'cajas' || _cajasTodos || _cajasRango !== rg) return;
     var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa), tot = totalCajas(cajas);
     var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → El local).</div>') +
@@ -1763,6 +1782,8 @@ function dibujarVentanaCaja(k, fs, deIA) {
   });
   var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
     ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
+    /* (SQL 271) El renglón vacío de un día que el local no abrió. */
+    (k.estado === 'pendiente' && k.no_abrio ? '<div class="nota">Ese día el local no abrió, según la planilla de Ventas: no cuenta como día sin cargar.</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
     (k.diferencia_persona ? '<div class="nota alerta"><b>Diferencia a cargo de ' + esc(k.diferencia_persona_nombre || '—') + ': ' + pesos(k.diferencia_monto) + '</b></div>' : '') +
     /* (SQL 142) Editar cualquier número a mano, por si la IA no leyó algo o leyó mal (19/10, Mauricio:
@@ -2013,7 +2034,7 @@ function cajasDeHoy() {
     leer('/orden_config?select=local_id,caja_minutos_tolerancia'),
     leer('/orden_v_cajas?select=local_id,fecha,estado&fecha=gte.' + diaAntes(ahora().fecha))
   ]).then(function (r) {
-    var tol = {}, estado = {}, hoy = {};
+    var tol = {}, estado = {}, hoy = {}, preguntas = [];
     (r[1] || []).forEach(function (x) { tol[x.local_id] = x.caja_minutos_tolerancia; });
     (r[2] || []).forEach(function (x) { estado[x.local_id + '|' + String(x.fecha).slice(0, 10)] = x.estado; });
     (r[0] || []).forEach(function (l) {
@@ -2024,11 +2045,16 @@ function cajasDeHoy() {
       var ya = a.min + (antes ? 1440 : 0), cierre = cierra + (cierra <= abre ? 1440 : 0);
       var limite = cierre + (tol[l.id] != null ? Number(tol[l.id]) : 60);
       var est = estado[l.id + '|' + dia];
+      var h = hoy[l.id] = { dia: dia, espera: false, abierto: ya < cierre, cierra: hora(cierre), limite: hora(limite) };
       /* Cuenta como "sin cargar" en orden_v_cajas_mes si ese día el local abre y la caja no se guardó. */
-      var cuenta = (l.dias_abiertos || []).map(Number).indexOf(new Date(dia + 'T12:00:00Z').getUTCDay() || 7) > -1 && (!est || est === 'pendiente');
-      hoy[l.id] = { dia: dia, espera: cuenta && ya < limite, abierto: ya < cierre, cierra: hora(cierre), limite: hora(limite) };
+      if ((est && est !== 'pendiente') || ya >= limite) return;
+      /* (SQL 271) Si ese día abre lo dice la base (el peso del día en la planilla de Ventas: en un feriado no abre y
+         la caja de hoy no se espera). Si no contesta, los días de la semana, como antes. */
+      var semana = (l.dias_abiertos || []).map(Number).indexOf(new Date(dia + 'T12:00:00Z').getUTCDay() || 7) > -1;
+      preguntas.push(llamar('orden_local_abre', { p_local: l.id, p_fecha: dia })
+        .then(function (v) { h.espera = v === true || (v !== false && semana); }, function () { h.espera = semana; }));
     });
-    return hoy;
+    return Promise.all(preguntas).then(function () { return hoy; });
   }).catch(function () { return {}; });
 }
 /** La celda "Sin cargar" de Todos los locales: los días atrasados en rojo; la caja de hoy, si todavía no venció, en gris. */
@@ -2106,7 +2132,7 @@ function verCajasTodosRango() {
   Promise.all([
     leerTodas('/orden_v_cajas?select=local_id,fecha,estado,diferencia_persona,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc'),
     cajasDeHoy()
-  ]).then(function (r) {
+  ]).then(function (r) { return marcarNoAbrio(r[0]).then(function () { return r; }); }).then(function (r) {
     if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango !== rg) return;
     var filas = r[0], hoy = r[1], porLocal = {};
     (filas || []).forEach(function (x) {
@@ -2115,7 +2141,8 @@ function verCajasTodosRango() {
       K.forEach(function (k) { t[k] += desvioDelMes(x, k); });
       /* La caja de hoy que todavía no venció no es un día atrasado (cajasDeHoy). */
       var h = hoy[x.local_id];
-      if (x.estado === 'pendiente') { if (h && h.espera && String(x.fecha).slice(0, 10) === h.dia) t.espera = h; else t.dias_sin_cargar++; }
+      /* (SQL 271) Ni el día que el local no abrió (marcarNoAbrio). */
+      if (x.estado === 'pendiente' && !x.no_abrio) { if (h && h.espera && String(x.fecha).slice(0, 10) === h.dia) t.espera = h; else t.dias_sin_cargar++; }
       if (x.estado === 'cargada') t.dias_sin_controlar++;
     });
     var conCajas = _locales.filter(function (l) { return porLocal[l.id]; });
