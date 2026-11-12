@@ -97,6 +97,7 @@
   var K_GRUPOS = { gestion: 'nc_gestion_grupos', fabrica: 'nc_fabrica_grupos' }[MODO] || 'nc_pos_grupos';
   var K_RECUERDO = 'pos_recuerdo';         // la sucursal y el vendedor de cada una
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
+  var K_PAUSADA = 'pos_borrador_pausado';  // SQL 277: la venta a medio armar mientras se edita un ticket X (vuelve al terminar)
   var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
   var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
   var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Fábrica)
@@ -693,6 +694,8 @@
       S.sin252 && act.length > 1 ? 'Lo vendido sale del predeterminado. Para vender de otro depósito falta correr el SQL 252 en la base.' :
       act.length > 1 ? 'Lo vendido sale del predeterminado. Si la prenda está en otro depósito, elegilo acá (sólo para esta venta).' :
       'Lo vendido sale del depósito predeterminado de la sucursal (se cambia en Mercadería → Depósitos)';
+    /* SQL 277: editando un ticket, lo que se agrega o se saca va y vuelve del depósito del que salió la venta. */
+    if (V.edita) { x.disabled = true; x.classList.add('tk-fijo'); x.title = 'Editando el ticket: lo que agregues o saques sale y vuelve del depósito del que salió la venta'; }
   }
   /* SQL 252: «Referencia» con el número que le toca a esta venta (uno seguido por sucursal; las X y las pruebas aparte).
      Lo da la base al guardar: si otra caja guarda antes, ésta toma el que sigue. Sin internet, con ventas de la sucursal
@@ -702,6 +705,7 @@
   function pintarRef() {
     var x = $('vRef');
     if (!x || !V) return;
+    if (V.edita) { x.value = V.edita.ref; return; }   // SQL 277: editando, el número es el del ticket
     var prueba = enPrueba(), serie = serieDe(V.letra, prueba), k = claveNum(), n = S.prox[k];
     if (S.sin252 || !V.local_id || redCaida() || colaDe(V.local_id, prueba).some(function (y) { return !y.error; })) { x.value = 'Al guardar'; return; }
     if (!n || Date.now() - n.t > 60000) traerNumero(V.local_id, V.letra, prueba, k);
@@ -721,7 +725,10 @@
   /** Cuántas hay de una prenda en el local según el sistema; null si no se sabe (todavía no tiene stock cargado). */
   function hayEnLocal(local, cod, talle, color) {
     var x = S.stock[local];
-    return x && x.con && cod ? x.m[claveVar(cod, talle, color)] || 0 : null;
+    var h = x && x.con && cod ? x.m[claveVar(cod, talle, color)] || 0 : null;
+    /* SQL 277: editando un ticket, lo que vendió ese ticket cuenta como que está (salió del stock al venderlo). */
+    if (h != null && V && V.edita && V.edita.vendido && V.local_id === local) h += V.edita.vendido[claveVar(cod, talle, color)] || 0;
+    return h;
   }
   /** En la grilla: "sin stock" o "hay 1" cuando lo que se lleva es más de lo que hay. */
   function pillStock(local, l) {
@@ -1672,6 +1679,8 @@
   /** «Vender una Gift Card»: la tarjeta (cod, si vino de la pistola en Producto) y su valor; entra a la venta como un renglón.
       SQL 264: si la tarjeta ya se vendió y está para usar, no se vende: paga esta venta (pagarConGc). */
   function abrirGiftcard(cod) {
+    /* SQL 277: editando un ticket X no se venden ni se cobran Gift Cards (las confirma la base al vender). */
+    if (V && V.edita) { var pr = $('vProd'); if (pr && pr.limpiar) pr.limpiar(); avisar('err', 'Editando un ticket no van Gift Cards: van en una venta nueva.'); return; }
     var caja = ventana('<h3 id="posVentTit">Vender una Gift Card</h3><p class="pos-bajada">Pasá la tarjeta por la pistola y escribí el valor. ' +
         'Al guardar la venta queda vendida y sale del stock. Si la tarjeta ya está vendida, paga esta venta.</p>' +
       '<div class="pos-campos">' +
@@ -1757,16 +1766,22 @@
     V = cargarBorrador();
     if (V.socio) { delete V.socio.tiene; traerTiene(V.socio); }   // SQL 265: sus puntos y lo del Club, al día
     S.prox = {};   // SQL 252: el número se vuelve a pedir (otra caja pudo haber vendido)
-    var c = $('cuerpo'), prueba = enPrueba();
+    /* SQL 277: editando un ticket X, la misma pantalla con el ticket cargado («Editar ticket X-5»): sin Limpiar ni «Se fue
+       sin comprar», con «Cancelar» y «Guardar los cambios»; la sucursal, el comprobante y la forma de pago no cambian. */
+    var ed = V.edita;
+    var c = $('cuerpo'), prueba = ed ? ed.prueba : enPrueba();
     c.classList.add('lleno');
     c.innerHTML =
       /* El cartel de la venta guardada va en la cabecera: abajo empujaría la venta fuera de la pantalla del local. */
-      cabeza('Nueva venta' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="vSub"></span>',
+      cabeza((ed ? 'Editar ticket ' + esc(ed.ref) + '<span class="pos-tag edita">Editando</span>' : 'Nueva venta') +
+          (prueba ? '<span class="pos-tag prueba">' + (ed ? 'Prueba' : 'Modo prueba') + '</span>' : ''), '<span id="vSub"></span>',
         '<div id="vHecho"></div>' +
+        (ed ? '<button type="button" class="btn btn-sec btn-chico" id="vEdCancelar" title="Volver al ticket: queda como estaba">Cancelar</button>' +
+              '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar los cambios del ticket (F9)">Guardar los cambios <span class="pos-tecla">F9</span></button>' :
         '<button type="button" class="btn btn-sec btn-chico btn-se-fue" id="vSeFue" title="El cliente se fue sin comprar: abre la venta fallida con lo que se probó">Se fue sin comprar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vGuardarVer" title="Guardar la venta e ir a Tickets">' + textoGuardar(false) + '</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar(true) + '</button>') +
+        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar(true) + '</button>')) +
       '<div class="tk">' +
         '<section class="tk-izq" aria-label="Los datos del ticket"><div class="tk-datos">' +
           campo('c4', 'Fecha', '<input type="text" id="vFecha" readonly>') +
@@ -1800,8 +1815,12 @@
         '</section>' +
       '</div>';
 
-    $('vFecha').value = fechaCorta(S.ini.hoy);
+    $('vFecha').value = fechaCorta(ed ? ed.dia : S.ini.hoy);
     $('vLocal').innerHTML = opcionesLocales(V.local_id);   // SQL 190: sus locales (con «Ver otros locales», todos)
+    if (ed) {
+      [['vLetra', 'El ticket es X (interno): el comprobante no cambia al editarlo. Si va factura, se anula y se hace de nuevo.'],
+       ['vForma', 'La X va sólo con efectivo'], ['vLocal', 'El ticket es de esta sucursal']].forEach(function (x) { $(x[0]).disabled = true; $(x[0]).title = x[1]; $(x[0]).classList.add('tk-fijo'); });
+    }
     $('vLista').innerHTML = opciones(S.ini.listas.map(function (l) { return [l.id, l.nombre]; }), V.lista_id);
     $('vObs').value = V.observaciones || '';
     llenarVendedores();
@@ -1856,15 +1875,24 @@
     $('tDescBtn').onclick = abrirDescuento;
     $('vLinea').onclick = function () { abrirLineaLibre(); };
     $('vObs').oninput = function () { V.observaciones = this.value; guardarBorrador(); };
-    $('vLimpiar').onclick = function () {
-      if (V.lineas.length && !confirm('¿Borrar la venta que estás armando?')) return;
-      V = ventaNueva(V);
-      guardarBorrador();
-      verVenta();
-    };
-    $('vSeFue').onclick = seFueSinComprar;
+    if (ed) {
+      $('vEdCancelar').onclick = function () {
+        if (firmaEdicion(V) !== ed.firma && !confirm('¿Dejar de editar el ticket ' + ed.ref + '? Los cambios no se guardan: queda como estaba.')) return;
+        soltarEdicion();
+        ir('tickets');
+        abrirTicket(ed.id);
+      };
+    } else {
+      $('vLimpiar').onclick = function () {
+        if (V.lineas.length && !confirm('¿Borrar la venta que estás armando?')) return;
+        V = ventaNueva(V);
+        guardarBorrador();
+        verVenta();
+      };
+      $('vSeFue').onclick = seFueSinComprar;
+      $('vGuardarVer').onclick = function () { guardarVenta(true); };
+    }
     $('vGuardar').onclick = function () { guardarVenta(false); };
-    $('vGuardarVer').onclick = function () { guardarVenta(true); };
     engancharProducto();
     engancharFilas();
     pintarPago();
@@ -2005,7 +2033,9 @@
       (clubIni().suma ? ': se suman al guardar.' : '. Todavía no se suman: falta correr el SQL 265.')) +
       (prem ? (nPrem > 1 ? ' Los premios le descuentan ' : ' El premio le descuenta ') + miles(prem) + ' puntos.' : '') +
       (tiene ? ' <button type="button" class="pos-link" id="vClubVer">' + esc(tiene) + '</button>' : '') + '</span> ';
-    $('vNota').innerHTML = club + (enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
+    $('vNota').innerHTML = club + (V.edita ? '<b>Editando el ticket ' + esc(V.edita.ref) + '</b> (antes, ' + plata(V.edita.total) + '): al guardar queda ' +
+        'con lo que ves acá, con el mismo número y en su día. Lo que agregues o saques se mueve en el stock.' :
+      enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
       V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo: si el cliente pide factura, elegí «Factura B» en Comprobante.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
@@ -3015,6 +3045,7 @@
 
   /* ── Guardar ── (aTickets: el "Guardar" solo, que termina en Tickets con la venta marcada) */
   function guardarVenta(aTickets) {
+    if (V && V.edita) { guardarEdicion(); return; }   // SQL 277: editando un ticket X (también con F9)
     if (S.guardando || !V) return;
     var c = cuenta(V), cl = V.cliente || {};
     var pagos = pagosDe(c.total);
@@ -3525,7 +3556,11 @@
         t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkNotaBtn" title="Anula el ticket entero, como «Generar nota crédito» de BlueSoft">Nota de crédito</button>';
       /* SQL 248: «Corregir el pago» (se cobró con un medio y se cargó con otro), mientras la venta no entró en un cierre. Sin el 248, no está. */
       var corr = Object.prototype.hasOwnProperty.call(t, 'correcciones') ? (t.correcciones || []) : null;
-      var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && !facturaReal(t.factura) && puede('caja') && pagosACorregir(t).length > 0;
+      var c77 = con277(t), eds = c77 ? (t.ediciones || []) : [];
+      var corrige = corr && !anulada && t.letra !== 'X' && !t.cierre && (c77 || !facturaReal(t.factura)) && puede('caja') && pagosACorregir(t).length > 0;
+      /* SQL 277: «Editar» la X (Mauricio, 12/11: «en X se puede editar el total, la cantidad y todo»), en el mostrador, donde
+         está la venta; mientras no entró en un cierre. */
+      var editaX = c77 && !anulada && t.letra === 'X' && !t.cierre && puede('anular') && MODO === 'mostrador';
       var pideCae = !t.factura && !anulada && leTocaArca(t);   // ARCA (SQL 274 y 276)
       /* Como BlueSoft (11/11): con factura de ARCA, el ticket se llama por su número de ARCA («B-00021654») y el nuestro va en
          «Referencia»; el recuadro de ARCA (el CAE y su vencimiento, o «Pedir el CAE») va arriba a la derecha. */
@@ -3553,8 +3588,13 @@
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Pagos</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
         /* SQL 248: cada corrección del pago, con quién, cuándo, por qué y cómo estaba antes. */
         (corr && corr.length ? '<ul class="tk-corr">' + corr.map(function (c) {
-          return '<li>Pago corregido el ' + esc(fechaHora(c.fecha)) + (c.persona ? ' por ' + esc(c.persona) : '') + '. Antes: ' + esc(resumenPagos(c.antes)) +
+          return '<li>Pago ' + (c77 ? 'editado' : 'corregido') + ' el ' + esc(fechaHora(c.fecha)) + (c.persona ? ' por ' + esc(c.persona) : '') + '. Antes: ' + esc(resumenPagos(c.antes)) +
             '. Por qué: ' + esc(c.motivo || '') + '</li>';
+        }).join('') + '</ul>' : '') +
+        /* SQL 277: cada edición de la X, con quién, cuándo, por qué y cómo estaba antes. */
+        (eds.length ? '<ul class="tk-corr">' + eds.map(function (e) {
+          return '<li>Editado el ' + esc(fechaHora(e.fecha)) + (e.persona ? ' por ' + esc(e.persona) : '') + '. Antes: ' + esc(resumenEdicion(e.antes).replace(/.$/, '')) +
+            '. Por qué: ' + esc(e.motivo || '') + '</li>';
         }).join('') + '</ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (anulada && nota ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada con la nota de crédito <b>' + esc(refNota(nota)) + '</b> el ' + esc(fechaHora(nota.fecha)) +
@@ -3562,10 +3602,15 @@
             ' <button type="button" class="pos-link" id="tkVerNota">Ver la nota de crédito</button></div>' :
           anulada ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada el ' + esc(fechaHora(t.anulada_en)) + (t.anulada_por_nombre ? ' por ' + esc(t.anulada_por_nombre) : '') + ': ' + esc(t.anulada_motivo || '') + '</div>' :
           conNota && t.cierre && puede('anular') ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre de caja ' + esc(refCierre(t.cierre)) +
-            ': para hacerle la nota de crédito' + (corr && puede('caja') ? ' o corregirle el pago' : '') + ', primero hay que anular ese cierre.</div>' : '') +
+            ': para hacerle la nota de crédito' + (corr && puede('caja') ? (c77 ? ' o editarle el pago' : ' o corregirle el pago') : '') + ', primero hay que anular ese cierre.</div>' :
+          /* SQL 277: la X que entró en un cierre no se edita. */
+          c77 && t.letra === 'X' && t.cierre && puede('anular') && MODO === 'mostrador' ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre de caja ' +
+            esc(refCierre(t.cierre)) + ': para editarla, primero hay que anular ese cierre.</div>' : '') +
         '<div id="tkAnular"></div>' +
         '<div class="pos-pie">' + izq +
-          (corrige ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>' : '') +
+          (corrige ? (c77 ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Editar el pago: el medio, la tarjeta y las cuotas sin interés. El total no cambia (es una factura)">Editar</button>' :
+                            '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>') : '') +
+          (editaX ? '<button type="button" class="btn btn-sec btn-chico" id="tkEditar" title="Cambiar las prendas, las cantidades, los precios, los descuentos o el vendedor: el ticket sigue con su número y en su día">Editar</button>' : '') +
           /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
           (t.factura && t.factura.cae ? '<button type="button" class="btn btn-sec btn-chico" id="tkPdf" title="La factura en una hoja A4, como la de BlueSoft: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
           (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
@@ -3602,6 +3647,8 @@
       if (du) du.onclick = function () { duplicarVenta(t); };
       var co = dentro.querySelector('#tkCorregir');
       if (co) co.onclick = function () { corregirPago(t, alCambiar, volver); };
+      var ex = dentro.querySelector('#tkEditar');
+      if (ex) ex.onclick = function () { editarVenta(t); };   // SQL 277
       var ab = dentro.querySelector('#tkAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
@@ -3776,18 +3823,31 @@
     '.fa-qr svg { display: block; width: 30mm; height: 30mm; }';
 
   /* ════════════════════════════════════════════════════════════════════
-     CORREGIR EL PAGO (SQL 248)
+     CORREGIR EL PAGO (SQL 248) · «EDITAR» EL PAGO DE LA A Y LA B (SQL 277)
+     12/11 (Mauricio, con la foto): «En B no te tiene que dejar corregir el
+     monto… solamente la parte del medio de pago». Cada pago queda con su
+     monto: cambian el medio, la tarjeta, las cuotas sin interés (SQL 277)
+     y el número de operación. Si un monto estaba mal: nota de crédito.
      Mauricio (5/11): se cobró con un medio y se cargó con otro (era
      efectivo y se puso tarjeta, otra tarjeta, Mercado Pago en vez de
      transferencia). Se corrige sin anular la venta, que sigue en su día,
      mientras no entró en un cierre de caja. No se tocan la gift card con
      la que pagó ni la tarjeta en cuotas (el interés depende de las cuotas).
      ════════════════════════════════════════════════════════════════════ */
-  function pagoFijo(g) { return g.medio === 'giftcard' || (g.medio === 'tarjeta' && Number(g.cuotas) > 1); }
+  /** SQL 277: ¿la base ya tiene «Editar» (pos_venta_editar)? pos_venta trae las ediciones. Sin el 277, todo como antes. */
+  function con277(t) { return !!t && Object.prototype.hasOwnProperty.call(t, 'ediciones'); }
+  /** Lo que no se toca: la gift card con la que pagó y la tarjeta en cuotas. Con el SQL 277 (Mauricio, 12/11: «en B lo único
+      que se puede editar es la parte de tarjetas y cuotas sin interés»), las cuotas sí, salvo que la venta tenga el interés
+      de las cuotas (está en el total, que no cambia). */
+  function pagoFijo(g, t) {
+    if (g.medio === 'giftcard') return true;
+    if (g.medio !== 'tarjeta' || !(Number(g.cuotas) > 1)) return false;
+    return !(con277(t) && !(Number(t.interes) > 0));
+  }
   /** Lo que se puede corregir. Con la promo «pagando todo en efectivo» no hay nada: el efectivo es efectivo. */
   function pagosACorregir(t) {
     if (t.promo_medio === 'efectivo') return [];
-    return (t.pagos || []).filter(function (g) { return !pagoFijo(g); });
+    return (t.pagos || []).filter(function (g) { return !pagoFijo(g, t); });
   }
   /** «Tarjeta VISA $6.000 + Efectivo $4.000» */
   function resumenPagos(ps) {
@@ -3797,78 +3857,80 @@
     }).join(' + ') || '—';
   }
   function corregirPago(t, alCambiar, volver) {
-    var fijos = (t.pagos || []).filter(pagoFijo);
+    var c77 = con277(t);   // SQL 277: «Editar el pago», con las cuotas sin interés
+    var fijos = (t.pagos || []).filter(function (g) { return pagoFijo(g, t); });
     var tot = cent(t.total) - fijos.reduce(function (s, g) { return s + cent(g.monto); }, 0);
     var conGc = fijos.some(function (g) { return g.medio === 'giftcard'; }), conCuotas = fijos.some(function (g) { return g.medio !== 'giftcard'; });
-    var queNoSeToca = (conGc && conCuotas ? 'La gift card y las cuotas no se cambian acá: si están mal' : conGc ? 'La gift card no se cambia acá: si está mal' :
-      'Las cuotas no se cambian acá: si están mal') + ', se hace una nota de crédito y la venta de nuevo.';
+    var cuotasTxt = c77 ? 'las cuotas con interés (el interés está en el total)' : 'las cuotas';
+    var queNoSeToca = (conGc && conCuotas ? 'La gift card y ' + cuotasTxt + ' no se cambian acá: si están mal' : conGc ? 'La gift card no se cambia acá: si está mal' :
+      cuotasTxt.charAt(0).toUpperCase() + cuotasTxt.slice(1) + ' no se cambian acá: si están mal') + ', se hace una nota de crédito y la venta de nuevo.';
     /* La promo «pagando todo con …»: el medio no cambia (se puede corregir qué tarjeta o el número de operación). */
     var promo = MEDIOS[t.promo_medio] ? t.promo_medio : '';
     var medios = (promo ? [promo] : Object.keys(MEDIOS)).map(function (k) { return [k, MEDIOS[k]]; });
     var clave = nuevaClave();   // la misma si la mandan dos veces (se cortó internet): se corrige una sola vez
     var origen = pagosACorregir(t);
-    var filas = origen.map(function (g) { return { medio: g.medio, monto: cent(g.monto), tarjeta: g.tarjeta || '', cupon: g.cupon || '', orig: g }; });
-    var caja = ventana('<h3 id="posVentTit">Corregir el pago · Ticket ' + esc(ref(t)) + '</h3>' +
-      '<p class="pos-bajada">Del ' + esc(fechaHora(t.fecha)) + ' · total <b>' + plata(cent(t.total)) + '</b>. Poné cómo se cobró de verdad: la venta no se anula y sigue en su día.</p>' +
+    var filas = origen.map(function (g) {
+      return { medio: g.medio, monto: cent(g.monto), tarjeta: g.tarjeta || '', cupon: g.cupon || '', cuotas: g.medio === 'tarjeta' ? Number(g.cuotas) || 1 : 1, orig: g };
+    });
+    var caja = ventana('<h3 id="posVentTit">' + (c77 ? 'Editar el pago' : 'Corregir el pago') + ' · Ticket ' + esc(ref(t)) + '</h3>' +
+      '<p class="pos-bajada">Del ' + esc(fechaHora(t.fecha)) + ' · total <b>' + plata(cent(t.total)) + '</b>. ' +
+        (c77 ? 'Poné cómo se cobró de verdad: el medio, la tarjeta y las cuotas sin interés. Los montos y el total no cambian (es una factura) y la venta sigue en su día.' :
+               'Poné con qué se cobró de verdad: el medio y la tarjeta. Los montos no cambian; la venta no se anula y sigue en su día.') +
+        ' Si un monto estaba mal, se hace una nota de crédito y la venta de nuevo.</p>' +
       (fijos.length ? '<div class="cp-fijos"><span class="pos-lbl">Queda como está</span><ul>' + fijos.map(function (g) {
         return '<li>' + esc(resumenPagos([g])) + '</li>';
       }).join('') + '</ul><p class="cp-nota">' + queNoSeToca + '</p></div>' : '') +
       (promo ? '<div class="pos-cartel" style="margin-bottom:10px">Tiene la promo de pagar todo ' + esc(promo === 'tarjeta' ? 'con tarjeta' : 'con ' + MEDIOS[promo]) +
         ': el medio no cambia. Si se pagó con otra cosa, se hace una nota de crédito y la venta de nuevo.</div>' : '') +
       '<div class="pos-pagos" id="cpFilas"></div>' +
-      '<p><button type="button" class="pos-link" id="cpMas">+ Agregar otro pago</button></p>' +
-      '<div class="pos-pago-cuenta" id="cpCuenta"></div>' +
-      campo('ancho cp-motivo', '¿Por qué se corrige?', '<textarea id="cpMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: pagó en efectivo y se cargó tarjeta"></textarea>') +
+      campo('ancho cp-motivo', c77 ? '¿Por qué se edita?' : '¿Por qué se corrige?', '<textarea id="cpMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: pagó en efectivo y se cargó tarjeta"></textarea>') +
       '<p class="cp-nota">Si cambia el efectivo y la caja de hoy ya estaba contada, hay que contarla de nuevo.</p>' +
       '<div class="pos-error" id="cpError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="cpVolver">Volver al ticket</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="cpGuardar">Guardar la corrección</button></div>', true);
+        '<button type="button" class="btn btn-pri btn-chico" id="cpGuardar">' + (c77 ? 'Guardar los cambios' : 'Guardar la corrección') + '</button></div>', true);
+    /* SQL 277: las cuotas que puede tener una tarjeta sin cambiar el total: 1; 3 y 6 sin interés desde $80.000 y $150.000
+       (las de la venta, INTERES), sobre el total del ticket; y las que ya tenía ese pago (la excepción sin interés). La de
+       débito, en 1. */
+    function cuotasOk(x) {
+      var ns = [1], tt = cent(t.total), o = x.orig && x.orig.medio === 'tarjeta' && x.orig.tarjeta === x.tarjeta ? Number(x.orig.cuotas) || 1 : 1;
+      if (tipoTarjeta(x.tarjeta) !== 'debito') [3, 6].forEach(function (n) { if (INTERES[n] && INTERES[n].desde && tt >= INTERES[n].desde) ns.push(n); });
+      if (o > 1 && ns.indexOf(o) < 0) ns.push(o);
+      return ns.sort(function (a, b) { return a - b; });
+    }
     function fila(x, i) {
       var tarjetas = TARJETAS.map(function (y) { return [y[0], y[0]]; });
       if (x.tarjeta && !TARJETAS.some(function (y) { return y[0] === x.tarjeta; })) tarjetas.push([x.tarjeta, x.tarjeta]);
       var mas = x.medio === 'tarjeta'
         ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta">' + opcionesTarjeta(tarjetas, x.tarjeta) + '</select>') +
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
-          '<p class="cp-cuota">En 1 cuota</p></div>'
+          (c77 && !(Number(t.interes) > 0) ? campo('', 'Cuotas', '<select data-k="cuotas">' + opciones(cuotasOk(x).map(function (n) {
+              return [n, n === 1 ? '1 cuota' : n + ' cuotas sin interés'];
+            }), x.cuotas || 1) + '</select>') : '<p class="cp-cuota">En 1 cuota</p>') + '</div>'
         : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
         : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
       return '<div class="pos-pago-fila" data-f="' + i + '">' +
         campo('', 'Medio', '<select data-k="medio">' + opciones(medios, x.medio) + '</select>') +
-        campo('', 'Monto', '<input type="text" inputmode="decimal" data-plata data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
-        '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
+        /* 12/11: el monto no se escribe (es el de la factura). */
+        campo('', 'Monto', '<input type="text" class="cp-monto" value="' + plataCampo(x.monto) + '" readonly tabindex="-1" title="En una factura el monto no cambia: sólo con qué se pagó">') + mas + '</div>';
     }
-    function cuentaTxt() {
-      var s = sumaPagos(filas), dif = tot - s, e = caja.querySelector('#cpCuenta');
-      e.className = 'pos-pago-cuenta ' + (dif === 0 ? 'ok' : 'mal');
-      e.innerHTML = '<span>Pagos: ' + plata(s) + (fijos.length ? ' (más ' + plata(cent(t.total) - tot) + ' que quedan)' : '') + '</span><span>' +
-        (dif === 0 ? 'Justo' : dif > 0 ? 'Falta ' + plata(dif) : 'Sobra ' + plata(-dif)) + '</span>';
-    }
-    function pintarFilas() { caja.querySelector('#cpFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); }
+    function pintarFilas() { caja.querySelector('#cpFilas').innerHTML = filas.map(fila).join(''); }
     pintarFilas();
     var lista = caja.querySelector('#cpFilas'), m = caja.querySelector('#cpMotivo');
     lista.addEventListener('input', function (e) {
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
-      if (!f || !k || k === 'medio' || k === 'tarjeta') return;
-      var x = filas[Number(f.getAttribute('data-f'))];
-      if (k === 'monto') { var n = leerPlata(e.target.value); x.monto = isNaN(n) ? 0 : n; cuentaTxt(); }
-      else x[k] = e.target.value;
+      if (!f || !k || k === 'medio' || k === 'tarjeta' || k === 'cuotas') return;   // los select, en «change»
+      filas[Number(f.getAttribute('data-f'))][k] = e.target.value;   // el cupón o el número de operación
       errorEn(caja, 'cpError', '');
     });
     lista.addEventListener('change', function (e) {
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
       if (!f || !k) return;
       var x = filas[Number(f.getAttribute('data-f'))];
-      if (k === 'medio') { x.medio = e.target.value; x.tarjeta = ''; x.cupon = ''; pintarFilas(); }
-      else if (k === 'tarjeta') x.tarjeta = e.target.value;
+      if (k === 'medio') { x.medio = e.target.value; x.tarjeta = ''; x.cupon = ''; x.cuotas = 1; pintarFilas(); }
+      else if (k === 'tarjeta') { x.tarjeta = e.target.value; if (c77 && cuotasOk(x).indexOf(x.cuotas || 1) < 0) x.cuotas = 1; if (c77) pintarFilas(); }
+      else if (k === 'cuotas') x.cuotas = Number(e.target.value) || 1;   // SQL 277
       errorEn(caja, 'cpError', '');
     });
-    lista.addEventListener('click', function (e) {
-      var b = e.target.closest('[data-quitar-pago]');
-      if (!b) return;
-      filas.splice(Number(b.getAttribute('data-quitar-pago')), 1);
-      pintarFilas();
-    });
-    caja.querySelector('#cpMas').onclick = function () { filas.push({ medio: promo || 'efectivo', monto: 0 }); pintarFilas(); };
     caja.querySelector('#cpVolver').onclick = function () { abrirTicket(t.id, alCambiar, volver); };
     m.oninput = function () { errorEn(caja, 'cpError', ''); };
     /* Lo que va a la base. Lo que no se ve (lote y últimos 4 de la tarjeta, lo recibido en efectivo) sigue si ese pago no cambió. */
@@ -3876,7 +3938,7 @@
       var o = x.orig && x.orig.medio === x.medio ? x.orig : null, p = { medio: x.medio, monto: aPesos(x.monto) };
       if (x.medio === 'tarjeta') {
         var igual = o && o.tarjeta === x.tarjeta;
-        p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta) || (igual ? o.tipo_tarjeta : ''); p.cuotas = 1;
+        p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta) || (igual ? o.tipo_tarjeta : ''); p.cuotas = c77 ? x.cuotas || 1 : 1;
         if (igual && o.lote) p.lote = o.lote;
         if (igual && o.ultimos4) p.ultimos4 = o.ultimos4;
       }
@@ -3884,31 +3946,40 @@
       if (x.medio === 'efectivo' && o && o.recibido && cent(o.monto) === x.monto) p.recibido = Number(o.recibido);
       return p;
     }
+    /** Un pago que no se toca, tal como está en la base (SQL 277). */
+    function pagoComoEstaba(g) {
+      var p = { medio: g.medio, monto: Number(g.monto) };
+      ['tarjeta', 'tipo_tarjeta', 'cuotas', 'cupon', 'lote', 'ultimos4', 'recibido'].forEach(function (k) { if (g[k] != null && g[k] !== '') p[k] = g[k]; });
+      return p;
+    }
     function igualQueAntes() {
       return filas.length === origen.length && filas.every(function (x, i) {
         var o = origen[i];
-        return x.medio === o.medio && x.monto === cent(o.monto) && (x.tarjeta || '') === (o.tarjeta || '') && String(x.cupon || '').trim() === (o.cupon || '');
+        return x.medio === o.medio && x.monto === cent(o.monto) && (x.tarjeta || '') === (o.tarjeta || '') && String(x.cupon || '').trim() === (o.cupon || '') &&
+          (x.medio !== 'tarjeta' || (x.cuotas || 1) === (Number(o.cuotas) || 1));
       });
     }
     caja.querySelector('#cpGuardar').onclick = function () {
       var bt = this, motivo = m.value.trim();
-      var vacias = filas.filter(function (x) { return !x.monto; });
-      if (vacias.length === 1) vacias[0].monto = tot - sumaPagos(filas);
-      filas = filas.filter(function (x) { return x.monto || x === vacias[0]; });
-      var mal = !filas.length ? 'Falta la forma de pago.' :
-        filas.some(function (x) { return !(x.monto > 0); }) ? 'Hay un pago sin monto.' :
-        filas.some(function (x) { return x.medio === 'tarjeta' && !x.tarjeta; }) ? 'Elegí qué tarjeta es.' :
-        sumaPagos(filas) !== tot ? 'Los pagos tienen que sumar ' + plata(tot) + (fijos.length ? ' (con lo que queda como está, ' + plata(cent(t.total)) + ')' : '') + '.' :
+      var mal = filas.some(function (x) { return x.medio === 'tarjeta' && !x.tarjeta; }) ? 'Elegí qué tarjeta es.' :
         igualQueAntes() ? 'No cambiaste nada: los pagos ya están así.' :
-        motivo.length < 3 ? 'Escribí por qué se corrige.' : '';
+        motivo.length < 3 ? (c77 ? 'Escribí por qué se edita.' : 'Escribí por qué se corrige.') : '';
       pintarFilas();
       if (!errorEn(caja, 'cpError', mal)) { if (/por qué/.test(mal)) m.focus(); return; }
       bt.disabled = true;
-      llamar('pos_venta_pagos_corregir', { p: { venta_id: t.id, clave: clave, motivo: motivo, pagos: filas.map(aPago) } }).then(function () {
+      /* SQL 277: pos_venta_editar cambia todos los pagos menos la gift card: la tarjeta en cuotas con interés va como estaba. */
+      var envio = c77 ? llamar('pos_venta_editar', { p: { venta_id: t.id, clave: clave, motivo: motivo,
+                          pagos: fijos.filter(function (g) { return g.medio !== 'giftcard'; }).map(pagoComoEstaba).concat(filas.map(aPago)) } }) :
+                        llamar('pos_venta_pagos_corregir', { p: { venta_id: t.id, clave: clave, motivo: motivo, pagos: filas.map(aPago) } });
+      envio.then(function () {
         if (alCambiar) alCambiar();
-        ventanaHecho({ titulo: 'Pago corregido', datos: [nombreVenta(t), plata(tot)], notas: ['El ticket quedó con los pagos nuevos.'],
+        ventanaHecho({ titulo: c77 ? 'Pago editado' : 'Pago corregido', datos: [nombreVenta(t), plata(c77 ? cent(t.total) : tot)], notas: ['El ticket quedó con los pagos nuevos.'],
           despues: function () { abrirTicket(t.id, alCambiar, volver); } });
-      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'cpError', mensajeDe(e)); });
+      }).catch(function (e) {
+        bt.disabled = false;
+        if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
+        errorEn(caja, 'cpError', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se hace dos veces.' : mensajeDe(e));
+      });
     };
   }
 
@@ -4023,6 +4094,12 @@
     var l = localMio(t.local_id);
     if (!l) { avisar('err', 'Esa venta es de una sucursal que no es tuya: no la podés duplicar.'); return; }
     var antes = leerJSON(K_BORRADOR, null);
+    /* SQL 277: si estaban editando un ticket, se deja (sin guardar) y la copia va en lugar de la venta que estaba en pausa. */
+    if (antes && antes.edita) {
+      if (!confirm('Estás editando el ticket ' + antes.edita.ref + ' sin guardar. ¿Lo dejo como estaba y armo la copia del ' + ref(t) + '?')) return;
+      soltarEdicion();
+      antes = leerJSON(K_BORRADOR, null);
+    }
     if (antes && antes.lineas && antes.lineas.length && !confirm('Tenés una venta a medio armar. ¿La reemplazo por la copia del ticket ' + ref(t) + '?')) return;
     var b = ventaNueva();
     b.local_id = l.id;
@@ -4048,6 +4125,170 @@
     avisar('ok', 'Copié el ticket ' + ref(t) + (gcs ? ' (sin ' + (gcs === 1 ? 'la gift card: pasala' : 'las gift cards: pasalas') + ' de nuevo)' : '') + '. Cargá ' +
       (falta.length > 1 ? falta.slice(0, -1).join(', ') + ' y ' + falta[falta.length - 1] : falta[0]) + '.');
     ir('venta');
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     EDITAR EL TICKET (SQL 277)
+     Mauricio (12/11, con la foto del Ticket X-5): «En X se puede editar
+     el total, la cantidad y todo. En B lo único que se puede editar es
+     la parte de tarjetas y cuotas sin interés, pero no se puede modificar
+     el total.» La X se edita en la misma pantalla de la venta, cargada
+     con el ticket («Editar ticket X-5»): al guardar, el ticket queda con
+     lo nuevo, con el mismo número y en su día (pos_venta_editar), y en el
+     stock se mueve sólo la diferencia. La venta que estaban armando queda
+     en pausa (K_PAUSADA) y vuelve al terminar. La B se edita en «Editar
+     el pago» (corregirPago). Las dos, mientras no entró en un cierre.
+     ════════════════════════════════════════════════════════════════════ */
+  /** Por qué esta X no se edita: lo de las Gift Cards y del Club lo confirma la base al vender, así que se anula y se hace de nuevo. */
+  function xNoSeEdita(t) {
+    if ((t.items || []).some(function (i) { return i.beneficio || i.codigo === 'GIFTCARD'; })) return 'vendió una Gift Card';
+    if ((t.items || []).some(function (i) { return i.premio; })) return 'tiene un premio del Club';
+    if ((t.descuentos_detalle || []).some(function (d) { return d.tipo === 'cupon' || d.tipo === 'cumple'; })) return 'usó un cupón o el regalo de cumpleaños del Club';
+    if ((t.pagos || []).some(function (g) { return g.medio === 'giftcard'; })) return 'se pagó con una Gift Card';
+    return '';
+  }
+  /** Lo que se puede cambiar de la venta en la pantalla: para saber si «Cancelar» tiene que preguntar. */
+  function firmaEdicion(b) {
+    return JSON.stringify([b.vendedor, b.lista_id, b.cliente, b.socio && b.socio.codigo, b.observaciones, b.puestas, b.manuales, b.pago && b.pago.recibido,
+      (b.lineas || []).map(function (l) { return [l.codigo, l.descripcion, l.talle, l.color, l.cantidad, l.precio]; })]);
+  }
+  /** Se deja la edición: vuelve la venta que estaban armando (o una nueva, con la sucursal y el vendedor del ticket). */
+  function soltarEdicion() {
+    var b = leerJSON(K_BORRADOR, null), pausa = leerJSON(K_PAUSADA, null);
+    try { localStorage.removeItem(K_PAUSADA); } catch (e) { /* nada */ }
+    V = pausa && pausa.v === 1 && !pausa.edita ? pausa : ventaNueva(b && b.edita ? b : null);
+    guardarBorrador();
+  }
+  /** «Antes: Royal XL × 1 a $29.500, South Over 46 × 1 a $65.000 · total $94.500 · vendió Seba» (el renglón de la edición en el ticket). */
+  function resumenEdicion(a) {
+    a = a || {};
+    var its = (a.items || []).map(function (i) { return i.descripcion + (i.talle ? ' ' + i.talle : '') + ' × ' + i.cantidad + ' a ' + plata(cent(i.precio)); }).join(', ');
+    return (its ? its + ' · ' : '') + (Number(a.descuentos) ? 'descuentos −' + plata(cent(a.descuentos)) + ' · ' : '') + 'total ' + plata(cent(a.total)) +
+      (a.vendedor ? ' · vendió ' + a.vendedor : '');
+  }
+  /** «Editar» la X: la pantalla de la venta con lo que tiene el ticket. */
+  function editarVenta(t) {
+    var l = localMio(t.local_id), no = xNoSeEdita(t);
+    if (!l) { avisar('err', 'Esa venta es de una sucursal que no es tuya: no la podés editar.'); return; }
+    if (no) { avisar('err', 'Esta venta ' + no + ': no se edita. Si está mal, se anula y se hace de nuevo («Duplicar» la arma).'); return; }
+    var antes = leerJSON(K_BORRADOR, null);
+    if (antes && antes.edita && antes.edita.id === t.id) { cerrarVentana(); ir('venta'); return; }   // ya lo estaban editando: sigue
+    if (antes && antes.edita && !confirm('Estás editando el ticket ' + antes.edita.ref + ' sin guardar. ¿Lo dejo como estaba y edito el ' + ref(t) + '?')) return;
+    /* La venta que estaban armando queda en pausa y vuelve al terminar. */
+    if (antes && !antes.edita && antes.lineas && antes.lineas.length) guardarJSON(K_PAUSADA, antes);
+    var b = ventaNueva();
+    b.local_id = l.id;
+    b.vendedor = t.vendedor || '';
+    b.lista_id = listaPorId(t.lista_id) ? t.lista_id : listaDe(l);
+    b.letra = 'X';
+    b.forma = 'efectivo';
+    var g = (t.pagos || [])[0];
+    b.pago = g && Number(g.recibido) ? { recibido: cent(g.recibido) } : {};
+    b.observaciones = t.observaciones || '';
+    if (t.cliente_nombre || t.cliente_doc || t.cliente_email || t.cliente_tel) {
+      b.cliente = { nombre: t.cliente_nombre || '', doc: t.cliente_doc || '', condicion: t.cliente_condicion || 'consumidor_final',
+                    email: t.cliente_email || '', tel: t.cliente_tel || '', envio: t.envio || '', acepta: !!t.envio };
+    }
+    /* El socio con lo que dice el ticket; abajo se trae entero (el nombre, los puntos y su multiplicador). */
+    if (t.socio) b.socio = { codigo: t.socio, nombre: t.cliente_nombre || 'Socio del Club', nivel: t.socio_nivel || '', puntos: 0, factor: 1 };
+    (t.items || []).forEach(function (i) {
+      var p = i.codigo ? PROD[i.codigo] : null;
+      /* Cada renglón con el precio al que se vendió (propio: otra lista de precios no lo cambia). */
+      b.lineas.push({ codigo: i.codigo || '', descripcion: i.descripcion, rubro: p ? p[2] || '' : '', talle: i.talle || '', color: i.color || '',
+                      color_nom: i.color ? nombreColor(i.color, i.codigo) : '', cantidad: i.cantidad, precio: cent(i.precio), propio: true, libre: !p });
+    });
+    /* Las promos que siguen vigentes van elegidas (si cambian las prendas, se vuelven a calcular); los descuentos a mano, como
+       estaban (el del % sigue siendo %). Si con las promos de hoy el total no da el mismo, todos van como estaban, a mano. */
+    (t.descuentos_detalle || []).forEach(function (d) {
+      var pct = d.tipo === 'manual' && /^(.*) \((\d+(?:,\d+)?) %\)$/.exec(d.descripcion || '');
+      if (d.tipo === 'promo' && d.promo_id && promosVigentes().some(function (q) { return q.id === d.promo_id; })) b.puestas[d.promo_id] = true;
+      else b.manuales.push(pct ? { descripcion: pct[1], pct: Number(pct[2].replace(',', '.')) } : { descripcion: d.descripcion || 'Descuento', monto: cent(d.monto) });
+    });
+    if (cuenta(b).total !== cent(t.total)) {
+      b.puestas = {};
+      b.manuales = (t.descuentos_detalle || []).map(function (d) { return { descripcion: d.descripcion || 'Descuento', monto: cent(d.monto) }; });
+    }
+    b.edita = { id: t.id, ref: ref(t), dia: t.dia || String(t.fecha || '').slice(0, 10), total: cent(t.total), prueba: !!t.prueba, vendido: {} };
+    (t.items || []).forEach(function (i) {
+      if (!i.codigo || t.prueba) return;   // la prueba no mueve el stock
+      var k = claveVar(i.codigo, i.talle, i.color);
+      b.edita.vendido[k] = (b.edita.vendido[k] || 0) + (Number(i.cantidad) || 0);
+    });
+    b.edita.firma = firmaEdicion(b);
+    V = b;
+    guardarBorrador();
+    cerrarVentana();
+    ir('venta');
+    if (t.socio) buscarClientes(String(t.socio)).then(function (r) {
+      var h = r && !r.corto ? tarjetaDe(r, String(t.socio)) : null;
+      if (!h || !V || !V.edita || V.edita.id !== t.id || !V.socio || String(V.socio.codigo) !== String(t.socio)) return;
+      var s = h.socio;
+      V.socio = { codigo: s.codigo, nombre: s.nombre, nivel: s.nivel || '', puntos: Number(s.puntos) || 0, factor: Number(s.factor) || 1 };
+      traerTiene(V.socio);
+      if (S.vista === 'venta') pintar();
+    }, function () { /* queda con lo del ticket: la cuenta de los puntos la hace la base */ });
+  }
+  /** «Guardar los cambios» (o F9): pide el porqué y el ticket queda con lo de la pantalla. Sin internet no se puede (no va a la fila). */
+  function guardarEdicion() {
+    if (S.guardando || !V || !V.edita) return;
+    var ed = V.edita, c = cuenta(V), cl = V.cliente || {};
+    var mal = !vendedorCargado(V.local_id, V.vendedor) ? 'Elegí quién vende.' :
+      !V.lineas.length ? 'La venta no tiene productos.' :
+      V.lineas.some(function (l) { return !l.precio && !l.premio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
+      V.lineas.some(function (l) { return l.giftcard; }) ? 'Editando un ticket no van Gift Cards: sacala de la grilla (va en una venta nueva).' :
+      V.premioPend || V.lineas.some(function (l) { return l.premio; }) || c.descuentos.some(function (d) { return d.tipo === 'cupon' || d.tipo === 'cumple'; }) ?
+        'Editando un ticket no van los premios, los cupones ni el regalo de cumpleaños del Club: sacalos (van en una venta nueva).' :
+      V.forma !== 'efectivo' ? 'La X va sólo con efectivo.' :
+      V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido en efectivo es menos que el total.' : '';
+    if (mal) { avisar('err', mal); return; }
+    var dif = c.total - ed.total;
+    var caja = ventana('<h3 id="posVentTit">Guardar los cambios · Ticket ' + esc(ed.ref) + '</h3>' +
+      '<p class="pos-bajada">Antes, <b>' + plata(ed.total) + '</b>; ahora, <b>' + plata(c.total) + '</b>' +
+        (dif ? ': en la caja tiene que haber ' + plata(Math.abs(dif)) + (dif > 0 ? ' más' : ' menos') + ' en efectivo.' : ' (el total no cambia).') +
+        ' Sigue siendo el ' + esc(ed.ref) + ', en su día.</p>' +
+      campo('ancho', '¿Por qué se edita?', '<textarea id="edMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: se cargó mal el precio"></textarea>') +
+      '<div class="pos-error" id="edError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" data-cerrar>Seguir editando</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="edGuardar">Guardar los cambios</button></div>');
+    var m = caja.querySelector('#edMotivo');
+    m.focus();
+    m.oninput = function () { errorEn(caja, 'edError', ''); };
+    caja.querySelector('#edGuardar').onclick = function () {
+      var bt = this, motivo = m.value.trim();
+      if (!errorEn(caja, 'edError', motivo.length < 3 ? 'Escribí por qué se edita.' : '')) { m.focus(); return; }
+      var p = {
+        venta_id: ed.id, clave: V.clave, motivo: motivo, vendedor: V.vendedor, lista_id: V.lista_id,
+        cliente_nombre: cl.nombre || '', cliente_doc: cl.doc || '', cliente_condicion: cl.condicion || 'consumidor_final',
+        cliente_email: cl.email || '', cliente_tel: cl.tel || '', envio: cl.envio || '', observaciones: V.observaciones || '',
+        socio: V.socio ? V.socio.codigo : '',
+        items: V.lineas.map(function (l) {
+          return { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
+        }),
+        descuentos: c.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
+        pagos: c.total > 0 ? [Object.assign({ medio: 'efectivo', monto: aPesos(c.total) }, V.pago.recibido ? { recibido: aPesos(V.pago.recibido) } : {})] : []
+      };
+      var nom = nombreLocal(localDe(V.local_id)), so = V.socio;
+      bt.disabled = true;
+      S.guardando = true;
+      llamar('pos_venta_editar', { p: p }).then(function (r) {
+        S.guardando = false;
+        S.stock = {};   // lo que se movió en el stock se vuelve a traer
+        soltarEdicion();
+        var pts = so && !ed.prueba && r.puntos_sumados && (dif || String(so.codigo) !== String(p.socio)) ?
+          'Los puntos de ' + String(so.nombre || '').split(' ')[0] + ' quedaron con el total nuevo: ' + miles(Number(r.socio_puntos) || 0) + '.' : '';
+        ir('tickets');
+        ventanaHecho({ titulo: 'Ticket ' + ed.ref + ' editado', datos: [nom, plata(c.total)], tono: ed.prueba ? 'prueba' : '',
+          notas: [r.ya ? 'Ya estaba guardado: no se hizo dos veces.' : '',
+                  dif ? 'Antes, ' + plata(ed.total) + ': en la caja tiene que haber ' + plata(Math.abs(dif)) + (dif > 0 ? ' más' : ' menos') + ' en efectivo.' : 'El total sigue igual.',
+                  pts],
+          despues: function () { abrirTicket(ed.id); } });
+      }).catch(function (e) {
+        S.guardando = false;
+        bt.disabled = false;
+        if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. Los cambios siguen en la pantalla.'); persona.entrar(); return; }
+        errorEn(caja, 'edError', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo cuando vuelva internet (no se hace dos veces).' : mensajeDe(e));
+      });
+    };
   }
 
   /* ════════════════════════════════════════════════════════════════════

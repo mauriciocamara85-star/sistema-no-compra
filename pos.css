@@ -630,6 +630,10 @@ html.pos-en-prueba body::after {
 /* El total, rayado. Los marrones son fijos (como el negro del tablero): el blanco encima da 8:1 con los dos temas. */
 html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg, #6B4403 0 12px, #7A4F08 12px 24px); }
 .pos-tag.prueba { border: 1px solid var(--warn); }
+/* SQL 277: «Editando» en la venta mientras se edita un ticket X (el cobre de lo que se aprieta, para que se note). */
+.pos-tag.edita { background: var(--cobre-lleno); color: var(--acc-ink); }
+/* Lo que no cambia al editar el ticket (comprobante, forma de pago, sucursal, depósito): como los campos fijos (v461). */
+.pos .tk-datos select.tk-fijo:disabled { background-color: var(--pos-fijo); border-color: var(--pos-fijo-borde); color: var(--txt-2); }
 .pos-hecho.prueba { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-txt); }
 .pos-hecho.prueba button { color: var(--warn-txt); }
 .pos-cartel.prueba { background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }

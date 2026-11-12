@@ -12311,3 +12311,505 @@ begin
     raise exception 'La caja tiene que ser la chica o la fuerte.';
   end if;
 end $function$;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 277 (12/11/2026): «EDITAR» EL TICKET (App Orden: correr-en-supabase-277.sql)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SQL 277 (12/11/2026): «Editar» el ticket del POS.
+--   Pedido de Mauricio (12/11, con la foto del Ticket X-5 de Rivadavia): «En tickets, en X necesito la opción de poder
+--   editar el ticket. En X se puede editar el total, la cantidad y todo. En B lo único que se puede editar es la parte de
+--   tarjetas y cuotas sin interés, pero no se puede modificar el total, porque ya está facturada. En efectivo se tiene
+--   que poder editar.»
+--   Las reglas:
+--     - La X (el comprobante interno, en efectivo): se edita TODO —los productos, las cantidades, los precios, los
+--       descuentos (promos y a mano), el vendedor, el cliente, el socio del Club y las observaciones—. El ticket sigue
+--       siendo el mismo (mismo número, misma fecha, mismo día de la caja). Lo que cambia en las prendas se mueve en el
+--       stock (sólo la diferencia, del depósito del que salió). Los puntos del socio se vuelven a sacar si cambió el
+--       total o el socio. El permiso es el de anular (hoy se anula y se duplica: el mismo poder).
+--       No se edita la X que vendió o se pagó con una Gift Card, ni la que tiene un premio, un cupón o el regalo de
+--       cumpleaños del Club: esa se anula y se hace de nuevo (lo del Club y la Gift Card lo confirma la base al vender).
+--     - La A y la B (facturas): sólo con qué se pagó —el medio, qué tarjeta (Visa, Master…), las cuotas SIN interés (3
+--       desde $80.000, 6 desde $150.000, la regla de la venta) y el número de operación—. NO los montos: cada pago queda
+--       con su monto, no se agregan ni se juntan pagos (Mauricio, 12/11, con la foto de «Corregir el pago»: «En B no te
+--       tiene que dejar corregir el monto… solamente la parte del medio de pago»). Si un monto estaba mal: nota de
+--       crédito y la venta de nuevo. El total no cambia. Si la venta tiene el interés de las cuotas, ese
+--       pago queda como está. Con o sin factura de ARCA: la forma de pago no va en la factura electrónica. Queda
+--       anotada como las de «Corregir el pago» (pos_venta_correcciones) y el permiso es el de la caja, como ahí.
+--     - Las dos: sólo una venta cobrada que todavía no entró en un cierre de caja (si entró, primero se anula ese cierre,
+--       y sólo se puede el último). Pide el motivo. La misma clave dos veces edita una sola vez.
+--     - La edición de la X queda anotada (pos_venta_ediciones): quién, cuándo, por qué y cómo estaba antes. El ticket lo
+--       muestra.
+--   Cómo se lleva con el cierre: la venta sigue en su día, así que el cierre la trae editada. Si ya habían contado la caja
+--   de hoy y cambió el efectivo, la base pide contar de nuevo (como con «Corregir el pago»).
+--   No cambia ningún dato que ya esté. Cambia pos_venta (el ticket trae «ediciones»). Se deshace con deshacer-277.sql
+--   (la función se va y el ticket vuelve a como estaba; las ediciones hechas quedan hechas y anotadas).
+
+-- 1) Lo que queda anotado de cada edición de una X. Sin clave foránea a pos_ventas a propósito (como el 248): crearla
+--    traba las ventas de todos los locales mientras corre el SQL.
+CREATE TABLE IF NOT EXISTS public.pos_venta_ediciones (
+  id              bigserial PRIMARY KEY,
+  venta_id        uuid NOT NULL,
+  fecha           timestamptz NOT NULL DEFAULT now(),
+  persona         uuid,
+  persona_nombre  text,
+  motivo          text NOT NULL,
+  antes           jsonb NOT NULL,
+  despues         jsonb NOT NULL,
+  clave           text UNIQUE
+);
+CREATE INDEX IF NOT EXISTS pos_venta_ediciones_venta ON public.pos_venta_ediciones (venta_id, fecha);
+COMMENT ON TABLE public.pos_venta_ediciones IS 'SQL 277: cada «Editar» de un ticket X del POS: quién, cuándo, por qué y cómo estaba antes y cómo quedó.';
+ALTER TABLE public.pos_venta_ediciones ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_venta_ediciones FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.pos_venta_ediciones_id_seq FROM PUBLIC, anon, authenticated;
+
+-- 2) Editar un ticket. p: {venta_id, motivo, clave, pagos: [...]} y, en la X, además {vendedor, lista_id, cliente_nombre,
+--    cliente_doc, cliente_condicion, cliente_email, cliente_tel, envio, observaciones, socio, items: [{codigo, descripcion,
+--    talle, color, cantidad, precio}], descuentos: [{tipo: promo|manual, promo_id, descripcion, monto}]}.
+CREATE OR REPLACE FUNCTION public.pos_venta_editar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_id      uuid;
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_motivo  text := nullif(trim(coalesce(p->>'motivo', '')), '');
+  v_pagos   jsonb := coalesce(p->'pagos', '[]'::jsonb);
+  v_items   jsonb := coalesce(p->'items', '[]'::jsonb);
+  v_descs   jsonb := coalesce(p->'descuentos', '[]'::jsonb);
+  v         pos_ventas;
+  k         pos_cierres;
+  e         pos_venta_ediciones;
+  c         pos_venta_correcciones;
+  x         jsonb;
+  it        record;
+  v_pr      record;
+  m         numeric;
+  n         int;
+  pr        numeric;
+  v_i       int;
+  v_suma    numeric := 0;
+  v_neto    numeric := 0;
+  v_desc    numeric := 0;
+  v_total   numeric;
+  v_cant    int := 0;
+  v_vend    text;
+  v_cond    text;
+  v_doc     text;
+  v_socio   text;
+  v_cli     v_club_clientes%rowtype;
+  v_factor  jsonb;
+  v_gana    int;
+  v_mov     bigint;
+  v_dep     uuid;
+  v_ref     text;
+  v_nom     text;
+  v_gc      numeric;
+  v_viejas  text;
+  v_nuevas  text;
+  v_antes   jsonb;
+  v_despues jsonb;
+  v_pago    forma_pago;
+  v_eid     bigint;
+begin
+  perform pos_permiso();
+  begin
+    v_id := nullif(p->>'venta_id', '')::uuid;
+  exception when others then
+    v_id := null;
+  end;
+
+  /* La misma edición dos veces (se cortó internet y la mandaron de nuevo): no se hace otra vez. */
+  if v_clave is not null then
+    select * into e from pos_venta_ediciones where clave = v_clave;
+    if found then return jsonb_build_object('id', e.venta_id, 'edicion', e.id, 'ya', true); end if;
+    select * into c from pos_venta_correcciones where clave = v_clave;
+    if found then return jsonb_build_object('id', c.venta_id, 'correccion', c.id, 'ya', true); end if;
+  end if;
+
+  select * into v from pos_ventas where id = v_id;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
+  /* Con la caja de esa sucursal: si justo la están cerrando, espera (y abajo ve si la venta ya entró en el cierre). */
+  perform pg_advisory_xact_lock(hashtext('pos_caja:' || v.local_id::text || ':' || v.prueba::text));
+  select * into v from pos_ventas where id = v_id for update;
+
+  if v.estado <> 'cobrada' then raise exception 'Esa venta está anulada: no se edita.'; end if;
+  if v.cierre_id is not null then
+    select * into k from pos_cierres where id = v.cierre_id;
+    raise exception 'Esa venta ya entró en el cierre de caja % (del %): para editarla, primero hay que anular ese cierre (se puede sólo el último).',
+      case when k.prueba then 'P-' else 'Nº ' end || k.numero, pos_dia_texto(k.dia);
+  end if;
+  if v.letra = 'X' then perform pos_permiso('anular'); else perform pos_permiso('caja'); end if;
+  if v_motivo is null or length(v_motivo) < 3 then raise exception 'Escribí por qué se edita.'; end if;
+  if length(v_motivo) > 300 then raise exception 'El motivo es demasiado largo (hasta 300 letras).'; end if;
+  v_nom := (select pe.nombre from orden_personas pe where pe.id = orden_yo_id());
+  v_ref := case when v.serie = 'x' then 'X-' else 'Nº ' end || v.numero;   -- como lo anota la venta (stock y Club)
+
+  /* Los pagos, en las dos. */
+  if jsonb_typeof(v_pagos) <> 'array' then raise exception 'Los pagos no son válidos.'; end if;
+  if jsonb_array_length(v_pagos) > 10 then raise exception 'Son demasiados pagos para una venta.'; end if;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    m := round(nullif(x->>'monto', '')::numeric, 2);
+    if m is null or m <= 0 then raise exception 'Hay un pago sin monto.'; end if;
+    if x->>'medio' = 'giftcard' then
+      raise exception 'La gift card no se agrega ni se cambia acá: el pago con gift card queda como está.';
+    end if;
+    if coalesce(x->>'medio', '') not in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia') then
+      raise exception 'Hay una forma de pago que no existe.';
+    end if;
+    if v.letra = 'X' and x->>'medio' <> 'efectivo' then
+      raise exception 'La X (el comprobante interno) va sólo con efectivo. Si se cobró con otra cosa, se anula y se hace de nuevo como B.';
+    end if;
+    if x->>'medio' = 'tarjeta' then
+      if nullif(trim(coalesce(x->>'tarjeta', '')), '') is null then raise exception 'Falta qué tarjeta es.'; end if;
+      if coalesce(x->>'tipo_tarjeta', '') not in ('credito', 'debito') then raise exception 'Falta si la tarjeta es de crédito o de débito.'; end if;
+      if coalesce(nullif(x->>'cuotas', '')::int, 1) not between 1 and 24 then raise exception 'Las cuotas van de 1 a 24.'; end if;
+      if nullif(x->>'ultimos4', '') is not null and (x->>'ultimos4') !~ '^[0-9]{4}$' then raise exception 'Los últimos 4 números de la tarjeta son 4 números.'; end if;
+    end if;
+    if x->>'medio' = 'efectivo' and nullif(x->>'recibido', '') is not null and (x->>'recibido')::numeric < m then
+      raise exception 'Lo que recibiste en efectivo es menos que lo que se cobra.';
+    end if;
+    v_suma := v_suma + m;
+  end loop;
+
+  if v.letra = 'X' then
+    /* ═══ La X: todo ═══ */
+    if exists (select 1 from pos_venta_items i where i.venta_id = v.id and i.beneficio is not null) then
+      raise exception 'Esta venta vendió una Gift Card: no se edita. Si está mal, se anula y se hace de nuevo.';
+    end if;
+    if exists (select 1 from pos_venta_items i where i.venta_id = v.id and i.premio is not null) then
+      raise exception 'Esta venta tiene un premio del Club: no se edita. Si está mal, se anula y se hace de nuevo.';
+    end if;
+    if exists (select 1 from pos_venta_descuentos d where d.venta_id = v.id and d.tipo in ('cupon', 'cumple')) then
+      raise exception 'Esta venta usó un cupón o el regalo de cumpleaños del Club: no se edita. Si está mal, se anula y se hace de nuevo.';
+    end if;
+    if exists (select 1 from pos_venta_pagos g where g.venta_id = v.id and g.medio = 'giftcard') then
+      raise exception 'Esta venta se pagó con una Gift Card: no se edita. Si está mal, se anula y se hace de nuevo.';
+    end if;
+
+    v_vend  := nullif(trim(coalesce(p->>'vendedor', '')), '');
+    v_cond  := coalesce(nullif(p->>'cliente_condicion', ''), 'consumidor_final');
+    v_doc   := nullif(regexp_replace(coalesce(p->>'cliente_doc', ''), '[^0-9]', '', 'g'), '');
+    v_socio := nullif(regexp_replace(coalesce(p->>'socio', ''), '[^0-9]', '', 'g'), '');
+    if v_vend is null then raise exception 'Elegí el vendedor.'; end if;
+    if v_cond not in ('consumidor_final', 'responsable_inscripto', 'monotributo', 'exento') then
+      raise exception 'La condición de IVA del cliente no es válida.';
+    end if;
+    if v_socio is not null then
+      select * into v_cli from v_club_clientes where codigo = v_socio and baja is null;
+      if not found then raise exception 'Ese socio del Club no existe o se dio de baja.'; end if;
+    end if;
+
+    if jsonb_typeof(v_items) <> 'array' or jsonb_array_length(v_items) = 0 then raise exception 'La venta no tiene productos.'; end if;
+    if jsonb_array_length(v_items) > 200 then raise exception 'Son demasiados renglones para una venta.'; end if;
+    for x in select * from jsonb_array_elements(v_items) loop
+      if nullif(x->>'giftcard', '') is not null then raise exception 'En la edición no se agregan Gift Cards: van en una venta nueva.'; end if;
+      if nullif(x->>'premio', '') is not null then raise exception 'En la edición no se agregan premios del Club: van en una venta nueva.'; end if;
+      n := (x->>'cantidad')::int;
+      pr := round((x->>'precio')::numeric, 2);
+      if n is null or n < 1 or n > 999 then raise exception 'Hay una cantidad que no es válida.'; end if;
+      if pr is null or pr < 0 or pr >= 100000000 then raise exception 'Hay un precio que no es válido.'; end if;
+      if nullif(trim(coalesce(x->>'descripcion', '')), '') is null then raise exception 'Hay un renglón sin descripción.'; end if;
+      v_neto := v_neto + pr * n;
+      v_cant := v_cant + n;
+    end loop;
+
+    if jsonb_typeof(v_descs) <> 'array' then raise exception 'Los descuentos no son válidos.'; end if;
+    for x in select * from jsonb_array_elements(v_descs) loop
+      m := round((x->>'monto')::numeric, 2);
+      if m is null or m <= 0 then raise exception 'Hay un descuento que no es válido.'; end if;
+      if x->>'tipo' in ('cupon', 'cumple') then
+        raise exception 'En la edición no van cupones ni el regalo de cumpleaños del Club: van en una venta nueva.';
+      end if;
+      if coalesce(x->>'tipo', '') not in ('promo', 'manual') then raise exception 'Hay un descuento de un tipo que no existe.'; end if;
+      v_desc := v_desc + m;
+    end loop;
+    if v_desc > v_neto then raise exception 'Los descuentos son más que la venta.'; end if;
+    v_total := v_neto - v_desc;
+    if v_total > 0 and jsonb_array_length(v_pagos) = 0 then raise exception 'Falta la forma de pago.'; end if;
+    if v_suma <> v_total then
+      raise exception 'Los pagos ($%) no suman el total ($%).',
+        replace(translate(to_char(v_suma, 'FM999G999G990D00'), ',.', '.,'), ',00', ''),
+        replace(translate(to_char(v_total, 'FM999G999G990D00'), ',.', '.,'), ',00', '');
+    end if;
+
+    /* Cómo estaba (lo que se anota y lo que muestra el ticket). */
+    v_antes := jsonb_build_object(
+      'vendedor', v.vendedor, 'lista_id', v.lista_id, 'cliente_nombre', v.cliente_nombre, 'cliente_doc', v.cliente_doc,
+      'cliente_condicion', v.cliente_condicion, 'cliente_email', v.cliente_email, 'cliente_tel', v.cliente_tel, 'envio', v.envio,
+      'observaciones', v.observaciones, 'socio', v.socio, 'socio_puntos', v.socio_puntos,
+      'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
+      'items', coalesce((select jsonb_agg(to_jsonb(i) - 'venta_id' order by i.item) from pos_venta_items i where i.venta_id = v.id), '[]'::jsonb),
+      'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'venta_id' order by d.orden) from pos_venta_descuentos d where d.venta_id = v.id), '[]'::jsonb),
+      'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb));
+
+    /* El depósito del que salió lo vendido (si sigue activo en la sucursal; si no, el predeterminado). */
+    if not v.prueba then
+      v_dep := (select s.deposito_id from pos_stock_movs s join pos_depositos d on d.id = s.deposito_id and d.local_id = v.local_id and d.activo
+                 where s.ref_id = v.id and s.tipo = 'venta' order by s.id limit 1);
+    end if;
+
+    /* Los renglones, los descuentos y el pago, nuevos. */
+    delete from pos_venta_items where venta_id = v.id;
+    v_i := 0;
+    for x in select * from jsonb_array_elements(v_items) loop
+      v_i := v_i + 1;
+      insert into pos_venta_items (venta_id, item, codigo, descripcion, talle, color, cantidad, precio, total)
+      values (v.id, v_i, nullif(upper(trim(coalesce(x->>'codigo', ''))), ''), trim(x->>'descripcion'),
+              nullif(trim(coalesce(x->>'talle', '')), ''), nullif(trim(coalesce(x->>'color', '')), ''),
+              (x->>'cantidad')::int, round((x->>'precio')::numeric, 2), round((x->>'precio')::numeric, 2) * (x->>'cantidad')::int);
+    end loop;
+    delete from pos_venta_descuentos where venta_id = v.id;
+    v_i := 0;
+    for x in select * from jsonb_array_elements(v_descs) loop
+      v_i := v_i + 1;
+      insert into pos_venta_descuentos (venta_id, orden, tipo, promo_id, descripcion, monto)
+      values (v.id, v_i, x->>'tipo', case when x->>'tipo' = 'promo' then nullif(x->>'promo_id', '')::int end,
+              coalesce(nullif(trim(coalesce(x->>'descripcion', '')), ''), 'Descuento'), round((x->>'monto')::numeric, 2));
+    end loop;
+    delete from pos_venta_pagos where venta_id = v.id;
+    v_i := 0;
+    for x in select * from jsonb_array_elements(v_pagos) loop
+      v_i := v_i + 1;
+      insert into pos_venta_pagos (venta_id, orden, medio, monto, recibido, vuelto)
+      values (v.id, v_i, 'efectivo', round((x->>'monto')::numeric, 2), nullif(x->>'recibido', '')::numeric,
+              case when nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end);
+    end loop;
+
+    /* El stock: sólo la diferencia entre lo que había salido y lo que sale ahora, como «venta» del mismo ticket (así,
+       si después se anula, vuelve todo lo que salió). Una prueba no lo toca. */
+    if not v.prueba then
+      for it in
+        with antes as (
+          select s.codigo, s.talle, s.color, sum(s.cantidad) c
+            from pos_stock_movs s where s.ref_id = v.id and s.tipo = 'venta'
+           group by 1, 2, 3),
+        ahora as (
+          select upper(trim(i.codigo)) codigo, upper(trim(coalesce(i.talle, ''))) talle, upper(trim(coalesce(i.color, ''))) color,
+                 -sum(i.cantidad)::int c, min(i.descripcion) descripcion
+            from pos_venta_items i
+           where i.venta_id = v.id and i.beneficio is null and nullif(trim(coalesce(i.codigo, '')), '') is not null
+           group by 1, 2, 3)
+        select coalesce(b.codigo, a.codigo) codigo, coalesce(b.talle, a.talle) talle, coalesce(b.color, a.color) color,
+               (coalesce(b.c, 0) - coalesce(a.c, 0))::int delta, b.descripcion
+          from antes a full join ahora b on b.codigo = a.codigo and b.talle = a.talle and b.color = a.color
+         where coalesce(b.c, 0) <> coalesce(a.c, 0)
+         order by 1, 2, 3
+      loop
+        perform pos_stock_mover(v.local_id, it.codigo, it.talle, it.color, it.delta, 'venta', v.id,
+                                'Venta ' || v_ref || ' (editada)', it.descripcion, null, null, v_dep);
+      end loop;
+    end if;
+
+    update pos_ventas
+       set vendedor = v_vend, lista_id = coalesce(nullif(p->>'lista_id', '')::int, v.lista_id),
+           cliente_nombre = nullif(trim(coalesce(p->>'cliente_nombre', '')), ''), cliente_doc = v_doc, cliente_condicion = v_cond,
+           cliente_email = nullif(lower(trim(coalesce(p->>'cliente_email', ''))), ''), cliente_tel = nullif(trim(coalesce(p->>'cliente_tel', '')), ''),
+           envio = nullif(p->>'envio', ''), observaciones = nullif(trim(coalesce(p->>'observaciones', '')), ''), socio = v_socio,
+           neto = v_neto, descuentos = v_desc, total = v_total, cantidad = v_cant
+     where id = v.id;
+
+    /* Los puntos del socio: si cambió el socio o el total, el movimiento de antes se anula y se suma el nuevo, con la misma
+       cuenta que la venta (pos_venta_guardar). Si no cambió nada de eso, quedan como estaban. */
+    if v_socio is distinct from v.socio or v_total <> v.total then
+      if v.club_mov is not null then
+        update club_movimientos
+           set anulado = now(), anulado_por = coalesce(v_nom, 'POS'), motivo_anul = 'Venta ' || v_ref || ' editada en el POS: ' || v_motivo
+         where id = v.club_mov and anulado is null;
+      end if;
+      v_gana := null;
+      v_mov := null;
+      if v_socio is not null then
+        v_factor := club_factor(v_cli.id);
+        v_gana := floor((greatest(v_total, 0) / coalesce((select nullif(valor, '')::numeric from club_reglas where clave = 'pesos_por_punto'), 100))
+                        * (v_factor->>'total')::numeric);
+        if not v.prueba and v_gana > 0 and coalesce((select valor from club_reglas where clave = 'pos_suma_puntos'), 'no') = 'si' then
+          insert into club_movimientos (cliente, tipo, puntos, local, vendedor, ticket, importe, obs)
+          values (v_cli.id, 'compra', v_gana, (select codigo from orden_locales where id = v.local_id), v_vend, 'POS ' || v_ref, greatest(v_total, 0),
+                  case when (v_factor->>'extra')::numeric > 1 then
+                    (v_factor->>'motivo') || ' ' || replace(trim_scale((v_factor->>'extra')::numeric)::text, '.', ',') || 'x'
+                  end)
+          returning id into v_mov;
+        end if;
+      end if;
+      update pos_ventas set socio_puntos = v_gana, club_mov = v_mov where id = v.id;
+    end if;
+
+    select * into v from pos_ventas where id = v.id;
+    v_despues := jsonb_build_object(
+      'vendedor', v.vendedor, 'lista_id', v.lista_id, 'cliente_nombre', v.cliente_nombre, 'cliente_doc', v.cliente_doc,
+      'cliente_condicion', v.cliente_condicion, 'cliente_email', v.cliente_email, 'cliente_tel', v.cliente_tel, 'envio', v.envio,
+      'observaciones', v.observaciones, 'socio', v.socio, 'socio_puntos', v.socio_puntos,
+      'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
+      'items', coalesce((select jsonb_agg(to_jsonb(i) - 'venta_id' order by i.item) from pos_venta_items i where i.venta_id = v.id), '[]'::jsonb),
+      'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'venta_id' order by d.orden) from pos_venta_descuentos d where d.venta_id = v.id), '[]'::jsonb),
+      'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb));
+    if v_despues = v_antes then raise exception 'No cambiaste nada: el ticket ya está así.'; end if;
+
+    insert into pos_venta_ediciones (venta_id, persona, persona_nombre, motivo, antes, despues, clave)
+    values (v.id, orden_yo_id(), v_nom, v_motivo, v_antes, v_despues, v_clave)
+    returning id into v_eid;
+
+    return jsonb_build_object('id', v.id, 'numero', v.numero, 'serie', v.serie, 'prueba', v.prueba, 'edicion', v_eid, 'ya', false,
+                              'total', v.total, 'total_antes', v_antes->'total', 'socio_puntos', v.socio_puntos,
+                              'puntos_sumados', v.club_mov is not null);
+  end if;
+
+  /* ═══ La A y la B: sólo los pagos; el total no cambia ═══ */
+  if jsonb_array_length(v_pagos) = 0 then raise exception 'Falta la forma de pago.'; end if;
+  /* Mauricio (12/11, con la foto de «Corregir el pago»): «En B no te tiene que dejar corregir el monto… solamente la parte
+     del medio de pago». Cada pago queda con su monto (los mismos montos, los mismos pagos): cambian el medio, la tarjeta,
+     las cuotas sin interés y el número de operación. */
+  if (select coalesce(string_agg(round(g.monto, 2)::text, ',' order by round(g.monto, 2)), '')
+        from pos_venta_pagos g where g.venta_id = v.id and g.medio <> 'giftcard')
+     is distinct from
+     (select coalesce(string_agg(round((g->>'monto')::numeric, 2)::text, ',' order by round((g->>'monto')::numeric, 2)), '')
+        from jsonb_array_elements(v_pagos) g) then
+    raise exception 'En una factura cada pago queda con su monto: sólo cambian el medio, la tarjeta y las cuotas sin interés. Si un monto estaba mal, se hace una nota de crédito y la venta de nuevo.';
+  end if;
+  v_gc := coalesce((select sum(g.monto) from pos_venta_pagos g where g.venta_id = v.id and g.medio = 'giftcard'), 0);
+  if v_suma + v_gc <> v.total then
+    if v_gc > 0 then
+      raise exception 'Los pagos ($%) y la gift card ($%) no suman el total de la venta ($%). En una factura el total no cambia: si estaba mal, se hace una nota de crédito y la venta de nuevo.',
+        replace(translate(to_char(v_suma, 'FM999G999G990D00'), ',.', '.,'), ',00', ''),
+        replace(translate(to_char(v_gc, 'FM999G999G990D00'), ',.', '.,'), ',00', ''),
+        replace(translate(to_char(v.total, 'FM999G999G990D00'), ',.', '.,'), ',00', '');
+    end if;
+    raise exception 'Los pagos ($%) no suman el total de la venta ($%). En una factura el total no cambia: si estaba mal, se hace una nota de crédito y la venta de nuevo.',
+      replace(translate(to_char(v_suma, 'FM999G999G990D00'), ',.', '.,'), ',00', ''),
+      replace(translate(to_char(v.total, 'FM999G999G990D00'), ',.', '.,'), ',00', '');
+  end if;
+
+  /* Las cuotas: con el interés de las cuotas (SQL 215), el pago en cuotas queda como está (el interés está en el total).
+     Sin interés, van las cuotas sin interés de la venta: 3 desde $80.000 y 6 desde $150.000 (INTERES de pos.js), sobre
+     el total del ticket. Lo que ya estaba en cuotas con su monto (la excepción sin interés) puede quedar igual. */
+  select string_agg(coalesce(g.cuotas, 1) || ':' || round(g.monto, 2)::text, ',' order by coalesce(g.cuotas, 1), g.monto) into v_viejas
+    from pos_venta_pagos g where g.venta_id = v.id and g.medio = 'tarjeta' and coalesce(g.cuotas, 1) > 1;
+  select string_agg(coalesce(nullif(g->>'cuotas', '')::int, 1) || ':' || round((g->>'monto')::numeric, 2)::text, ','
+                    order by coalesce(nullif(g->>'cuotas', '')::int, 1), round((g->>'monto')::numeric, 2)) into v_nuevas
+    from jsonb_array_elements(v_pagos) g where g->>'medio' = 'tarjeta' and coalesce(nullif(g->>'cuotas', '')::int, 1) > 1;
+  if v_viejas is distinct from v_nuevas then
+    if coalesce(v.interes, 0) > 0 then
+      raise exception 'Esta venta tiene el interés de las cuotas: el pago en cuotas no se cambia (cambiaría el total de la factura). Si estaba mal, se hace una nota de crédito y la venta de nuevo.';
+    end if;
+    for x in select * from jsonb_array_elements(v_pagos) g
+              where g->>'medio' = 'tarjeta' and coalesce(nullif(g->>'cuotas', '')::int, 1) > 1 loop
+      n := coalesce(nullif(x->>'cuotas', '')::int, 1);
+      if not ((n = 3 and v.total >= 80000) or (n = 6 and v.total >= 150000)
+              or exists (select 1 from pos_venta_pagos g where g.venta_id = v.id and g.medio = 'tarjeta' and g.cuotas = n
+                                                           and round(g.monto, 2) = round((x->>'monto')::numeric, 2))) then
+        raise exception 'En % cuotas, con $%, va con interés y el total de la factura no cambia: sin interés son 3 cuotas desde $80.000 y 6 desde $150.000.',
+          n, replace(translate(to_char(v.total, 'FM999G999G990D00'), ',.', '.,'), ',00', '');
+      end if;
+    end loop;
+  end if;
+
+  /* La promo «pagando todo con …»: con otro medio, no va. */
+  for v_pr in select pr.nombre, pr.medio from pos_venta_descuentos d join pos_promos pr on pr.id = d.promo_id
+               where d.venta_id = v.id and pr.tipo = 'medio_pago' loop
+    if v_gc > 0 or exists (select 1 from jsonb_array_elements(v_pagos) g where g->>'medio' <> v_pr.medio) then
+      raise exception 'Esta venta tiene la promo «%» (pagando todo %): con otro medio, la promo no va. Si se pagó con otra cosa, se hace una nota de crédito y la venta de nuevo.',
+        v_pr.nombre, case v_pr.medio when 'efectivo' then 'en efectivo' when 'tarjeta' then 'con tarjeta' when 'mercadopago' then 'con Mercado Pago'
+                          when 'modo' then 'con MODO' when 'go_cuotas' then 'con Go Cuotas' when 'transferencia' then 'con transferencia' else 'con ' || v_pr.medio end;
+    end if;
+  end loop;
+
+  select coalesce(jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden), '[]'::jsonb) into v_antes from pos_venta_pagos g where g.venta_id = v.id;
+
+  /* Los pagos de antes (menos la gift card) se van y entran los nuevos, después de los que quedan. */
+  delete from pos_venta_pagos where venta_id = v.id and medio <> 'giftcard';
+  select coalesce(max(orden), 0) into v_i from pos_venta_pagos where venta_id = v.id;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    v_i := v_i + 1;
+    insert into pos_venta_pagos (venta_id, orden, medio, monto, tarjeta, tipo_tarjeta, cuotas, cupon, lote, ultimos4, recibido, vuelto)
+    values (v.id, v_i, x->>'medio', round((x->>'monto')::numeric, 2),
+            case when x->>'medio' = 'tarjeta' then nullif(trim(coalesce(x->>'tarjeta', '')), '') end,
+            case when x->>'medio' = 'tarjeta' then nullif(x->>'tipo_tarjeta', '') end,
+            case when x->>'medio' = 'tarjeta' then coalesce(nullif(x->>'cuotas', '')::int, 1) end,
+            nullif(trim(coalesce(x->>'cupon', '')), ''),
+            case when x->>'medio' = 'tarjeta' then nullif(trim(coalesce(x->>'lote', '')), '') end,
+            case when x->>'medio' = 'tarjeta' then nullif(x->>'ultimos4', '') end,
+            case when x->>'medio' = 'efectivo' then nullif(x->>'recibido', '')::numeric end,
+            case when x->>'medio' = 'efectivo' and nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end);
+  end loop;
+  select coalesce(jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden), '[]'::jsonb) into v_despues from pos_venta_pagos g where g.venta_id = v.id;
+  if v_despues = v_antes then raise exception 'No cambiaste nada: los pagos ya están así.'; end if;
+
+  /* La excepción «sin interés» (SQL 215) era de las cuotas de antes: si cambiaron, ya no va. */
+  if v.sin_interes and v_viejas is distinct from v_nuevas then
+    update pos_ventas set sin_interes = false, interes_nota = null where id = v.id;
+  end if;
+
+  insert into pos_venta_correcciones (venta_id, persona, persona_nombre, motivo, antes, despues, clave)
+  values (v.id, orden_yo_id(), v_nom, v_motivo, v_antes, v_despues, v_clave)
+  returning id into v_eid;
+
+  /* SQL 200: la gift card que se vendió en esta venta anota cómo se pagó (la sección Gift Cards): la misma cuenta que al vender. */
+  if exists (select 1 from pos_venta_items i where i.venta_id = v.id and i.beneficio is not null) then
+    if jsonb_array_length(v_pagos) = 1 then
+      v_pago := (case v_pagos->0->>'medio'
+                   when 'efectivo' then 'efectivo'
+                   when 'tarjeta' then case coalesce(nullif(v_pagos->0->>'cuotas', '')::int, 1) when 3 then '3 cuotas' when 6 then '6 cuotas' else 'tarjeta' end
+                   else 'otro' end)::forma_pago;
+    else
+      v_pago := 'otro';
+    end if;
+    update beneficios set pago = v_pago where id in (select i.beneficio from pos_venta_items i where i.venta_id = v.id and i.beneficio is not null);
+  end if;
+
+  return jsonb_build_object('id', v.id, 'numero', v.numero, 'serie', v.serie, 'prueba', v.prueba, 'correccion', v_eid, 'ya', false,
+                            'total', v.total, 'pagos', v_despues);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_editar(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_editar(jsonb) TO authenticated;
+
+-- 3) El ticket trae las ediciones (de la más vieja a la última), con cómo estaba antes. Todo lo demás, igual.
+CREATE OR REPLACE FUNCTION public.pos_venta(p_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare r jsonb;
+begin
+  perform pos_permiso();
+  select to_jsonb(v) - 'clave'
+         || jsonb_build_object(
+              'local', l.nombre,
+              'cargado_por_nombre', (select p.nombre from orden_personas p where p.id = v.cargado_por),
+              'anulada_por_nombre', (select p.nombre from orden_personas p where p.id = v.anulada_por),
+              'items', coalesce((select jsonb_agg(to_jsonb(i) - 'venta_id' order by i.item) from pos_venta_items i where i.venta_id = v.id), '[]'::jsonb),
+              'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'venta_id' order by d.orden) from pos_venta_descuentos d where d.venta_id = v.id), '[]'::jsonb),
+              'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb),
+              /* SQL 171: el socio, con su nivel de hoy, y si los puntos están sumados (y no se anularon). */
+              'socio_nivel', (select c.nivel from v_club_clientes c where c.codigo = v.socio),
+              'puntos_sumados', exists (select 1 from club_movimientos m where m.id = v.club_mov and m.anulado is null),
+              /* SQL 205: la nota de crédito que la anuló (con quién la hizo) y el cierre de caja en el que entró. */
+              'nota_credito', (select to_jsonb(n) || jsonb_build_object('hizo_nombre', (select p.nombre from orden_personas p where p.id = n.hizo))
+                                 from pos_notas_credito n where n.venta_id = v.id),
+              'cierre', (select jsonb_build_object('id', k.id, 'numero', k.numero, 'prueba', k.prueba, 'estado', k.estado)
+                           from pos_cierres k where k.id = v.cierre_id),
+              /* SQL 248: las correcciones del medio de pago, de la más vieja a la última; y la promo «pagando todo con …». */
+              'correcciones', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'fecha', c.fecha, 'persona', c.persona_nombre,
+                                                                            'motivo', c.motivo, 'antes', c.antes) order by c.fecha, c.id)
+                                          from pos_venta_correcciones c where c.venta_id = v.id), '[]'::jsonb),
+              'promo_medio', (select pr.medio from pos_venta_descuentos d join pos_promos pr on pr.id = d.promo_id
+                               where d.venta_id = v.id and pr.tipo = 'medio_pago' limit 1),
+              /* SQL 277: las ediciones de la X, de la más vieja a la última, con cómo estaba antes. */
+              'ediciones', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'fecha', e.fecha, 'persona', e.persona_nombre,
+                                                                         'motivo', e.motivo, 'antes', e.antes) order by e.fecha, e.id)
+                                       from pos_venta_ediciones e where e.venta_id = v.id), '[]'::jsonb))
+    into r
+    from pos_ventas v join orden_locales l on l.id = v.local_id
+   where v.id = p_id;
+  if r is null then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok((r->>'local_id')::uuid);   -- SQL 190
+  return r;
+end $function$;
+
+NOTIFY pgrst, 'reload schema';
