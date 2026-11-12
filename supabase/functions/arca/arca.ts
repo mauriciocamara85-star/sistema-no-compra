@@ -203,7 +203,9 @@ const ANONIMA = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
 /** El SQL que crea cada función de la base, para decir cuál falta correr. */
 function faltaSql(funcion: string): string {
-  return funcion.startsWith('arca_factura_')
+  return funcion.startsWith('arca_nc_')
+    ? 'Falta correr el SQL 279: es el que le pide a ARCA la nota de crédito.'
+    : funcion.startsWith('arca_factura_')
     ? 'Falta correr el SQL 274: es donde se guardan las facturas de ARCA.'
     : 'Falta correr el SQL 273: es donde se guarda el permiso de ARCA.';
 }
@@ -366,8 +368,8 @@ export type Comprobante = {
   iva: number;
   /** Id de ARCA de cada alícuota (5 = 21 %, 4 = 10,5 %) con su base y su IVA. */
   alicuotas: { id: number; base: number; importe: number }[];
-  /** Para una nota de crédito: la factura que anula. */
-  asociados?: { tipo: number; punto_venta: number; numero: number }[];
+  /** Para una nota de crédito: la factura que anula (con el CUIT que la emitió y su fecha 'AAAAMMDD', si se saben). */
+  asociados?: { tipo: number; punto_venta: number; numero: number; cuit?: string; fecha?: string }[];
 };
 
 export type Resultado = {
@@ -386,8 +388,9 @@ const plata = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
 /** Le pide el CAE a ARCA para UN comprobante. No reintenta: quien llama decide qué hacer con un rechazo. */
 export async function pedirCae(amb: Ambiente, c: Comprobante): Promise<Resultado> {
   const asociados = (c.asociados ?? []).map((a) =>
-    '<ar:CbteAsoc><ar:Tipo>' + a.tipo + '</ar:Tipo><ar:PtoVta>' + a.punto_venta + '</ar:PtoVta><ar:Nro>' + a.numero +
-    '</ar:Nro></ar:CbteAsoc>').join('');
+    '<ar:CbteAsoc><ar:Tipo>' + Number(a.tipo) + '</ar:Tipo><ar:PtoVta>' + Number(a.punto_venta) + '</ar:PtoVta><ar:Nro>' + Number(a.numero) +
+    '</ar:Nro>' + (/^\d{11}$/.test(String(a.cuit ?? '')) ? '<ar:Cuit>' + a.cuit + '</ar:Cuit>' : '') +
+    (/^\d{8}$/.test(String(a.fecha ?? '')) ? '<ar:CbteFch>' + a.fecha + '</ar:CbteFch>' : '') + '</ar:CbteAsoc>').join('');
   const alicuotas = c.alicuotas.map((a) =>
     '<ar:AlicIva><ar:Id>' + a.id + '</ar:Id><ar:BaseImp>' + plata(a.base) + '</ar:BaseImp><ar:Importe>' + plata(a.importe) +
     '</ar:Importe></ar:AlicIva>').join('');

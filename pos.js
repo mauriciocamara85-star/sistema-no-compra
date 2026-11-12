@@ -3208,7 +3208,7 @@
      a ARCA. Con o.arca (el id de la venta) la ventana sale enseguida y el recuadro se llena cuando contesta: «Pidiéndole el CAE
      a ARCA…» si tarda, y después la factura o por qué no salió. Si ya la cerraron, el cartelito. */
   function ventanaHecho(o) {
-    var fac = o.arca ? '<div class="vg-fac-lugar"></div>' : htmlFactura(o.factura, o.facturaError);
+    var fac = o.arca || o.arcaNota ? '<div class="vg-fac-lugar"></div>' : htmlFactura(o.factura, o.facturaError);
     var datos = (o.datos || []).filter(Boolean), notas = (o.notas || []).filter(Boolean);
     var caja = ventana('<div class="vg-cab">' + icono(o.tono === 'cola' ? 'nube' : 'ok') + '<div><h3 id="posVentTit">' + esc(o.titulo) + '</h3>' +
         (datos.length ? '<p class="vg-datos">' + datos.map(esc).join(' · ') + '</p>' : '') + '</div></div>' +
@@ -3218,12 +3218,24 @@
     if (o.tono) caja.classList.add('vg-aviso');
     if (o.despues) _alCerrar = o.despues;
     if (o.arca) pedirFacturaEn(caja, o.arca);
+    else if (o.arcaNota) pedirFacturaEn(caja, o.arcaNota, true);   // SQL 279: el CAE de la nota de crédito
     return caja;
   }
   /** El recuadro de la factura electrónica: la aprobada (comprobante, CAE y vencimiento) o por qué no salió. La del ARCA de
       prueba lo dice. otraVez: el error se arregla pidiéndola de nuevo (sin respuesta, ocupado), no cambiando la venta. */
-  function htmlFactura(f, fError, otraVez) {
+  function htmlFactura(f, fError, otraVez, nota) {
     var vence = fechaCae(f && f.cae_vence), comp = f && f.numero ? compArca(f) : '', deP = f && f.ambiente === 'homologacion';
+    /* nota (SQL 279): es la nota de crédito de un ticket facturado; lo mismo, con su nombre. */
+    if (nota) {
+      return f && f.cae ?
+        '<div class="vg-fac"><b>Nota de crédito electrónica' + (deP ? ' de prueba' : '') + '</b><span>' +
+          (deP ? 'La aprobó el ARCA de prueba: no tiene valor fiscal.' : 'Se creó correctamente la nota de crédito electrónica.') + '</span><dl>' +
+          (comp ? '<dt>Comprobante</dt><dd>' + esc(comp) + '</dd>' : '') +
+          '<dt>CAE</dt><dd>' + esc(f.cae) + '</dd>' +
+          (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
+        fError ? '<div class="pos-cartel mal"><b>No se pudo crear la nota de crédito electrónica.</b> ' + esc(conPunto(fError)) +
+          ' La nota quedó guardada y el ticket anulado, todavía sin CAE.' + (otraVez ? ' Se pide de nuevo desde la nota, con «Pedir el CAE».' : '') + '</div>' : '';
+    }
     return f && f.cae ?
       '<div class="vg-fac"><b>Factura electrónica' + (deP ? ' de prueba' : '') + '</b><span>' +
         (deP ? 'La aprobó el ARCA de prueba: no tiene valor fiscal.' : 'Se creó correctamente la factura electrónica.') + '</span><dl>' +
@@ -3252,24 +3264,32 @@
   /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
   function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
   /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
-  function pedirFacturaEn(caja, id) {
-    var lugar = caja.querySelector('.vg-fac-lugar'), listo = false;
+  function pedirFacturaEn(caja, id, nota) {
+    var lugar = caja.querySelector('.vg-fac-lugar'), listo = false, que = nota ? 'Nota de crédito electrónica' : 'Factura electrónica';
     setTimeout(function () {
       if (!listo && lugar && lugar.isConnected) {
-        lugar.innerHTML = '<div class="vg-fac vg-fac-pide"><b>Factura electrónica</b><span>Pidiéndole el CAE a ARCA…</span></div>';
+        lugar.innerHTML = '<div class="vg-fac vg-fac-pide"><b>' + que + '</b><span>Pidiéndole el CAE a ARCA…</span></div>';
       }
     }, 500);
-    pedirFactura(id).then(function (x) {
+    (nota ? pedirNota(id) : pedirFactura(id)).then(function (x) {
       listo = true;
-      if (lugar && lugar.isConnected) { lugar.innerHTML = x.factura ? htmlFactura(x.factura) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x)); return; }
-      if (x.factura) avisar('ok', 'Factura electrónica ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
-      else if (!x.no_va) avisar('err', 'No se pudo crear la factura electrónica: ' + conPunto(x.error) + ' La venta quedó guardada, todavía sin CAE.');
+      if (lugar && lugar.isConnected) { lugar.innerHTML = x.factura ? htmlFactura(x.factura, null, false, nota) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x), nota); return; }
+      if (x.factura) avisar('ok', que + ' ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
+      else if (!x.no_va) avisar('err', nota ? 'No se pudo crear la nota de crédito electrónica: ' + conPunto(x.error) + ' La nota quedó guardada, todavía sin CAE.'
+                                            : 'No se pudo crear la factura electrónica: ' + conPunto(x.error) + ' La venta quedó guardada, todavía sin CAE.');
+      /* Cerraron la ventana antes de que ARCA contestara y ya están mirando la nota: se vuelve a cargar con su CAE. */
+      if (nota && x.factura && _notaAbierta) _notaAbierta();
     });
   }
+  var _notaAbierta = null;   // vuelve a cargar la nota de crédito que está abierta (la pone abrirNota)
   /** La función «arca» del servidor le pide a ARCA la factura de la venta. Nunca rechaza: devuelve { ok, factura } (aprobada o
       ya estaba), { ok, no_va } (no le toca) o { ok: false, error, codigo }. Puede tardar: si otra caja está pidiendo en el mismo
       punto de venta, espera su turno (hasta medio minuto) y ARCA puede tardar otro tanto. */
-  function pedirFactura(id) {
+  function pedirFactura(id) { return pedirArca({ accion: 'facturar', venta_id: id }); }
+  /** SQL 279: la nota de crédito de un ticket facturado le pide su CAE al mismo ARCA que aprobó la factura (id: el de la nota).
+      Contesta igual que la factura: en «factura» viene el comprobante de la nota. */
+  function pedirNota(id) { return pedirArca({ accion: 'nota_credito', nota_id: id }); }
+  function pedirArca(cuerpo) {
     return persona.token().then(function (t) {
       var ctl = typeof AbortController === 'function' ? new AbortController() : null;
       var reloj = setTimeout(function () { if (ctl) ctl.abort(); }, 90000);
@@ -3277,7 +3297,7 @@
         method: 'POST',
         signal: ctl ? ctl.signal : undefined,
         headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'facturar', venta_id: id })
+        body: JSON.stringify(cuerpo)
       }).then(function (r) {
         clearTimeout(reloj);
         if (r.status === 404) return { ok: false, codigo: 'sin_funcion', error: 'Falta publicar la función «arca» en el servidor.' };
@@ -3290,7 +3310,7 @@
       return { ok: false, codigo: 'sin_sesion', error: 'Se cerró tu sesión: entrá de nuevo.' };
     }).then(function (x) {
       x = x || {};
-      if (!x.ok && !x.error) x.error = 'No se pudo pedir la factura electrónica.';
+      if (!x.ok && !x.error) x.error = cuerpo.accion === 'nota_credito' ? 'No se pudo pedir la nota de crédito electrónica.' : 'No se pudo pedir la factura electrónica.';
       return x;
     });
   }
@@ -3359,13 +3379,15 @@
     if (navigator.onLine === false) return Promise.resolve();
     RED.mandando = true;
     pintarRed();
-    var llegaron = [];
+    var llegaron = [], sinCae = [];
     function una() {
       var x = pendientes()[0];
       if (!x) return null;
       return llamarCorto('pos_venta_guardar', { p: x.p }).then(function (r) {
         cambiarEnCola(x.clave, null);
         llegaron.push(r);
+        /* 12/11: la venta A o B que se hizo sin internet llega sin factura: se le pide el CAE al terminar de mandar la fila. */
+        if (r && r.id && !r.factura && leTocaArca({ letra: x.letra, prueba: x.prueba, local_id: x.local_id, fecha: x.hecha })) sinCae.push(r);
         RED.llegaron.unshift({ hecha: x.hecha, total: x.total, local_id: x.local_id, vendedor: x.vendedor, r: r });
         if (S.ultimo && S.ultimo.cola && S.ultimo.clave === x.clave) {
           S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: x.total, local: S.ultimo.local, ya: false };
@@ -3390,11 +3412,33 @@
         S.stock = {};
         if (S.recargar) S.recargar();
       }
+      if (sinCae.length) facturarLlegadas(sinCae);
       var malas = leerCola().filter(function (x) { return x.error; }).length;
       if (malas && llegaron.length) setTimeout(function () { avisar('err', (malas === 1 ? 'Una venta hecha sin internet no se pudo mandar' : malas + ' ventas hechas sin internet no se pudieron mandar') + ': tocá «Sin mandar» en el menú.'); }, 3500);
       pintarRed();
     }
     return p.then(fin, fin);
+  }
+  /** Las ventas A o B que se hicieron sin internet ya están en la base, sin factura: se les pide el CAE, de a una. La que no
+      sale queda «Sin CAE» y se pide desde el ticket (el cartelito lo dice). */
+  function facturarLlegadas(lista) {
+    var bien = 0, mal = [];
+    function una(i) {
+      if (i >= lista.length) {
+        if (bien) avisar('ok', bien === 1 ? 'La venta que se hizo sin internet ya tiene su factura electrónica.' : 'Las ' + bien + ' ventas que se hicieron sin internet ya tienen su factura electrónica.');
+        if (mal.length) setTimeout(function () {
+          avisar('err', (mal.length === 1 ? 'Una venta hecha sin internet quedó sin CAE' : mal.length + ' ventas hechas sin internet quedaron sin CAE') + ': ' + conPunto(mal[0]) +
+            ' Pedilo desde el ticket, con «Pedir el CAE».');
+        }, bien ? 3500 : 0);
+        if ((bien || mal.length) && S.recargar) S.recargar();
+        return;
+      }
+      pedirFactura(lista[i].id).then(function (x) {
+        if (x.factura) bien++; else if (!x.no_va) mal.push(x.error);
+        una(i + 1);
+      });
+    }
+    una(0);
   }
   window.addEventListener('online', function () { setTimeout(vaciarCola, 500); });
   window.addEventListener('offline', function () { redSeCayo(); });
@@ -3734,13 +3778,14 @@
   function qrArca(t, f) {
     var e = String(f.cuit || '').replace(/\D/g, ''), d = docArca(t, f), fe = fechaArca(f.fecha);
     if (e.length !== 11 || !fe || !f.numero || !/^\d{14}$/.test(String(f.cae))) return '';
-    var j = { ver: 1, fecha: fe, cuit: Number(e), ptoVta: Number(f.punto_venta), tipoCmp: f.tipo === 'A' ? 1 : 6, nroCmp: Number(f.numero),
+    var j = { ver: 1, fecha: fe, cuit: Number(e), ptoVta: Number(f.punto_venta), tipoCmp: f.clase === 'nota_credito' ? (f.tipo === 'A' ? 3 : 8) : (f.tipo === 'A' ? 1 : 6), nroCmp: Number(f.numero),
               importe: Number(f.importe != null ? f.importe : t.total), moneda: 'PES', ctz: 1, tipoDocRec: d.tipo, nroDocRec: Number(d.nro) || 0,
               tipoCodAut: 'E', codAut: Number(f.cae) };
     return 'https://www.afip.gob.ar/fe/qr/?p=' + btoa(JSON.stringify(j));
   }
-  function facturaPdf(t) {
-    var f = t.factura;
+  /* de (SQL 279): el comprobante de la nota de crédito del ticket (n.factura); sin él, la factura del ticket. */
+  function facturaPdf(t, de) {
+    var f = de || t.factura;
     if (!f || !f.cae) return;
     var url = qrArca(t, f);
     (url ? conQr() : Promise.reject(new Error('sin QR'))).then(function (qrcode) {
@@ -3749,12 +3794,14 @@
       q.make();
       return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
     }).catch(function () { return ''; }).then(function (svg) {
-      imprimirHoja('Factura ' + compArca(f), hojaFactura(t, f, svg, url), CSS_FACTURA);
+      imprimirHoja((f.clase === 'nota_credito' ? 'Nota de crédito ' : 'Factura ') + compArca(f), hojaFactura(t, f, svg, url), CSS_FACTURA);
     });
   }
   function hojaFactura(t, f, svg, url) {
     var n2 = function (x) { return (Number(x) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     var deP = f.ambiente === 'homologacion', esA = f.tipo === 'A';
+    /* SQL 279: la nota de crédito es la misma hoja con su nombre, su código (003 la A, 008 la B) y la factura que anula. */
+    var nc = f.clase === 'nota_credito', an = nc && f.anula && f.anula.numero ? f.anula : null;
     var fe = fechaArca(f.fecha).split('-').reverse().join('/');
     var pv = ('000' + String(f.punto_venta || '').replace(/\D/g, '')).slice(-4), nro = ('0000000' + String(f.numero)).slice(-8);
     var d = docArca(t, f);
@@ -3775,8 +3822,8 @@
         '<div class="fa-emp"><div class="fa-razon">' + esc(EMPRESA.razon) + '</div>' +
           (f.domicilio ? '<div>' + esc(f.domicilio) + '</div>' : '') + (f.localidad ? '<div>' + esc(f.localidad) + '</div>' : '') +
           '<div>' + esc(EMPRESA.web) + '</div><div>Condición frente al IVA: ' + esc(EMPRESA.iva) + '</div></div>' +
-        '<div class="fa-letra"><b>' + esc(f.tipo || '') + '</b><small>COD. ' + (esA ? '001' : '006') + '</small></div>' +
-        '<div class="fa-comp"><div class="fa-tit">Factura</div><div>Punto de Venta: ' + pv + '</div>' +
+        '<div class="fa-letra"><b>' + esc(f.tipo || '') + '</b><small>COD. ' + (nc ? (esA ? '003' : '008') : esA ? '001' : '006') + '</small></div>' +
+        '<div class="fa-comp"><div class="fa-tit">' + (nc ? 'Nota de Crédito' : 'Factura') + '</div><div>Punto de Venta: ' + pv + '</div>' +
           '<div class="fa-num">Número Comprobante: ' + nro + '</div>' +
           '<div class="fa-dos"><span>Fecha: ' + fe + '</span><span>CUIT: ' + cuit(EMPRESA.cuit) + '</span></div>' +
           '<div>Ingresos Brutos: ' + esc(EMPRESA.iibb) + '</div><div>Inicio de Actividades: ' + esc(EMPRESA.inicio) + '</div></div>' +
@@ -3784,7 +3831,8 @@
       '<div class="fa-cli"><div><div>Cliente: ' + esc(t.cliente_nombre || 'Consumidor final') + '</div><div>' + esc(docTxt) + '</div></div>' +
         '<div><div>Condición frente al IVA: ' + esc(CONDICION[t.cliente_condicion] || 'Consumidor final') + '</div><div>Forma de Pago: ' + esc(forma) + '</div>' +
         '<div>Condición de Pago: No Aplica</div></div></div>' +
-      '<div class="fa-vto"><span>Fecha de vencimiento: ' + fe + '</span></div>' +
+      '<div class="fa-vto">' + (an ? '<b class="fa-anula">Comprobante asociado: Factura ' + esc(compArca(an)) +
+        (fechaArca(an.fecha) ? ' del ' + fechaArca(an.fecha).split('-').reverse().join('/') : '') + '</b>' : '') + '<span>Fecha de vencimiento: ' + fe + '</span></div>' +
       '<table class="fa-items"><thead><tr><th class="n">Cantidad</th><th>Producto</th><th>Descripción</th><th>UM</th><th class="n">Precio</th><th class="n">Total</th></tr></thead>' +
         '<tbody>' + filas + '</tbody></table>' +
       '<div class="fa-abajo">' +
@@ -3809,7 +3857,8 @@
     ' display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }' +
     '.fa-letra b { font-size: 20pt; } .fa-letra small { font-size: 5.5pt; margin-top: 1mm; }' +
     '.fa-cli { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; padding: 6mm 4mm 2mm; line-height: 1.7; }' +
-    '.fa-vto { display: flex; justify-content: flex-end; margin: 1mm 0 5mm; } .fa-vto span { border: 1px solid #000; padding: 2mm 5mm; }' +
+    '.fa-vto { display: flex; justify-content: flex-end; align-items: center; margin: 1mm 0 5mm; } .fa-vto span { border: 1px solid #000; padding: 2mm 5mm; }' +
+    '.fa-anula { margin-right: auto; padding-left: 4mm; font-weight: 400; }' +
     '.fa-items th { font-size: 8pt; text-transform: none; letter-spacing: 0; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1mm 2mm; }' +
     '.fa-items td { border-bottom: 0; padding: .6mm 2mm; font-size: 8.5pt; }' +
     '.fa-abajo { margin-top: auto; display: grid; grid-template-columns: 1fr 72mm; gap: 8mm; align-items: end; padding-top: 6mm; }' +
@@ -4014,14 +4063,36 @@
      caja), en el posnet se anula la operación y se hace la venta de nuevo,
      bien («Duplicar»). Sólo A y B; la X se sigue anulando.
      ════════════════════════════════════════════════════════════════════ */
-  /** Lo de ARCA de una nota: arca = pendiente | autorizada | sin_factura | no_va (con la nota todavía sin guardar, el que va a tener). */
-  /* deP (SQL 276): el ticket tiene el CAE del ARCA de prueba (sin valor fiscal): la nota que vale, también en BlueSoft. */
-  function arcaNota(arca, cae, deP) {
+  /** Lo de ARCA de una nota, en una línea (el título de la columna de las listas):
+      arca = pendiente | autorizada | de_prueba (SQL 279: la aprobó el ARCA de prueba) | sin_factura | no_va. */
+  function arcaNota(arca, cae) {
     return arca === 'autorizada' ? 'Con CAE' + (cae ? ' ' + esc(cae) : '') :
-      arca === 'pendiente' ? 'Pendiente: se le pide el CAE cuando el POS facture' :
+      arca === 'de_prueba' ? 'De prueba: la aprobó el ARCA de prueba (sin valor fiscal)' :
+      arca === 'pendiente' ? 'Sin CAE todavía: se pide desde la nota, con «Pedir el CAE»' :
       arca === 'no_va' ? 'No va (es una prueba)' :
-      deP ? 'No va: el CAE del ticket es del ARCA de prueba (sin valor fiscal). La nota que vale, hacela también en BlueSoft.' :
       'No va: el ticket no tiene factura de ARCA (la hace BlueSoft). La nota que vale, hacela también en BlueSoft.';
+  }
+  /** Lo de ARCA de la nota en su ventana (SQL 279, 12/11). n: la nota guardada, o null mientras se arma; t: el ticket que anula.
+      El ticket con factura electrónica: la nota le pide su CAE al MISMO ARCA (el de prueba o el de verdad) al guardarla; con
+      el CAE, su comprobante; si no salió, «Pedir el CAE». Mientras sea el ARCA de prueba, la nota que vale se hace también en
+      BlueSoft. El ticket sin factura electrónica: la nota no va a ARCA. */
+  function arcaDeNota(t, n) {
+    var f = n && n.factura, deT = !!(t.factura && t.factura.ambiente === 'homologacion');
+    var enBlue = ' La nota que vale, hacela también en BlueSoft.';
+    if (f && f.cae) {
+      return '<b>' + esc(compArca(f)) + '</b> · CAE ' + esc(f.cae) + (f.cae_vence ? ' · vence ' + esc(fechaCae(f.cae_vence)) : '') +
+        (f.ambiente === 'homologacion' ? '<br><small>ARCA de prueba (sin valor fiscal).' + enBlue + '</small>' : '');
+    }
+    var arca = n ? n.arca : t.factura && t.factura.cae ? 'pendiente' : t.prueba ? 'no_va' : 'sin_factura';
+    if (arca === 'autorizada') return 'Con CAE' + (n && n.cae ? ' ' + esc(n.cae) : '');
+    if (arca === 'pendiente') {
+      var prueba = deT ? 'ARCA de prueba (sin valor fiscal).' + enBlue : '';
+      return n ? 'Sin CAE todavía <button type="button" class="pos-link" id="ncCae" title="' + (deT ? 'Se la pide al ARCA de prueba (sin valor fiscal)' : 'Se la pide a ARCA') +
+                 '">Pedir el CAE</button>' + (prueba ? '<br><small>' + prueba + '</small>' : '')
+               : 'Al guardarla se le pide el CAE a ARCA.' + (prueba ? ' ' + prueba : '');
+    }
+    if (arca === 'no_va') return 'No va (es una prueba sin factura electrónica)';
+    return 'No va: el ticket no tiene factura de ARCA (la hace BlueSoft).' + enBlue;
   }
   /** Los datos de la nota (n: la nota guardada, o null mientras se arma), el ticket que anula y sus productos, como la de BlueSoft. */
   function datosNota(t, n) {
@@ -4036,8 +4107,7 @@
         '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
         '<div><span>Forma de pago</span>' + esc(pagos || '—') + '</div>' +
         '<div class="nc-anula"><span>Anula</span>Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' del ' + esc(fechaHora(t.fecha)) + ' · ' + plata(cent(t.total)) + ' (100 %)</div>' +
-        '<div class="nc-arca"><span>ARCA</span>' + arcaNota(n ? n.arca : t.prueba ? 'no_va' : facturaReal(t.factura) ? 'pendiente' : 'sin_factura', n && n.cae,
-          !!(t.factura && t.factura.ambiente === 'homologacion')) + '</div>' +
+        '<div class="nc-arca"><span>ARCA</span>' + arcaDeNota(t, n) + '</div>' +
       '</div>' + productosTicket(t);
   }
 
@@ -4070,6 +4140,8 @@
         if (alCambiar) alCambiar();
         ventanaHecho({ titulo: 'Nota de crédito ' + refNota(r) + ' guardada', datos: [bonito(t.local), plata(cent(t.total))],
           notas: ['Anuló la venta ' + ref(t) + '.'], factura: r && r.factura, facturaError: r && r.factura_error,
+          /* SQL 279: el ticket tenía factura electrónica: la nota quedó «pendiente» y se le pide el CAE ahora. */
+          arcaNota: r && r.arca === 'pendiente' ? r.id : null,
           despues: function () { abrirNota(t.id, alCambiar, true); } });
       }).catch(function (e) {
         bt.disabled = false;
@@ -4093,8 +4165,10 @@
         (n.prueba ? '<div class="pos-cartel prueba">Es una nota de prueba: se borra con «Borrar las pruebas», junto con su venta.</div>' : '') +
         (recien ? '<div class="pos-cartel st-ok">Listo: la venta ' + esc(ref(t)) + ' quedó anulada.' + (dup ? ' Ahora hacé la venta de nuevo, bien: «Hacer la venta de nuevo» la arma con los mismos productos.' : '') + '</div>' : '') +
         datosNota(t, n) +
+        (n.arca === 'pendiente' ? '<div class="pos-error" id="ncCaeError"></div>' : '') +
         '<p style="font-size:14px;margin:10px 0 0"><b>Motivo:</b> ' + esc(n.motivo) + '</p>' +
         '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="ncTicket">Ver el ticket ' + esc(ref(t)) + '</button>' +
+          (n.factura && n.factura.cae ? '<button type="button" class="btn btn-sec btn-chico" id="ncPdf" title="La nota de crédito en una hoja A4, como la factura: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
           (dup ? '<button type="button" class="btn ' + (recien ? 'btn-pri' : 'btn-sec') + ' btn-chico" id="ncDuplicar">Hacer la venta de nuevo</button>' : '') +
           (volver ? '<button type="button" class="btn btn-sec btn-chico" id="ncAtras">‹ Volver</button>' : '') +
           '<button type="button" class="btn ' + (recien && dup ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
@@ -4104,6 +4178,28 @@
       if (at) at.onclick = volver;
       var d = dentro.querySelector('#ncDuplicar');
       if (d) d.onclick = function () { duplicarVenta(t); };
+      /* SQL 279: «Pedir el CAE» de la nota que quedó sin él, y su PDF. */
+      _notaAbierta = function () { if (caja.isConnected && _velo) abrirNota(id, alCambiar, recien, volver); };
+      var ce = dentro.querySelector('#ncCae');
+      if (ce) ce.onclick = function () {
+        ce.disabled = true;
+        ce.textContent = 'Pidiéndole el CAE a ARCA…';
+        errorEn(dentro, 'ncCaeError', '');
+        pedirNota(n.id).then(function (x) {
+          if (x.factura) {
+            avisar('ok', 'Nota de crédito electrónica ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
+            if (alCambiar) alCambiar();
+            if (caja.isConnected) abrirNota(id, alCambiar, recien, volver);
+            return;
+          }
+          if (!ce.isConnected) return;
+          ce.disabled = false;
+          ce.textContent = 'Pedir el CAE';
+          errorEn(dentro, 'ncCaeError', x.no_va || ('No se pudo crear la nota de crédito electrónica: ' + conPunto(x.error)));
+        });
+      };
+      var np = dentro.querySelector('#ncPdf');
+      if (np) np.onclick = function () { facturaPdf(t, n.factura); };
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Nota de crédito</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
@@ -4571,8 +4667,11 @@
         '<td class="c tk-dos">' + mediosTk(n.medios) + '</td>' +
         '<td class="c"><span class="pill pill-bad" title="La nota de crédito ' + esc(refNota(n)) + ' anula el ticket ' + esc(anula) + '">Anula ' + esc(anula) + '</span></td>' +
         '<td class="c">' + n.cantidad + '</td><td class="n"><b>' + plata(-cent(n.total)) + '</b></td>' +
-        (n.prueba ? '<td class="apagado c" title="Es una prueba">No va</td>'
-          : '<td class="apagado c" title="Por ahora la factura la hace BlueSoft">' + (n.cae ? 'Con CAE' : '—') + '</td>') + '</tr>';
+        /* SQL 279: la nota con el CAE de ARCA («De prueba» si es del ARCA de prueba) o «Sin CAE» si lo está esperando. */
+        (n.arca === 'de_prueba' || n.arca === 'pendiente' || n.arca === 'autorizada'
+          ? '<td class="' + (n.arca === 'autorizada' ? '' : 'apagado ') + 'c" title="' + esc(arcaNota(n.arca, n.cae)) + '">' + esc(ARCA_CORTO[n.arca]) + '</td>'
+          : n.prueba ? '<td class="apagado c" title="Es una prueba">No va</td>'
+          : '<td class="apagado c" title="El ticket no tenía factura electrónica">' + (n.cae ? 'Con CAE' : '—') + '</td>') + '</tr>';
     }
     /* 7/11 (como BlueSoft): el ticket de cambio es un renglón más, a su hora. Comprobante «Cambio», la Referencia C-3, el Total
        es lo que se cobró de diferencia ($0 si salía lo mismo) y la Cant., las prendas que salen de más (lo que se lleva − lo que
@@ -4601,7 +4700,7 @@
      BlueSoft (sus fotos del 30/10). Cada una con el ticket que anula. Se
      hacen desde el ticket («Nota de crédito»), no desde acá.
      ════════════════════════════════════════════════════════════════════ */
-  var ARCA_CORTO = { pendiente: 'Pendiente', autorizada: 'Con CAE', sin_factura: 'No va', no_va: 'No va' };
+  var ARCA_CORTO = { pendiente: 'Sin CAE', autorizada: 'Con CAE', de_prueba: 'De prueba', sin_factura: 'No va', no_va: 'No va' };
   function verNotas() {
     var c = $('cuerpo'), prueba = enPrueba(), ultima = null;
     c.innerHTML = cabeza('Notas de crédito' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),

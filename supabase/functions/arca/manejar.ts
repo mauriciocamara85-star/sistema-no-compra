@@ -4,7 +4,9 @@
  * ── El POS (paso 2) ───────────────────────────────────────────────────────
  *   POST /functions/v1/arca   { accion: 'facturar', venta_id }   con la sesión de la persona (Authorization)
  *     → { ok: true, factura } | { ok: true, no_va } | { ok: false, error }        (ver facturar.ts)
- *   La base decide qué factura le toca y si la persona puede ver esa venta.
+ *   POST /functions/v1/arca   { accion: 'nota_credito', nota_id }   igual, para la nota de crédito que anula un ticket
+ *     facturado (SQL 279): «factura» trae el comprobante de la nota.
+ *   La base decide qué comprobante le toca y si la persona puede verlo.
  *
  * ── Diagnóstico (paso 1) ──────────────────────────────────────────────────
  * Sólo con la llave de diagnóstico (el secreto ARCA_DIAG, en la cabecera x-arca-llave):
@@ -18,7 +20,7 @@
  * Se publica con --no-verify-jwt: quién entra lo decide esta función.
  */
 import { ArcaError, condicionesIva, consultar, credencial, esAmbiente, hoyArca, pedirCae, servidores, ticket, ultimoNumero } from './arca.ts';
-import { facturar } from './facturar.ts';
+import { facturar, notaCredito } from './facturar.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -68,13 +70,14 @@ export async function manejar(req: Request): Promise<Response> {
   if (!p || typeof p !== 'object') return responder({ ok: false, error: 'El pedido no se entiende.' }, 400);
 
   /* El POS: con la sesión de la persona que entró (la base mira sus permisos). */
-  if (p.accion === 'facturar') {
+  if (p.accion === 'facturar' || p.accion === 'nota_credito') {
     const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
     const anonima = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!token || token === anonima) return responder({ ok: false, error: 'Se cerró tu sesión: entrá de nuevo.', codigo: 'sin_sesion' }, 401);
-    if (typeof p.venta_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(p.venta_id)) return responder({ ok: false, error: 'Falta la venta.' }, 400);
+    const nota = p.accion === 'nota_credito', id = nota ? p.nota_id : p.venta_id;
+    if (typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id)) return responder({ ok: false, error: nota ? 'Falta la nota de crédito.' : 'Falta la venta.' }, 400);
     try {
-      return responder(await facturar(token, p.venta_id));
+      return responder(nota ? await notaCredito(token, id) : await facturar(token, id));
     } catch (e) {
       const x = porque(e);
       return responder({ ok: false, ...x }, x.codigo === 'sin_sesion' ? 401 : 200);

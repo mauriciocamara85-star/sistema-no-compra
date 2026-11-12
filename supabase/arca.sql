@@ -819,3 +819,300 @@ begin
 end $function$;
 
 notify pgrst, 'reload schema';
+
+-- ═══ SQL 279 · ARCA: la nota de crédito le pide su CAE a ARCA (12/11/2026) ═══
+-- Pedido de Mauricio (12/11): «lo de la nota de crédito, vamos a hacerlo ahora». Es lo que faltaba para facturar de verdad:
+-- si un ticket A o B con factura electrónica está mal hecho, se anula con una nota de crédito que también va a ARCA.
+-- Necesita los SQL 273, 274 y 276 corridos antes.
+--
+-- Qué hace:
+--  · Crea la tabla arca_notas: cada nota de crédito que se le pidió a ARCA, con su número, su CAE o por qué no salió
+--    (igual que arca_comprobantes con las facturas: para no pedirla dos veces y para recuperar la que ARCA aprobó si se
+--    cortó internet justo en el medio).
+--  · A pos_notas_credito le agrega la columna «factura» (el comprobante de la nota como lo aprobó ARCA: número, CAE,
+--    vencimiento, la factura que anula y lo que lleva su PDF y su QR) y el valor «de_prueba» de la columna arca.
+--  · Crea cuatro funciones, iguales a las de la factura:
+--      arca_nc_preparar → la llama el POS (por el servidor) con la persona que entró: mira que pueda ver esa nota y arma
+--                         lo que se le pide a ARCA. La nota va al MISMO ARCA que aprobó la factura (el de prueba o el de
+--                         verdad), al mismo punto de venta, por el mismo importe y al mismo cliente, y lleva la factura
+--                         que anula (tipo, punto de venta, número, CUIT y fecha).
+--      arca_nc_turno, arca_nc_numero, arca_nc_resultado → sólo el servidor: un pedido a ARCA por vez, el número y lo
+--                         que contestó ARCA. Aprobada, queda en la nota.
+--  · Cambia pos_nc_hacer:
+--      - La nota de un ticket CON factura electrónica queda «pendiente» y el POS le pide el CAE enseguida (antes, con el
+--        CAE del ARCA de prueba decía «la que vale, hacela en BlueSoft» y no pedía nada). Vale también para la venta de
+--        prueba (Modo prueba) que tiene su factura de prueba: así se prueba la nota sin tocar una venta de verdad.
+--      - La nota de un ticket SIN factura electrónica sigue igual: no va a ARCA.
+--      - Si al ticket le quedó un pedido de factura sin respuesta, primero pide que se sepa si ARCA la aprobó.
+--      - Devuelve además «arca» (pendiente / sin_factura / no_va), para que el POS sepa si tiene que pedir el CAE.
+--  · La nota aprobada por el ARCA de PRUEBA queda «de_prueba» (sin valor fiscal: su CAE no aparece en el IVA Ventas ni
+--    en las listas). La aprobada por el ARCA de verdad queda «autorizada», con su CAE, como ya estaba previsto.
+--
+-- NO borra nada y NO cambia ninguna factura ni ninguna nota que ya esté. Se puede correr más de una vez.
+-- Se deshace con deshacer-279.sql. Corre entero o nada.
+
+do $$
+begin
+  if to_regclass('public.arca_comprobantes') is null
+     or not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'pos_sucursales' and column_name = 'arca') then
+    raise exception 'Primero hay que correr los SQL 273, 274 y 276 (ARCA).';
+  end if;
+end $$;
+
+alter table pos_notas_credito add column if not exists factura jsonb;
+alter table pos_notas_credito drop constraint if exists pos_notas_credito_arca_check;
+alter table pos_notas_credito add constraint pos_notas_credito_arca_check
+  check (arca in ('pendiente', 'autorizada', 'de_prueba', 'sin_factura', 'no_va'));
+
+create table if not exists arca_notas (
+  id           bigserial primary key,
+  nota_id      uuid not null,    -- pos_notas_credito.id (sin clave foránea, como arca_comprobantes: lo pedido a ARCA no se borra)
+  venta_id     uuid not null,
+  ambiente     text not null check (ambiente in ('homologacion', 'produccion')),
+  punto_venta  int not null check (punto_venta between 1 and 99998),
+  tipo         int not null check (tipo in (3, 8)),   -- 3 = Nota de crédito A, 8 = Nota de crédito B
+  numero       bigint check (numero > 0),
+  estado       text not null check (estado in ('pidiendo', 'sin_respuesta', 'aprobado', 'rechazado')),
+  pedido       jsonb not null,   -- lo que se le pidió a ARCA: importes, documento, condición de IVA y la factura que anula
+  fecha        text,             -- la fecha del comprobante, como ARCA (AAAAMMDD)
+  cae          text,
+  cae_vence    date,
+  observaciones jsonb,
+  errores      jsonb,
+  error        text,             -- por qué no salió, en palabras
+  intentos     int not null default 0,
+  persona      uuid,             -- quién la pidió la última vez
+  creado       timestamptz not null default now(),
+  actualizado  timestamptz not null default now(),
+  constraint arca_notas_aprobado check (estado <> 'aprobado' or (numero is not null and cae is not null and cae_vence is not null))
+);
+comment on table arca_notas is 'Cada nota de crédito que se le pidió a ARCA, con su número y su CAE. Sólo el servidor. SQL 279.';
+create unique index if not exists arca_notas_nota on arca_notas (nota_id);
+create unique index if not exists arca_notas_numero on arca_notas (ambiente, punto_venta, tipo, numero) where estado = 'aprobado';
+create index if not exists arca_notas_abiertos on arca_notas (ambiente, punto_venta, tipo) where estado in ('pidiendo', 'sin_respuesta');
+create index if not exists arca_notas_venta on arca_notas (venta_id);
+
+alter table arca_notas enable row level security;
+revoke all on table arca_notas from public, anon, authenticated;
+revoke all on sequence arca_notas_id_seq from public, anon, authenticated;
+
+/* ── 1. Lo que se le pide a ARCA por una nota de crédito (la llama el POS, por el servidor, con la persona que entró) ── */
+create or replace function arca_nc_preparar(p_nota uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path to 'public'
+as $function$
+declare
+  n pos_notas_credito;
+  o arca_comprobantes;
+  c arca_notas;
+begin
+  perform pos_permiso();
+  select * into n from pos_notas_credito where id = p_nota;
+  if not found then raise exception 'No existe esa nota de crédito.'; end if;
+  perform pos_local_ok(n.local_id);
+  select * into c from arca_notas where nota_id = p_nota;
+  if (found and c.estado = 'aprobado') or n.arca in ('autorizada', 'de_prueba') then
+    return jsonb_build_object('ya', true, 'factura', n.factura);
+  end if;
+  if n.arca <> 'pendiente' then
+    return jsonb_build_object('no_va', case n.arca when 'no_va' then 'Es una prueba sin factura electrónica: su nota de crédito no va a ARCA.'
+                                                   else 'El ticket no tenía factura electrónica: su nota de crédito no va a ARCA.' end);
+  end if;
+  /* La factura que anula: la que ARCA le aprobó a ese ticket. La nota va al MISMO ARCA (el de prueba o el de verdad), al
+     mismo punto de venta, por el mismo importe, al mismo cliente. */
+  select * into o from arca_comprobantes where venta_id = n.venta_id and estado = 'aprobado';
+  if not found then
+    return jsonb_build_object('error', 'No encuentro la factura electrónica de ese ticket: la nota de crédito no se puede pedir.');
+  end if;
+  return jsonb_build_object(
+    'nota_id', n.id, 'venta_id', n.venta_id, 'ambiente', o.ambiente, 'punto_venta', o.punto_venta,
+    'tipo', case o.tipo when 1 then 3 else 8 end,   -- 3 = Nota de crédito A, 8 = Nota de crédito B
+    'persona', orden_yo_id(),
+    'pedido', (o.pedido - 'cuit') || jsonb_build_object('asociados', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+                'tipo', o.tipo, 'punto_venta', o.punto_venta, 'numero', o.numero, 'cuit', o.pedido->>'cuit', 'fecha', o.fecha)))));
+end $function$;
+
+/* ── 2. El turno: un pedido a ARCA por vez en cada punto de venta y tipo (sólo el servidor) ── */
+create or replace function arca_nc_turno(p_nota uuid, p_ambiente text, p_punto_venta int, p_tipo int, p_pedido jsonb, p_persona uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  n      pos_notas_credito;
+  c      arca_notas;
+  v_pend bigint;
+begin
+  perform pg_advisory_xact_lock(hashtext('arca_turno:' || p_ambiente || ':' || p_punto_venta || ':' || p_tipo));
+  select * into n from pos_notas_credito where id = p_nota;
+  if not found then raise exception 'Esa nota de crédito ya no existe.'; end if;
+  select * into c from arca_notas where nota_id = p_nota for update;
+  if found and c.estado = 'aprobado' then
+    return jsonb_build_object('ya', true, 'factura', n.factura);
+  end if;
+  /* Otro pedido está hablando con ARCA en el mismo punto de venta y tipo (o esta misma nota, desde otra pantalla). */
+  if exists (select 1 from arca_notas x
+              where x.ambiente = p_ambiente and x.punto_venta = p_punto_venta and x.tipo = p_tipo
+                and x.estado = 'pidiendo' and x.actualizado > now() - interval '45 seconds') then
+    return jsonb_build_object('esperar', true);
+  end if;
+  /* Un pedido anterior de esta nota quedó sin saber si ARCA lo aprobó: el servidor se lo pregunta a ARCA antes de pedir otro. */
+  if c.id is not null and c.numero is not null and c.estado in ('pidiendo', 'sin_respuesta')
+     and c.ambiente = p_ambiente and c.punto_venta = p_punto_venta and c.tipo = p_tipo then
+    v_pend := c.numero;
+  end if;
+  insert into arca_notas (nota_id, venta_id, ambiente, punto_venta, tipo, numero, estado, pedido, intentos, persona)
+  values (p_nota, n.venta_id, p_ambiente, p_punto_venta, p_tipo, v_pend, 'pidiendo', p_pedido, 1, p_persona)
+  on conflict (nota_id) do update
+    set ambiente = excluded.ambiente, punto_venta = excluded.punto_venta, tipo = excluded.tipo, numero = v_pend,
+        estado = 'pidiendo', pedido = excluded.pedido, intentos = arca_notas.intentos + 1,
+        persona = excluded.persona, error = null, actualizado = now();
+  return jsonb_build_object('ok', true, 'pendiente', v_pend);
+end $function$;
+
+/* ── 3. El número que se va a pedir (el último de ARCA + 1), antes de pedirlo ── */
+create or replace function arca_nc_numero(p_nota uuid, p_numero bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare c arca_notas;
+begin
+  select * into c from arca_notas where nota_id = p_nota for update;
+  if not found or c.estado <> 'pidiendo' then raise exception 'Ese pedido a ARCA ya no está abierto.'; end if;
+  if p_numero is null or p_numero < 1 then raise exception 'El número no es válido.'; end if;
+  if exists (select 1 from arca_notas x where x.ambiente = c.ambiente and x.punto_venta = c.punto_venta and x.tipo = c.tipo
+                                          and x.numero = p_numero and x.estado = 'aprobado') then
+    raise exception 'El número % ya es de otra nota de crédito.', p_numero;
+  end if;
+  update arca_notas set numero = p_numero, actualizado = now() where nota_id = p_nota;
+  return true;
+end $function$;
+
+/* ── 4. Lo que contestó ARCA. Aprobada: queda en la nota (pos_notas_credito.factura), como la espera la pantalla ── */
+create or replace function arca_nc_resultado(p_nota uuid, p_estado text, p_numero bigint, p_fecha text, p_cae text, p_cae_vence text,
+                                             p_observaciones jsonb, p_errores jsonb, p_error text)
+returns jsonb
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+declare
+  c       arca_notas;
+  a       jsonb;
+  v_f     jsonb;
+  v_vence date;
+  v_real  boolean;
+begin
+  if p_estado not in ('aprobado', 'rechazado', 'sin_respuesta') then raise exception 'El resultado no es válido.'; end if;
+  select * into c from arca_notas where nota_id = p_nota for update;
+  if not found then raise exception 'Ese pedido a ARCA no existe.'; end if;
+  if c.estado = 'aprobado' then
+    return jsonb_build_object('ya', true, 'factura', (select n.factura from pos_notas_credito n where n.id = p_nota));
+  end if;
+  if p_estado = 'aprobado' then
+    if p_numero is null or coalesce(p_cae, '') !~ '^\d{14}$' or coalesce(p_cae_vence, '') !~ '^\d{8}$' then
+      raise exception 'ARCA aprobó la nota de crédito pero faltan el número o el CAE.';
+    end if;
+    v_vence := to_date(p_cae_vence, 'YYYYMMDD');
+    update arca_notas
+       set estado = 'aprobado', numero = p_numero, fecha = p_fecha, cae = p_cae, cae_vence = v_vence,
+           observaciones = p_observaciones, errores = p_errores, error = null, actualizado = now()
+     where nota_id = p_nota;
+    a := c.pedido->'asociados'->0;
+    v_real := c.ambiente = 'produccion';
+    /* Lo mismo que guarda la factura (SQL 276), y además qué es («nota_credito») y la factura que anula. */
+    v_f := jsonb_build_object('clase', 'nota_credito', 'cae', p_cae, 'cae_vence', to_char(v_vence, 'YYYY-MM-DD'),
+                              'tipo', case c.tipo when 3 then 'A' else 'B' end, 'punto_venta', c.punto_venta, 'numero', p_numero,
+                              'fecha', p_fecha, 'ambiente', c.ambiente)
+           || jsonb_strip_nulls(jsonb_build_object(
+                'cuit', c.pedido->>'cuit', 'doc_tipo', (c.pedido->>'doc_tipo')::int, 'doc_nro', c.pedido->>'doc_nro',
+                'condicion_iva', (c.pedido->>'condicion_iva')::int, 'importe', (c.pedido->>'total')::numeric,
+                'domicilio', (select e.direccion from pos_envio_locales e join pos_notas_credito x on x.local_id = e.local_id where x.id = p_nota),
+                'localidad', (select e.localidad from pos_envio_locales e join pos_notas_credito x on x.local_id = e.local_id where x.id = p_nota),
+                'anula', jsonb_build_object('tipo', case (a->>'tipo')::int when 1 then 'A' when 6 then 'B' end,
+                                            'punto_venta', (a->>'punto_venta')::int, 'numero', (a->>'numero')::bigint, 'fecha', a->>'fecha')));
+    /* La del ARCA de verdad queda «autorizada», con su CAE en las columnas de siempre (las listas y el IVA Ventas). La del
+       ARCA de prueba queda «de_prueba» y su CAE va sólo adentro de «factura»: no tiene valor fiscal y no va en el IVA. */
+    update pos_notas_credito
+       set factura = v_f,
+           arca = case when v_real then 'autorizada' else 'de_prueba' end,
+           cae = case when v_real then p_cae end,
+           cae_vence = case when v_real then v_vence end,
+           arca_numero = case when v_real then p_numero end
+     where id = p_nota;
+    return jsonb_build_object('ok', true, 'factura', v_f);
+  end if;
+  update arca_notas
+     set estado = p_estado,
+         numero = case when p_estado = 'sin_respuesta' then coalesce(p_numero, c.numero) end,   -- rechazada: el número no se usó
+         observaciones = p_observaciones, errores = p_errores,
+         error = left(coalesce(nullif(trim(p_error), ''), 'ARCA no aprobó la nota de crédito.'), 500), actualizado = now()
+   where nota_id = p_nota;
+  return jsonb_build_object('ok', false);
+end $function$;
+
+/* La primera, la persona que entró (el servidor la llama con su sesión); las otras tres, sólo el servidor. */
+revoke all on function arca_nc_preparar(uuid) from public, anon;
+grant execute on function arca_nc_preparar(uuid) to authenticated, service_role;
+revoke all on function arca_nc_turno(uuid, text, int, int, jsonb, uuid) from public, anon, authenticated;
+revoke all on function arca_nc_numero(uuid, bigint) from public, anon, authenticated;
+revoke all on function arca_nc_resultado(uuid, text, bigint, text, text, text, jsonb, jsonb, text) from public, anon, authenticated;
+grant execute on function arca_nc_turno(uuid, text, int, int, jsonb, uuid) to service_role;
+grant execute on function arca_nc_numero(uuid, bigint) to service_role;
+grant execute on function arca_nc_resultado(uuid, text, bigint, text, text, text, jsonb, jsonb, text) to service_role;
+
+/* ── 5. pos_nc_hacer: la nota de un ticket con factura electrónica queda «pendiente» (el POS le pide el CAE) ── */
+CREATE OR REPLACE FUNCTION public.pos_nc_hacer(p_venta uuid, p_motivo text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v pos_ventas; n pos_notas_credito; k pos_cierres; v_num int; v_id uuid; v_ref text; v_arca text;
+begin
+  perform pos_permiso('anular');
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se hace la nota de crédito.'; end if;
+  select * into v from pos_ventas where id = p_venta;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
+  /* Un número por vez en cada local: si dos la hacen al mismo tiempo, el segundo espera (primero el candado, después la venta). */
+  perform pg_advisory_xact_lock(hashtext('pos_nc:' || v.local_id::text || ':' || v.prueba::text));
+  select * into v from pos_ventas where id = p_venta for update;
+  select * into n from pos_notas_credito where venta_id = p_venta;
+  if found then raise exception 'Esa venta ya tiene la nota de crédito %.', case when n.prueba then 'NCP-' else 'NC-' end || n.numero; end if;
+  if v.estado = 'anulada' then raise exception 'Esa venta ya está anulada.'; end if;
+  if v.letra = 'X' then raise exception 'La X es un comprobante interno: no lleva nota de crédito. Se anula con «Anular la venta».'; end if;
+  /* SQL 279: si a ese ticket le quedó un pedido de factura sin respuesta, no se sabe si ARCA la aprobó. Antes de anularlo
+     hay que saberlo: si la aprobó, la nota de crédito tiene que ir a ARCA. */
+  if v.factura is null and exists (select 1 from arca_comprobantes c
+                                    where c.venta_id = v.id and c.numero is not null and c.estado in ('pidiendo', 'sin_respuesta')) then
+    raise exception 'A este ticket le quedó un pedido de factura a ARCA sin respuesta. Primero tocá «Pedir el CAE» en el ticket (para saber si ARCA la aprobó) y después hacé la nota de crédito.';
+  end if;
+  if v.cierre_id is not null then
+    select * into k from pos_cierres where id = v.cierre_id;
+    raise exception 'Esa venta ya entró en el cierre de caja %: para hacerle la nota de crédito, primero hay que anular ese cierre.',
+      case when k.prueba then 'P-' else 'Nº ' end || k.numero;
+  end if;
+  select coalesce(max(x.numero), 0) + 1 into v_num from pos_notas_credito x where x.local_id = v.local_id and x.prueba = v.prueba;
+  v_ref := case when v.prueba then 'NCP-' else 'NC-' end || v_num;
+  /* SQL 279: el ticket con factura electrónica (la de verdad o la del ARCA de prueba; también la venta de prueba) deja la
+     nota «pendiente»: el POS le pide enseguida el CAE a ARCA (la función «arca», con arca_nc_*), en el mismo ARCA que
+     aprobó la factura. Sin factura electrónica, la nota no va a ARCA. */
+  v_arca := case when coalesce(v.factura->>'cae', '') <> '' then 'pendiente'
+                 when v.prueba then 'no_va'
+                 else 'sin_factura' end;
+  insert into pos_notas_credito (venta_id, local_id, numero, prueba, letra, dia, hizo, motivo, arca)
+  values (v.id, v.local_id, v_num, v.prueba, v.letra, pos_hoy(), orden_yo_id(), trim(p_motivo), v_arca)
+  returning id into v_id;
+  perform pos_venta_deshacer(v.id, p_motivo, v_ref);
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v.prueba, 'venta_id', v.id, 'arca', v_arca);
+end $function$;
+
+notify pgrst, 'reload schema';
