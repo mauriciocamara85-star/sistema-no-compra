@@ -3836,6 +3836,16 @@
      ════════════════════════════════════════════════════════════════════ */
   /** SQL 277: ¿la base ya tiene «Editar» (pos_venta_editar)? pos_venta trae las ediciones. Sin el 277, todo como antes. */
   function con277(t) { return !!t && Object.prototype.hasOwnProperty.call(t, 'ediciones'); }
+  /** SQL 280: ¿la base ya deja poner 3, 6 y 12 cuotas en «Editar el pago» aunque por la regla lleven interés (quedan como
+      la excepción «sin interés»)? Se lo pregunta a pos_venta_editar ({que:'version'}: no toca nada); con el 277 solo, da
+      error y queda en que no. Una vez que dijo que sí, no se pregunta más. */
+  function saber280() {
+    if (S.con280) return Promise.resolve(true);
+    return llamarCorto('pos_venta_editar', { p: { que: 'version' } }, 8000).then(function (r) {
+      S.con280 = !!(r && Number(r.sql) >= 280);
+      return S.con280;
+    }, function () { return false; });
+  }
   /** Lo que no se toca: la gift card con la que pagó y la tarjeta en cuotas. Con el SQL 277 (Mauricio, 12/11: «en B lo único
       que se puede editar es la parte de tarjetas y cuotas sin interés»), las cuotas sí, salvo que la venta tenga el interés
       de las cuotas (está en el total, que no cambia). */
@@ -3888,12 +3898,15 @@
       '<div class="pos-error" id="cpError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="cpVolver">Volver al ticket</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="cpGuardar">' + (c77 ? 'Guardar los cambios' : 'Guardar la corrección') + '</button></div>', true);
-    /* SQL 277: las cuotas que puede tener una tarjeta sin cambiar el total: 1; 3 y 6 sin interés desde $80.000 y $150.000
-       (las de la venta, INTERES), sobre el total del ticket; y las que ya tenía ese pago (la excepción sin interés). La de
-       débito, en 1. */
+    /* Las cuotas que puede tener una tarjeta sin cambiar el total. La de débito, en 1. Y las que ya tenía ese pago.
+       SQL 280 (Mauricio, 12/11: «a veces cobramos en tres cuotas y es menos de 80… pongan la opción de 3, 6 y 12
+       cuotas»): 1, 3, 6 y 12 siempre (CUOTAS); la que por la regla lleva interés queda como la excepción «sin interés»
+       (esExcepcion), como cuando en la venta le sacan el tilde. Con el 277 solo: 3 y 6 sólo desde $80.000 y $150.000. */
+    var tt = cent(t.total);
+    function esExcepcion(n) { return S.con280 && n > 1 && !!reglaInteres(n, tt); }
     function cuotasOk(x) {
-      var ns = [1], tt = cent(t.total), o = x.orig && x.orig.medio === 'tarjeta' && x.orig.tarjeta === x.tarjeta ? Number(x.orig.cuotas) || 1 : 1;
-      if (tipoTarjeta(x.tarjeta) !== 'debito') [3, 6].forEach(function (n) { if (INTERES[n] && INTERES[n].desde && tt >= INTERES[n].desde) ns.push(n); });
+      var ns = [1], o = x.orig && x.orig.medio === 'tarjeta' && x.orig.tarjeta === x.tarjeta ? Number(x.orig.cuotas) || 1 : 1;
+      if (tipoTarjeta(x.tarjeta) !== 'debito') CUOTAS.forEach(function (n) { if (n > 1 && (S.con280 || (INTERES[n] && INTERES[n].desde && tt >= INTERES[n].desde))) ns.push(n); });
       if (o > 1 && ns.indexOf(o) < 0) ns.push(o);
       return ns.sort(function (a, b) { return a - b; });
     }
@@ -3904,17 +3917,22 @@
         ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta">' + opcionesTarjeta(tarjetas, x.tarjeta) + '</select>') +
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
           (c77 && !(Number(t.interes) > 0) ? campo('', 'Cuotas', '<select data-k="cuotas">' + opciones(cuotasOk(x).map(function (n) {
-              return [n, n === 1 ? '1 cuota' : n + ' cuotas sin interés'];
+              return [n, n === 1 ? '1 cuota' : n + ' sin interés'];   // corto: el desplegable es angosto
             }), x.cuotas || 1) + '</select>') : '<p class="cp-cuota">En 1 cuota</p>') + '</div>'
         : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
         : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
       return '<div class="pos-pago-fila" data-f="' + i + '">' +
         campo('', 'Medio', '<select data-k="medio">' + opciones(medios, x.medio) + '</select>') +
         /* 12/11: el monto no se escribe (es el de la factura). */
-        campo('', 'Monto', '<input type="text" class="cp-monto" value="' + plataCampo(x.monto) + '" readonly tabindex="-1" title="En una factura el monto no cambia: sólo con qué se pagó">') + mas + '</div>';
+        campo('', 'Monto', '<input type="text" class="cp-monto" value="' + plataCampo(x.monto) + '" readonly tabindex="-1" title="En una factura el monto no cambia: sólo con qué se pagó">') + mas + '</div>' +
+        /* SQL 280: esas cuotas, por la regla, llevan interés: quedan como excepción (la nota es la que guarda la base). */
+        (x.medio === 'tarjeta' && esExcepcion(x.cuotas || 1) ? '<p class="cp-nota cp-excep"><b>' + esc(notaInteres(x.cuotas, tt, true)) +
+          '.</b> Queda anotado así en el ticket; el total de la factura no cambia.</p>' : '');
     }
     function pintarFilas() { caja.querySelector('#cpFilas').innerHTML = filas.map(fila).join(''); }
     pintarFilas();
+    /* SQL 280: si la base ya lo tiene, aparecen 3, 6 y 12 cuotas (se pinta de nuevo si todavía no tocaron nada). */
+    if (c77 && !S.con280) saber280().then(function (si) { if (si && caja.isConnected && igualQueAntes()) pintarFilas(); });
     var lista = caja.querySelector('#cpFilas'), m = caja.querySelector('#cpMotivo');
     lista.addEventListener('input', function (e) {
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
@@ -3928,7 +3946,10 @@
       var x = filas[Number(f.getAttribute('data-f'))];
       if (k === 'medio') { x.medio = e.target.value; x.tarjeta = ''; x.cupon = ''; x.cuotas = 1; pintarFilas(); }
       else if (k === 'tarjeta') { x.tarjeta = e.target.value; if (c77 && cuotasOk(x).indexOf(x.cuotas || 1) < 0) x.cuotas = 1; if (c77) pintarFilas(); }
-      else if (k === 'cuotas') x.cuotas = Number(e.target.value) || 1;   // SQL 277
+      else if (k === 'cuotas') {   // SQL 277; con el 280 se vuelve a pintar por el aviso de la excepción
+        x.cuotas = Number(e.target.value) || 1;
+        if (S.con280) { pintarFilas(); var sc = lista.querySelector('[data-f="' + f.getAttribute('data-f') + '"] [data-k="cuotas"]'); if (sc) sc.focus(); }
+      }
       errorEn(caja, 'cpError', '');
     });
     caja.querySelector('#cpVolver').onclick = function () { abrirTicket(t.id, alCambiar, volver); };
@@ -3971,9 +3992,10 @@
       var envio = c77 ? llamar('pos_venta_editar', { p: { venta_id: t.id, clave: clave, motivo: motivo,
                           pagos: fijos.filter(function (g) { return g.medio !== 'giftcard'; }).map(pagoComoEstaba).concat(filas.map(aPago)) } }) :
                         llamar('pos_venta_pagos_corregir', { p: { venta_id: t.id, clave: clave, motivo: motivo, pagos: filas.map(aPago) } });
-      envio.then(function () {
+      envio.then(function (r) {
         if (alCambiar) alCambiar();
-        ventanaHecho({ titulo: c77 ? 'Pago editado' : 'Pago corregido', datos: [nombreVenta(t), plata(c77 ? cent(t.total) : tot)], notas: ['El ticket quedó con los pagos nuevos.'],
+        ventanaHecho({ titulo: c77 ? 'Pago editado' : 'Pago corregido', datos: [nombreVenta(t), plata(c77 ? cent(t.total) : tot)],
+          notas: ['El ticket quedó con los pagos nuevos.', r && r.interes_nota ? 'Quedó anotado: ' + r.interes_nota + '.' : ''],   // SQL 280
           despues: function () { abrirTicket(t.id, alCambiar, volver); } });
       }).catch(function (e) {
         bt.disabled = false;

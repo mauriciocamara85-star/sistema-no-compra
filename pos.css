@@ -601,6 +601,8 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-caja .cp-motivo { display: grid; margin-top: 10px; }
 .pos-caja .cp-motivo textarea { width: 100%; }
 .cp-nota { margin: 6px 0 0; font-size: 13px; color: var(--txt-2); }
+/* SQL 280: las cuotas elegidas llevan interés por la regla y quedan como excepción. */
+.cp-nota.cp-excep { margin: 8px 0 2px; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-txt); }
 
 /* El ticket guardado. */
 .pos-ticket-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin: 10px 0 12px; }
