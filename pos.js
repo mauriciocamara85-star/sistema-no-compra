@@ -7599,7 +7599,7 @@
           ms.map(function (x) {
             return '<tr><td><b>' + esc(refGasto(x, prueba) || '—') + '</b></td><td>' + esc(fechaHora(x.fecha)) + '</td>' +
               '<td>' + esc(queEs(x)) + '</td>' +
-              '<td>' + esc([x.rubro, x.tipo === 'retiro' && x.retira ? 'lo retiró ' + x.retira : '', x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+              '<td>' + esc([x.rubro, x.tipo === 'retiro' ? detalleRetiro(x) : '', x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
           '<div class="pos-ticket-tot"><span>' + ms.length + (ms.length === 1 ? ' movimiento' : ' movimientos') + '</span><b>Total ' + plata(tot) + '</b></div>' :
@@ -8060,9 +8060,17 @@
       var est = $('rfEstado').value, t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('rfLocal').value;
       var filas = (d.filas || []).filter(function (f) { return !est || f.estado === est; });
       filas.forEach(function (f) { f.prueba = deLaPrueba(); });
+      /* v481: cuánto fue de gastos de fábrica y cuánto se llevaron (de los realizados que se ven; con más de 500 no se suma acá:
+         faltarían renglones). Y los nombres ya usados, para sugerirlos en el Nuevo retiro. */
+      var vivos = (d.filas || []).filter(function (f) { return f.estado === 'ok'; }), suma = function (xs) { return xs.reduce(function (s, f) { return s + cent(f.monto || 0); }, 0); };
+      var deFabrica = suma(vivos.filter(esGastoFabrica)), nombres = {};
+      (d.filas || []).forEach(function (f) { var q = quienRetiro(f); if (q) nombres[q] = 1; });
+      S.rfNombres = Object.keys(nombres).sort(function (a, b) { return a.localeCompare(b, 'es'); });
       /* Abajo, como en BlueSoft: el monto total y el total controlado (de los realizados del período). */
       var pie = est === 'anulado' ? '' : '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + p(t.retiro) + '</b></div>' +
+        (d.mas ? '' : '<div class="pos-kpi"><span>Gastos de fábrica</span><b>' + plata(deFabrica) + '</b></div>' +
+                      '<div class="pos-kpi"><span>Retiros de efectivo</span><b>' + plata(suma(vivos) - deFabrica) + '</b></div>') +
         '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' +
         '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div>' +
         /* v474: la ayuda, al lado de los totales (no debajo): así quedan a la misma altura que en las demás listas. */
@@ -8075,13 +8083,13 @@
       }
       /* Las columnas de "Retiros de Fondos" de BlueSoft (Fecha, Comprobante, Socio que retiró, Estado, Controlado, Total, Observaciones), con de qué caja salió. */
       $('rfLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla rf-tabla"><thead><tr><th>Número</th><th>Fecha</th>' + (todas ? '<th>Sucursal</th>' : '') +
-        '<th>De qué caja</th><th>Lo retiró</th><th>Observaciones</th><th>Cargó</th><th>Estado</th><th class="c">Controlado</th><th class="n">Total</th></tr></thead><tbody>' +
+        '<th>De qué caja</th><th>Motivo</th><th>Lo retiró</th><th>Observaciones</th><th>Cargó</th><th>Estado</th><th class="c">Controlado</th><th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var an = f.estado !== 'ok';
           return '<tr data-retiro="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
             '<td><b>' + esc(refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td>' + (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
             '<td>' + esc(CAJAS[f.caja] || '—') + (f.caja === 'chica' && !an ? '<small>' + (f.cierre ? 'En el cierre ' + esc(refCierre(f.cierre)) : 'Entra en el próximo cierre') + '</small>' : '') + '</td>' +
-            '<td>' + esc(f.retira || '—') + '</td>' +
+            '<td>' + esc(motivoRetiro(f)) + '</td><td>' + (quienRetiro(f) ? esc(quienRetiro(f)) : '<span class="apagado">—</span>') + '</td>' +
             '<td class="vf-det">' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">—</span>') + '</td>' +
             '<td>' + esc(f.persona || '—') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Realizado</span>') + '</td>' +
@@ -8102,11 +8110,27 @@
 
   /* El nuevo "Retiro de Fondos" de BlueSoft, en sus mismas posiciones (Mauricio, 8/11: «sí, hacé todo»): arriba el título
      con los botones a la derecha; un renglón con Fecha, Sucursal, Número y Letra (sin la Referencia de BlueSoft: repite el
-     número; su lugar queda libre); debajo, quién lo retira (el «Socio» de BlueSoft) bajo la Fecha y la Sucursal, el Estado
+     número; su lugar queda libre); debajo, el motivo (v481; donde BlueSoft tiene el «Socio») bajo la Fecha y la Sucursal, el Estado
      bajo el Número y la Letra, y el Responsable bajo el lugar de la Referencia; la grilla de Valores, donde en el renglón
      de Efectivo se elige la caja (en BlueSoft, al agregar el efectivo; en el guardado es la primera columna) y se escribe
      el importe; debajo, lo de la caja (si lo resta el cierre y cuánto tendría que haber); y abajo las Observaciones a la
      izquierda y el Monto total a la derecha. Sin el «Agregar valor…»: lo nuestro es sólo efectivo en pesos. */
+  /* v481 (Mauricio, 12/11, sobre el Nuevo retiro: «o es un gasto o es un retiro»; los vendedores nunca retiran, y de la
+     fábrica puede venir cualquiera: «no da para poner todos los nombres»). El retiro lleva su MOTIVO en vez de la lista de
+     vendedores: «Gasto de fábrica» (el local pagó algo que es de la fábrica: una cuota, una tasa; no se lo lleva nadie y
+     las Observaciones dicen qué se pagó) o «Retiro de efectivo» (alguien se lleva la plata: se escribe quién, a mano).
+     La base no cambió: el motivo viaja en `retira`, que allá es obligatorio: el nombre de quien se la lleva o, si es un
+     gasto de fábrica, este texto fijo. El RF-1 (12/11) se cargó con «Otro…» y el nombre «Gasto»: vale como gasto de fábrica. */
+  var GASTO_FABRICA = 'Gasto de fábrica';
+  function esGastoFabrica(f) { return /^gasto(\s+de\s+(la\s+)?f[áa]brica)?$/i.test(String((f && f.retira) || '').trim()); }
+  /** El motivo de un retiro, como se muestra. */
+  function motivoRetiro(f) { return esGastoFabrica(f) ? GASTO_FABRICA : 'Retiro de efectivo'; }
+  /** Quién se llevó la plata (nadie, en un gasto de fábrica). */
+  function quienRetiro(f) { return esGastoFabrica(f) ? '' : String((f && f.retira) || '').trim(); }
+  /** En un renglón de detalle: «gasto de fábrica» o «lo retiró Daki». */
+  function detalleRetiro(f) { return esGastoFabrica(f) ? 'gasto de fábrica' : f && f.retira ? 'lo retiró ' + f.retira : ''; }
+  /** El detalle que arma la base para Disponibilidad («Retiro de fondos · lo retiró Gasto de fábrica · …»), con el motivo bien dicho. */
+  function detalleEvento(t) { return String(t == null ? '' : t).replace(/ · lo retiró gasto(?:\s+de\s+(?:la\s+)?f[áa]brica)?(?= · |$)/i, ' · gasto de fábrica'); }
   function retiroHtml(o) {
     var ro = function (cls, lbl, v, t) { return campo(cls, lbl, '<input type="text" value="' + esc(v) + '" readonly tabindex="-1"' + (t ? ' title="' + esc(t) + '"' : '') + '>'); };
     return '<div class="tf-cab"><h3 id="posVentTit">' + o.titulo + '</h3><div class="tf-acc">' + o.acciones + '</div></div>' +
@@ -8115,10 +8139,10 @@
         campo('rt-suc', 'Sucursal', '<select id="rtLocal" class="desplegable">' + opcionesLocales(o.local) + '</select>') +
         campo('rt-num', 'Número', '<input type="text" value="" placeholder="Al guardarlo" readonly tabindex="-1" title="El número (RF-…) lo pone el sistema al guardarlo">') +
         ro('rt-letra', 'Letra', 'X') +
-        campo('rt-quien', 'Lo retira', '<select id="rtQuien" class="desplegable"></select>') +
+        campo('rt-quien', 'Motivo', '<select id="rtMotivo" required><option value="">Elegí…</option><option value="gasto">Gasto de fábrica</option><option value="retiro">Retiro de efectivo</option></select>') +
         ro('rt-est', 'Estado', 'Realizado') +
         ro('rt-resp', 'Responsable', o.responsable || '—', 'Quien entró: queda como el que lo cargó') +
-        campo('rt-otro', 'Nombre de quien lo retira', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off">', ' id="rtOtroL" hidden') +
+        campo('rt-otro', 'Quién se la lleva', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off" list="rtNombres" placeholder="El nombre de quien se lleva la plata"><datalist id="rtNombres"></datalist>', ' id="rtOtroL" hidden') +
       '</div>' +
       '<div class="tf-valores"><span class="pos-lbl">Valores</span>' +
         '<div class="pos-marco-tabla"><table class="pos-tabla tf-tabla rt-tabla"><thead><tr><th>Caja</th><th>Tipo de valor</th><th class="n">Importe</th><th>Moneda</th></tr></thead>' +
@@ -8151,7 +8175,7 @@
       '</div>' +
       '<div id="mdAnular"></div>' +
       '<div class="rm-bs-datos">' +
-        '<div>' + dato('Comprobante', esc(num || '—')) + dato('Responsable', esc(f.persona || '—'), 'Quien lo cargó') + dato('Lo retiró', esc(f.retira || '—')) + '</div>' +
+        '<div>' + dato('Comprobante', esc(num || '—')) + dato('Responsable', esc(f.persona || '—'), 'Quien lo cargó') + dato('Motivo', esc(motivoRetiro(f))) + (quienRetiro(f) ? dato('Lo retiró', esc(quienRetiro(f))) : '') + '</div>' +
         '<div>' + dato('Estado', an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Realizado</span>') +
           (o.ctl ? dato('Controlado', f.controlado ? 'Sí' + (f.controlado_por ? ', ' + esc(f.controlado_por) : '') : 'Todavía no',
                         f.controlado && f.controlado_en ? 'El ' + fechaHora(f.controlado_en) : 'Lo tilda la oficina cuando ve que la plata llegó') : '') +
@@ -8201,7 +8225,7 @@
           '<tr><td class="c">1</td><td>' + esc(que) + '</td><td class="n' + (an ? ' rt-bs-tachado' : '') + '">' + m + '</td></tr></tbody></table></div>' +
       '</div>';
   }
-  /* El nuevo: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo. La caja no viene
+  /* El nuevo: el motivo (v481: gasto de fábrica o retiro de efectivo, con quién se la lleva), de qué caja sale (la chica o la fuerte) y cuánto, en efectivo. La caja no viene
      elegida (cambia el cierre). Del de la caja chica dice cuánto tendría que haber y pregunta si sacan más (un cero de
      más); el de la caja fuerte no toca el cierre (cuánto hay en la caja fuerte lo dice Disponibilidad). A la base va lo
      mismo que antes. */
@@ -8214,29 +8238,19 @@
         '<button type="button" class="btn btn-pri btn-chico" id="rtGuardar">Guardar</button>',
       despues: '<div class="pos-error" id="rtError"></div>' }), true);
     caja.classList.add('tf');
-    /* Quién se lleva la plata: la gente del local elegido, la misma lista del «Vendedor» de la venta (el equipo de «Lo atendió»),
-       u «Otro…», escrito a mano (quien vino de otro local). Antes era la oficina (pos_retiran, que ya no se usa). Mauricio (6/11):
-       "tienen que estar las personas que trabajan en el local. No pueden estar Cintia, Antonella, los administradores … para
-       Rivadavia sería yo, Seba, Lautaro". Arranca con quien entró si está en la lista (su nombre, o su nombre con la inicial:
-       «Lautaro R.»; si hay dos así, con ninguno), y al cambiar la sucursal queda el elegido si también es de esa. */
-    function quienEntro(vs) {
-      var n = String((S.ini.yo && S.ini.yo.nombre) || '').trim().toLowerCase();
-      var es = !n ? [] : vs.filter(function (v) { var x = v.toLowerCase(); return x === n || x.indexOf(n + ' ') === 0; });
-      return es.length === 1 ? es[0] : '';
+    /* v481: el motivo (ver GASTO_FABRICA). Con «Retiro de efectivo» aparece «Quién se la lleva», a mano (sugiere los nombres
+       de los retiros que se ven en la lista); con «Gasto de fábrica», las Observaciones pasan a ser obligatorias: qué se pagó.
+       Antes era «Lo retira» con la gente del local (6/11) y, antes, con la oficina (pos_retiran, que ya no se usa). */
+    var OBS_DE = { '': 'Para qué es: un depósito, un pago…', gasto: 'Qué se pagó (hay que escribirlo). Ej.: cuota de Edea, tasas del local', retiro: 'Para qué es (si hace falta)' };
+    function marcarMotivo() {
+      var m = caja.querySelector('#rtMotivo').value;
+      caja.querySelector('#rtOtroL').hidden = m !== 'retiro';
+      caja.querySelector('#rtObs').placeholder = OBS_DE[m] || OBS_DE[''];
+      if (m === 'retiro') caja.querySelector('#rtOtro').focus();
     }
-    function pintarQuien() {
-      var sel = caja.querySelector('#rtQuien'), antes = sel.value, vs = vendedoresDe(caja.querySelector('#rtLocal').value);
-      var elegido = antes === '*' ? '*' : vs.indexOf(antes) >= 0 ? antes : quienEntro(vs);
-      sel.innerHTML = '<option value="">Elegí…</option>' + opciones(vs.map(function (n) { return [n, n]; }), elegido) +
-        '<option value="*"' + (elegido === '*' ? ' selected' : '') + '>Otro…</option>';
-    }
-    function marcarOtro() {
-      var otro = caja.querySelector('#rtQuien').value === '*';
-      caja.querySelector('#rtOtroL').hidden = !otro;
-      if (otro) caja.querySelector('#rtOtro').focus();
-    }
-    pintarQuien();
-    caja.querySelector('#rtQuien').onchange = function () { errorEn(caja, 'rtError', ''); marcarOtro(); };
+    caja.querySelector('#rtNombres').innerHTML = (S.rfNombres || []).map(function (x) { return '<option value="' + esc(x) + '">'; }).join('');
+    caja.querySelector('#rtMotivo').onchange = function () { errorEn(caja, 'rtError', ''); marcarMotivo(); };
+    caja.querySelector('#rtOtro').oninput = caja.querySelector('#rtObs').oninput = function () { errorEn(caja, 'rtError', ''); };
     /* Lo que tendría que haber en la caja chica de esa sucursal (sin el saldo inicial del primer cierre, no se sabe). */
     function verHay() {
       var n = ++pedido, z = caja.querySelector('#rtHay');
@@ -8262,20 +8276,23 @@
       errorEn(caja, 'rtError', '');
       verHay();
     };
-    caja.querySelector('#rtLocal').onchange = function () { pintarQuien(); errorEn(caja, 'rtError', ''); verHay(); };
+    caja.querySelector('#rtLocal').onchange = function () { errorEn(caja, 'rtError', ''); verHay(); };
     caja.querySelector('#rtMonto').oninput = function () {
       var m = leerPlata(this.value);
       caja.querySelector('#rtTotal').textContent = plata(isNaN(m) ? 0 : m);
       errorEn(caja, 'rtError', '');
     };
-    setTimeout(function () { var b = caja.querySelector('[data-caja]'); if (b) b.focus(); }, 0);
+    setTimeout(function () { var b = caja.querySelector('#rtMotivo'); if (b) b.focus(); }, 0);
     function guardarRetiro() {
       var bt = caja.querySelector('#rtGuardar');
-      var loc = caja.querySelector('#rtLocal').value, q = caja.querySelector('#rtQuien').value;
-      var quien = q === '*' ? caja.querySelector('#rtOtro').value.trim() : q;
+      var loc = caja.querySelector('#rtLocal').value, mot = caja.querySelector('#rtMotivo').value;
+      var quien = mot === 'gasto' ? GASTO_FABRICA : mot === 'retiro' ? caja.querySelector('#rtOtro').value.trim() : '';
       var obs = caja.querySelector('#rtObs').value.trim(), monto = leerPlata(caja.querySelector('#rtMonto').value);
-      var mal = !deCaja ? 'Elegí de qué caja sale la plata.' : !quien ? (q === '*' ? 'Escribí quién se lleva la plata.' : 'Elegí quién retira la plata.') :
-        isNaN(monto) || monto <= 0 ? 'Escribí el importe.' : '';
+      /* En el orden de la ventana: el motivo, quién, la caja, el importe y, en el gasto de fábrica, qué se pagó. */
+      var mal = !mot ? 'Elegí el motivo: gasto de fábrica o retiro de efectivo.' : !quien ? 'Escribí quién se lleva la plata.' :
+        mot === 'retiro' && esGastoFabrica({ retira: quien }) ? 'Si es un gasto, elegí «Gasto de fábrica» en Motivo.' :
+        !deCaja ? 'Elegí de qué caja sale la plata.' : isNaN(monto) || monto <= 0 ? 'Escribí el importe.' :
+        mot === 'gasto' && !obs ? 'Escribí en Observaciones qué se pagó.' : '';
       if (!errorEn(caja, 'rtError', mal) || bt.disabled) return;
       if (deCaja === 'chica' && hay != null && monto > hay && !confirm('Es más de lo que tendría que haber en la caja chica (' + plata(hay) + '). ¿Guardarlo igual?')) return;
       bt.disabled = true;
@@ -8283,7 +8300,7 @@
                                             monto: aPesos(monto) } }).then(function (r) {
         var num = refGasto({ tipo: 'retiro', numero: r.numero }, !!prueba);
         ventanaHecho({ titulo: 'Anotado' + (num ? ': ' + num : ''), datos: [TIPOS_MOV.retiro, plata(monto)], tono: prueba ? 'prueba' : '',
-          notas: [conPunto('De la ' + CAJAS[deCaja].toLowerCase() + '. Lo retiró ' + quien)] });   // «Lautaro R.» no lleva otro punto
+          notas: [conPunto('De la ' + CAJAS[deCaja].toLowerCase() + '. ' + (mot === 'gasto' ? GASTO_FABRICA : 'Se la llevó ' + quien))] });   // «Lautaro R.» no lleva otro punto
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'rtError', sin191(e)); });
     }
@@ -8487,7 +8504,7 @@
             '<div class="cj-res">' + filaRes('Contado', sin ? 'Sin contar' : p(c.contado)) + (Number(c.retiro) || c.a_caja_fuerte == null ? filaRes('A la caja fuerte al cerrar', p(c.retiro)) : '') +
               filaRes('Queda en la caja chica', p(c.queda), 'barra') + '</div>' +
             (movs.length ? '<p class="pos-lbl">Gastos y movimientos</p><ul class="cj-lista">' + movs.map(function (m) {
-              var num = refGasto(m, c.prueba), det = [m.rubro, m.retira ? 'lo retiró ' + m.retira : '', m.descripcion].filter(Boolean).join(' · ');
+              var num = refGasto(m, c.prueba), det = [m.rubro, detalleRetiro(m), m.descripcion].filter(Boolean).join(' · ');
               return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + (num ? '<b>' + esc(num) + '</b> ' : '') + esc(m.tipo === 'caja_fuerte' ? 'Movimiento de salida' : TIPOS_MOV[m.tipo] || m.tipo) + (det ? ': ' + esc(det) : '') +   // 6/11: como el renglón de arriba
                 ' — ' + (m.tipo === 'ingreso' ? '+' : '−') + p(m.monto) + (m.estado === 'anulado' ? ' (anulado)' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (c.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(c.observaciones) + '</p>' : '') +
@@ -8670,7 +8687,7 @@
         d.filas.map(function (f, i) {
           var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
             (f.tipo === 'retiro' || f.tipo === 'gasto') && f.caja === 'fuerte' ? 'No entra (caja fuerte)' : 'Caja abierta';   // SQL 272: también el gasto
-          var det = f.tipo === 'retiro' ? [CAJAS[f.caja], f.retira ? 'lo retiró ' + f.retira : '', f.descripcion] :
+          var det = f.tipo === 'retiro' ? [CAJAS[f.caja], detalleRetiro(f), f.descripcion] :
             [f.rubro, f.tipo === 'gasto' && f.caja === 'fuerte' ? 'de la caja fuerte' : '', f.descripcion];
           return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (prueba ? 'prueba' : '') + '">' +
             '<td><b>' + esc(f.origen === 'cierre' ? '' : refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
@@ -8737,7 +8754,7 @@
         '<div><span>Sucursal</span>' + esc(bonito(f.local)) + '</div>' +
         '<div><span>Cargó</span>' + esc(f.persona || '—') + '</div>' +
         '<div><span>Cierre</span>' + esc(deFuerte ? 'No entra (sale de la caja fuerte)' : abierto ? 'Todavía en la caja abierta' : refCierre(f.cierre)) + '</div>' +
-        (f.tipo === 'retiro' ? '<div><span>De qué caja</span>' + esc(CAJAS[f.caja] || '—') + '</div><div><span>Lo retiró</span>' + esc(f.retira || '—') + '</div>' : '') +
+        (f.tipo === 'retiro' ? '<div><span>De qué caja</span>' + esc(CAJAS[f.caja] || '—') + '</div><div><span>Motivo</span>' + esc(motivoRetiro(f)) + '</div>' + (quienRetiro(f) ? '<div><span>Lo retiró</span>' + esc(quienRetiro(f)) + '</div>' : '') : '') +
         (f.rubro ? '<div><span>Tipo de gasto</span>' + esc(f.rubro) + '</div>' : '') +
         (f.descripcion ? '<div><span>' + (f.tipo === 'caja_fuerte' || f.tipo === 'retiro' ? 'Observaciones' : 'Descripción') + '</span>' + esc(f.descripcion) + '</div>' : '') +
         (ctl ? '<div><span>Controlado</span>' + (f.controlado ? 'Sí' + (f.controlado_por ? ', ' + esc(f.controlado_por) : '') +
@@ -9010,7 +9027,7 @@
             if (!dpPasa(f, filtro)) return '';
             /* El cierre (y lo que pasaba a la caja fuerte al cerrar, hasta el SQL 180) abre el cierre; el ajuste, el suyo. */
             var abre = f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste';
-            var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : f.detalle;
+            var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : detalleEvento(f.detalle);   // v481: el retiro que es un gasto de fábrica
             var c0 = cent(f.importe);
             var imp = f.control && f.tipo !== 'inicial' && !c0 ? '<small class="dp-cero">sin diferencia</small>' :
               '<span class="' + (f.control ? '' : c0 > 0 ? 'dp-entra' : c0 < 0 ? 'dp-sale' : '') + '">' + esc(importeConSigno(f.importe)) + '</span>';
@@ -9049,7 +9066,7 @@
   function bajarValores(d, r, caja, filtro) {
     var cab = ['Fecha', 'Comprobante', 'Detalle', 'Cargó', 'Contaron', 'Importe', 'Saldo'];
     var filas = (d.filas || []).filter(function (f) { return dpPasa(f, filtro); }).map(function (f) {
-      return [fechaLarga(f.fecha), f.ref, f.detalle, f.persona || '', f.control && f.tipo !== 'inicial' ? Number(f.contado) : '', Number(f.importe), Number(f.saldo)];
+      return [fechaLarga(f.fecha), f.ref, detalleEvento(f.detalle), f.persona || '', f.control && f.tipo !== 'inicial' ? Number(f.contado) : '', Number(f.importe), Number(f.saldo)];
     });
     bajarCsv((caja === 'chica' ? 'caja-chica' : 'caja-fuerte') + (filtro === 'entra' ? '-entradas' : filtro === 'sale' ? '-salidas' : '') + '-' +
       String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
