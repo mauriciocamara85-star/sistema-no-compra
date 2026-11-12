@@ -2062,6 +2062,11 @@
       (u.ya ? ' (ya estaba guardada: no se duplicó)' : '') + '</span><button type="button" id="vVerUltimo">Ver el ticket</button></div>' : '';
     if (u) $('vVerUltimo').onclick = function () { abrirTicket(u.id); };
   }
+  /** La venta del cartel «… guardada» se anuló (con una nota de crédito o con «Anular la venta»): el cartel se va, porque
+      ya no es una venta guardada (12/11: «no sé por qué aparece venta Nº 57 guardada»). */
+  function ultimaAnulada(id) {
+    if (S.ultimo && S.ultimo.id === id) { S.ultimo = null; pintarHecho(); }
+  }
 
   /* ── El pago (abajo de "Forma de pago"). Con cb, el del cambio (sus campos empiezan con "cb"). ── */
   function pintarPago(cb) {
@@ -3747,6 +3752,7 @@
           bt.disabled = true;
           llamar('pos_venta_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
             S.stock = {};
+            ultimaAnulada(t.id);
             if (alCambiar) alCambiar();
             ventanaHecho({ titulo: nombreVenta(t) + ' anulada', datos: [bonito(t.local), plata(cent(t.total))],
               notas: [t.serie === 'prueba' ? '' : 'Lo vendido volvió al stock de la sucursal.',
@@ -4223,24 +4229,24 @@
   /** Lo de ARCA de la nota en su ventana (SQL 279, 12/11). n: la nota guardada, o null mientras se arma; t: el ticket que anula.
       El ticket con factura electrónica: la nota le pide su CAE al MISMO ARCA (el de prueba o el de verdad) al guardarla; con
       el CAE, su comprobante; si no salió, «Pedir el CAE». Mientras sea el ARCA de prueba, la nota que vale se hace también en
-      BlueSoft. El ticket sin factura electrónica: la nota no va a ARCA. */
+      BlueSoft. El ticket sin factura electrónica: la nota no va a ARCA.
+      12/11 (él, después de probarla): «tiene mucho texto para ellos»: cada cosa en una línea corta. */
   function arcaDeNota(t, n) {
     var f = n && n.factura, deT = !!(t.factura && t.factura.ambiente === 'homologacion');
-    var enBlue = ' La nota que vale, hacela también en BlueSoft.';
+    var dePrueba = 'De prueba, sin valor fiscal: la que vale, hacela en BlueSoft.';
     if (f && f.cae) {
       return '<b>' + esc(compArca(f)) + '</b> · CAE ' + esc(f.cae) + (f.cae_vence ? ' · vence ' + esc(fechaCae(f.cae_vence)) : '') +
-        (f.ambiente === 'homologacion' ? '<br><small>ARCA de prueba (sin valor fiscal).' + enBlue + '</small>' : '');
+        (f.ambiente === 'homologacion' ? '<br><small>' + dePrueba + '</small>' : '');
     }
     var arca = n ? n.arca : t.factura && t.factura.cae ? 'pendiente' : t.prueba ? 'no_va' : 'sin_factura';
     if (arca === 'autorizada') return 'Con CAE' + (n && n.cae ? ' ' + esc(n.cae) : '');
     if (arca === 'pendiente') {
-      var prueba = deT ? 'ARCA de prueba (sin valor fiscal).' + enBlue : '';
       return n ? 'Sin CAE todavía <button type="button" class="pos-link" id="ncCae" title="' + (deT ? 'Se la pide al ARCA de prueba (sin valor fiscal)' : 'Se la pide a ARCA') +
-                 '">Pedir el CAE</button>' + (prueba ? '<br><small>' + prueba + '</small>' : '')
-               : 'Al guardarla se le pide el CAE a ARCA.' + (prueba ? ' ' + prueba : '');
+                 '">Pedir el CAE</button>' + (deT ? '<br><small>' + dePrueba + '</small>' : '')
+               : 'Pide el CAE al guardar.' + (deT ? ' ' + dePrueba : '');
     }
-    if (arca === 'no_va') return 'No va (es una prueba sin factura electrónica)';
-    return 'No va: el ticket no tiene factura de ARCA (la hace BlueSoft).' + enBlue;
+    if (arca === 'no_va') return 'No va a ARCA (prueba sin factura).';
+    return 'No va a ARCA: el ticket no tiene factura electrónica. Si se facturó en BlueSoft, hacela ahí.';
   }
   /** Los datos de la nota (n: la nota guardada, o null mientras se arma), el ticket que anula y sus productos, como la de BlueSoft. */
   function datosNota(t, n) {
@@ -4248,13 +4254,13 @@
     return '<div class="pos-ticket-datos">' +
         '<div><span>Fecha</span>' + esc(n ? fechaHora(n.fecha) : fechaCorta(S.ini.hoy)) + '</div>' +
         '<div><span>Sucursal</span>' + esc(bonito(t.local)) + '</div>' +
-        '<div><span>Número</span>' + (n ? '<b>' + esc(refNota(n)) + '</b>' : 'Lo da la base al guardar') + '</div>' +
+        '<div><span>Número</span>' + (n ? '<b>' + esc(refNota(n)) + '</b>' : 'Al guardar') + '</div>' +
         '<div><span>Vendedor</span>' + esc(t.vendedor) + '</div>' +
         (n ? '<div><span>La hizo</span>' + esc(n.hizo_nombre || '—') + '</div>' : '') +
         '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
         '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
         '<div><span>Forma de pago</span>' + esc(pagos || '—') + '</div>' +
-        '<div class="nc-anula"><span>Anula</span>Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' del ' + esc(fechaHora(t.fecha)) + ' · ' + plata(cent(t.total)) + ' (100 %)</div>' +
+        '<div class="nc-anula"><span>Anula</span>Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' · ' + plata(cent(t.total)) + '</div>' +
         '<div class="nc-arca"><span>ARCA</span>' + arcaDeNota(t, n) + '</div>' +
       '</div>' + productosTicket(t);
   }
@@ -4267,8 +4273,8 @@
     var caja = ventana('<h3 id="posVentTit">Nota de crédito · ' + esc(LETRAS[t.letra] || t.letra) + (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
       datosNota(t, null) +
       '<div class="nc-accion">' +
-        '<p class="nc-efecto">Al guardarla, el ticket ' + esc(ref(t)) + ' queda anulado entero: deja de contar en la caja' +
-          (t.prueba ? '' : ' y lo vendido vuelve al stock') +
+        '<p class="nc-efecto">Anula el ticket ' + esc(ref(t)) + ' entero: sale de la caja' +
+          (t.prueba ? '' : ' y vuelve al stock') +
           (t.puntos_sumados ? '; al socio se le descuentan los ' + miles(Number(t.socio_puntos) || 0) + ' puntos' : '') + '. No se puede deshacer.' +
           (tarjeta ? ' <b>Anulá también la operación en el posnet.</b>' : '') + '</p>' +
         campo('ancho', '¿Por qué se hace?', '<textarea id="ncMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: me olvidé del descuento" autofocus></textarea>') +
@@ -4285,6 +4291,7 @@
       bt.disabled = true;
       llamar('pos_nc_hacer', { p_venta: t.id, p_motivo: motivo }).then(function (r) {
         S.stock = {};
+        ultimaAnulada(t.id);
         if (alCambiar) alCambiar();
         ventanaHecho({ titulo: 'Nota de crédito ' + refNota(r) + ' guardada', datos: [bonito(t.local), plata(cent(t.total))],
           notas: ['Anuló la venta ' + ref(t) + '.'], factura: r && r.factura, facturaError: r && r.factura_error,
@@ -4311,7 +4318,7 @@
       var dup = MODO === 'mostrador';
       dentro.innerHTML = '<h3 id="posVentTit">Nota de crédito ' + esc(refNota(n)) + ' · ' + esc(LETRAS[n.letra] || n.letra) + (n.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
         (n.prueba ? '<div class="pos-cartel prueba">Es una nota de prueba: se borra con «Borrar las pruebas», junto con su venta.</div>' : '') +
-        (recien ? '<div class="pos-cartel st-ok">Listo: la venta ' + esc(ref(t)) + ' quedó anulada.' + (dup ? ' Ahora hacé la venta de nuevo, bien: «Hacer la venta de nuevo» la arma con los mismos productos.' : '') + '</div>' : '') +
+        (recien ? '<div class="pos-cartel st-ok">Listo: la venta ' + esc(ref(t)) + ' quedó anulada.' + (dup ? ' Si hay que hacerla de nuevo, tocá «Hacer la venta de nuevo».' : '') + '</div>' : '') +
         datosNota(t, n) +
         (n.arca === 'pendiente' ? '<div class="pos-error" id="ncCaeError"></div>' : '') +
         '<p style="font-size:14px;margin:10px 0 0"><b>Motivo:</b> ' + esc(n.motivo) + '</p>' +

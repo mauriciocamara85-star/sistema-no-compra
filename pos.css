@@ -1823,7 +1823,9 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 }
 
 /* ── La nota de crédito (SQL 205): el ticket que anula y lo de ARCA, a lo ancho; el motivo, en dos renglones si hace falta ── */
-.pos-ticket-datos .nc-anula, .pos-ticket-datos .nc-arca { grid-column: span 2; }
+.pos-ticket-datos .nc-anula { grid-column: span 2; }
+/* 12/11: lo de ARCA de la nota, en el renglón entero: el comprobante, el CAE y el vencimiento entran en una línea. */
+.pos-ticket-datos .nc-arca { grid-column: 1 / -1; }
 .pos-tabla.nc-lista td { white-space: nowrap; }
 .pos-tabla.nc-lista td.nc-motivo, .pos-tabla.nc-lista td.nc-cli { white-space: normal; }
 .pos-tabla td.nc-motivo { min-width: 140px; max-width: 260px; white-space: normal; font-size: 13px; }
