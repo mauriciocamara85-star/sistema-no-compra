@@ -3040,7 +3040,7 @@
     if (mal) { avisar('err', mal); return; }
     /* SQL 200: la gift card se usa entera (como en Cobrar): si vale más que lo que paga, la diferencia se pierde. */
     var sobra = sobraGc(pagos);
-    if (sobra && !confirm('La Gift Card se usa entera, como en Cobrar: los ' + plata(sobra) + ' que sobran se pierden. ¿Guardar igual?')) return;
+    if (sobra && !confirm('La Gift Card se usa entera: los ' + plata(sobra) + ' que sobran se pierden. ¿Guardar igual?')) return;
     var l0 = localDe(V.local_id);
     var p = {
       clave: V.clave, prueba: enPrueba(), local_id: V.local_id, vendedor: V.vendedor, letra: V.letra, lista_id: V.lista_id,
@@ -3546,7 +3546,7 @@
           '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
           /* SQL 171: el socio del Club y sus puntos. */
           (t.socio ? '<div><span>Club</span>' + (t.socio_nivel ? esc(t.socio_nivel) + ' · ' : '') + 'tarjeta ' + esc(t.socio) + '<br>' + miles(Number(t.socio_puntos) || 0) + ' puntos ' +
-            (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar (se cargan en Cobrar)') + '</div>' : '') +
+            (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar') + '</div>' : '') +
         '</div>' + arcaBloque(t, anulada) + '</div>' +
         (pideCae ? '<div class="pos-error" id="tkCaeError"></div>' : '') +
         productosTicket(t) +

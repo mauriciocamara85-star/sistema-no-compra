@@ -9,13 +9,14 @@
 <link rel="icon" href="icono-oro-192.png">
 <link rel="stylesheet" href="estilos.css">
 <!-- Beneficios ya no es una sección (12/10/2026, reorganización del menú).
-     Lo del mostrador (buscar y canjear) está en Cobrar, los cupones de la
-     oficina (crear, la lista, anular y extender) en el CRM, en "Cupones", y
-     las gift cards (vender y la lista) en su sección, Gift Cards.
+     Lo del mostrador (usar un cupón o una gift card) va en la venta del POS
+     (11/11/2026: Cobrar y Gift Cards ya no son secciones); los cupones de la
+     oficina (crear, la lista, anular y extender) están en el CRM, en "Cupones".
 
      La dirección vieja sigue andando, porque está guardada en favoritos y
-     en la app instalada de algunos aparatos: en uno de un local lleva a
-     Cobrar y en uno de oficina (o sin local) al CRM. Con replace y no con
+     en la app instalada de algunos aparatos: en uno de un local lleva al
+     cartel de Cobrar (que manda al POS) y en uno de oficina (o sin local) al
+     CRM. Con replace y no con
      un enlace, así "atrás" no vuelve a caer acá. -->
 <script>
   (function () {
@@ -42,9 +43,8 @@
 <!-- Lo que se ve si el desvío no corre (sin JavaScript, o un instante). -->
 <main class="mudanza">
   <h1>Beneficios se mudó</h1>
-  <p>Para cobrar o canjear, andá a Cobrar. Las Gift Cards (vender y la lista) tienen su sección, y los cupones están en el CRM.</p>
-  <a class="btn btn-pri" href="caja.html">Ir a Cobrar</a>
-  <a class="btn btn-sec" href="giftcards.html">Ir a Gift Cards</a>
+  <p>Los cupones y las gift cards se usan en la venta del POS. Los cupones de la oficina están en el CRM.</p>
+  <a class="btn btn-pri" href="pos.html">Ir al POS</a>
   <a class="btn btn-sec" href="panel.html#cupones">Ir al CRM: Cupones</a>
 </main>
 </body>

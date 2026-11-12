@@ -1404,11 +1404,6 @@ html:not([data-nc-gestion]) .rail-item[href="gestion.html"],
 html:not([data-nc-fabrica]) .rail-item[href="fabrica.html"] { display: none; }
 /* SQL 257 (6/11): la gente de la Fábrica (data-nc-de-fabrica, persona.js) ve sólo Fábrica y el Asistente (y su botón). */
 html[data-nc-de-fabrica] .rail-item:not([href="fabrica.html"]):not([href="asistente.html"]):not(.rail-yo) { display: none; }
-/* SQL 264 (7/11): en el local cuyo mostrador ya es el POS (Rivadavia, data-nc-mostrador-pos, persona.js), la gift card se
-   vende, se cobra y se consulta en el POS: la barra no muestra Gift Cards. La oficina, igual que antes.
-   SQL 265 (7/11): en los 14 locales, y tampoco Cobrar (el Club y los cupones van en la venta del POS). */
-html[data-nc-mostrador-pos] .rail-item[href="giftcards.html"],
-html[data-nc-mostrador-pos] .rail-item[href="caja.html"] { display: none; }
 /* "Venta fallida" desde el POS abre la Carga con ?volver=pos: arriba, el camino de vuelta (interfaz.js). */
 .volver-pos {
   display: flex; width: fit-content; justify-self: start; align-items: center; gap: 6px; margin: 0 0 12px; padding: 7px 14px 7px 10px;

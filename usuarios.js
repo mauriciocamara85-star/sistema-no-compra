@@ -30,7 +30,7 @@ var usuarios = (function () {
   var ROLES_ADMIN = ['vendedor', 'supervisor', 'zona', 'atencion', 'admin'];
   var NOMBRE_ROL = { vendedor: 'Vendedor', supervisor: 'Encargado (un local)', zona: 'Supervisor (varios locales)',
                      atencion: 'Atención al cliente', admin: 'Administrador', gerencia: 'Gerencia' };
-  var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y la app Equipo VDH. ' +
+  var QUE_VE = 'Vendedor: Carga, Asistente, las estadísticas de su local y la app Equipo VDH. ' +
                'Encargado: lo mismo, más Supervisión de su local, y crea los vendedores de su local. Supervisor: como el encargado, en los ' +
                'locales que le elijas (las planillas de Ventas, el No Compra y Supervisión de cada uno), sin crear usuarios. ' +
                'Atención al cliente: todo menos Supervisión y Equipo VDH; en Ventas, sólo el E-commerce (entra por "E-commerce"). Administrador: todo. Un vendedor, encargado o supervisor ' +
@@ -435,7 +435,7 @@ var usuarios = (function () {
         '<div class="us-locales" data-ed-locales role="group" aria-label="Sus locales"' + (r === 'zona' ? '' : ' hidden') + '>' +
           '<span class="us-locales-tit">Sus locales</span>' + casillasLocales(marcadosDe(p)) + '</div>' +
         dias +
-        '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) && !esFabrica(p) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
+        '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) && !esFabrica(p) ? '' : ' hidden') + ' title="Entra también al CRM, Socios y el Club, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
         posBloque(p, r) +
         botones +
@@ -626,7 +626,7 @@ var usuarios = (function () {
               if (!ok || !cambiaAt) return ok;
               return hacer('nc_usuario_atencion', { p_persona: p.id, p_si: conAt }, function (r) {
                 if (!conAt) return 'Guardado: ' + p.nombre + ' ya no entra a lo de Atención al cliente.';
-                return 'Guardado: ' + p.nombre + ' también atiende clientes (CRM, Socios, el Club y Gift Cards).' +
+                return 'Guardado: ' + p.nombre + ' también atiende clientes (CRM, Socios y el Club).' +
                   (r && r.pin_corto ? ' La próxima vez que entre, cambia su PIN por uno de 6 números.' : '');
               });
             })

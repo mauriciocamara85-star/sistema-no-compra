@@ -119,8 +119,12 @@
   var SIN_BARRA = ['pos.html', 'gestion.html', 'fabrica.html', 'impecable-admin.html', 'panel.html'];
   var K_VOLVER = 'nc_volver_sistema';
   function pagina(u) { return u.pathname.split('/').pop() || 'index.html'; }
+  /* 11/11/2026: Cobrar y Gift Cards quedaron como un cartel que manda al POS (ya no son secciones): no son un lugar al
+     que volver. Sin esto, "‹ Sistema" del POS devolvía al cartel a quien lo había abierto desde un acceso guardado. */
+  var CARTELES = ['caja.html', 'giftcards.html'];
+  function esCartel(p) { return CARTELES.indexOf(String(p || '').split('#')[0]) > -1; }
   function anotarVuelta() {
-    if (!document.querySelector('.rail') || SIN_BARRA.indexOf(pagina(location)) > -1) return;
+    if (!document.querySelector('.rail') || SIN_BARRA.indexOf(pagina(location)) > -1 || esCartel(pagina(location))) return;
     try { sessionStorage.setItem(K_VOLVER, pagina(location) + location.hash); } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', anotarVuelta); else anotarVuelta();
@@ -133,10 +137,10 @@
     if (window.persona && persona.deFabrica && persona.deFabrica()) return 'asistente.html';
     var v = null;
     try { v = sessionStorage.getItem(K_VOLVER); } catch (e) {}
-    if (v) return v;
+    if (v && !esCartel(v)) return v;
     try {
       var r = new URL(document.referrer), p = pagina(r);
-      if (r.origin === location.origin && /\.html$/.test(p) && SIN_BARRA.indexOf(p) < 0) return p + r.hash;
+      if (r.origin === location.origin && /\.html$/.test(p) && SIN_BARRA.indexOf(p) < 0 && !esCartel(p)) return p + r.hash;
     } catch (e) {}
     return 'index.html';
   }
