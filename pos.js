@@ -13848,7 +13848,7 @@
     $('rnExcel').onclick = bajarRn;
     $('rnOrigen').onchange = function () {
       RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value);
-      if (entre) { RN.dep_o = ''; RN.dep_d = ''; depositosRn(); } else datosEnvioRn();
+      if (entre) { RN.dep_o = ''; RN.dep_d = ''; depositosRn(); } else datosEnvioInternoRn();
       guardarBorradorRn(); preciosRn();
     };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
@@ -13862,13 +13862,15 @@
       depositosRn();
     } else {
       $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
-      datosEnvioRn();
+      datosEnvioInternoRn();
     }
     engancharRn(verEnvioNuevo);
     preciosRn();
   }
-  /** v449: el depósito de donde sale (el predeterminado de la sucursal) y su lista de precios, como los muestra BlueSoft. */
-  function datosEnvioRn() {
+  /** v449: el depósito de donde sale (el predeterminado de la sucursal) y su lista de precios, como los muestra BlueSoft.
+      OJO con el nombre: se llamó datosEnvioRn, igual que la del remito de la fábrica (SQL 259), y como la de más abajo gana,
+      el Nuevo remito de la Fábrica se quedó sin Depósito, Temporada, Transporte, Bultos ni Monto asegurado (v449 a v482). */
+  function datosEnvioInternoRn() {
     var loc = RN.origen, l = listaPorId(listaDe(localDe(loc)));
     if ($('rnListaTxt')) $('rnListaTxt').value = l ? l.nombre : '';
     if ($('rnDepTxt')) $('rnDepTxt').value = 'El predeterminado';
@@ -14389,12 +14391,33 @@
     });
   }
 
+  /** «Bajar un ejemplo» (pedido de la fábrica, 12/11): el archivo que «Importar» sabe leer, con las cuatro columnas y unos
+      renglones de muestra de dos productos de verdad (los de la temporada más nueva, con pocos talles), para ver el formato. */
+  function bajarEjemploImportar() {
+    var todos = LISTA_PROD.filter(function (p) { var n = tallesDe(p).length; return p[6] && n >= 2 && n <= 6 && coloresDe(p).length; });
+    var deTemporada = todos.filter(function (p) { return p[5] < 9000; });   // si el catálogo de la base todavía no llegó, los de catalogo.js
+    var orden = (deTemporada.length ? deTemporada : todos).sort(function (a, b) { return b[5] - a[5] || String(a[0]).localeCompare(String(b[0])); });
+    /* El segundo, con la otra clase de talles (38, 40… / S, M, L…), para que se vean las dos. */
+    var conNumeros = function (p) { return /^\d/.test(tallesDe(p)[0]); };
+    var ps = orden.slice(0, 1).concat(orden.filter(function (p) { return orden[0] && conNumeros(p) !== conNumeros(orden[0]); }).slice(0, 1));
+    if (ps.length === 1 && orden[1]) ps.push(orden[1]);
+    var filas = [];
+    ps.forEach(function (p, k) {
+      coloresDe(p).slice(0, 2).forEach(function (c, j) {
+        tallesDe(p).forEach(function (t) { filas.push([p[0].toUpperCase(), t, c.cod, k + j === 0 ? 2 : 1]); });
+      });
+    });
+    if (!filas.length) filas = [['RM41641', 'S', 'NE', 2], ['RM41641', 'M', 'NE', 2], ['RM41641', 'L', 'NE', 2], ['RM41641', 'S', 'BL', 1], ['RM41641', 'M', 'BL', 1]];
+    bajarCsv('ejemplo-para-importar.csv', ['Código', 'Talle', 'Color', 'Cantidad'], filas);
+    avisar('ok', 'Se bajó «ejemplo-para-importar.csv»: abrilo con Excel, cambiá los renglones por los tuyos y subilo con «Elegir el archivo…».');
+  }
   /** Pegar las columnas de un Excel (o subir el archivo): Código, Talle, Color y Cantidad. alListo(items). */
   function abrirImportar(alListo) {
     var caja = ventana('<h3 id="posVentTit">Pegar o subir un Excel</h3>' +
       '<p class="pos-bajada">Copiá las columnas del Excel (con la fila de títulos: Código, Talle, Color y Cantidad) y pegalas acá, o elegí el archivo. Los colores van con la sigla (NE) o el nombre (Negro).</p>' +
       campo('', 'Lo pegado', '<textarea id="imTexto" rows="7" spellcheck="false" placeholder="Código&#9;Talle&#9;Color&#9;Cantidad&#10;RM41641&#9;S&#9;NE&#9;2"></textarea>') +
       '<div class="pos-pie rn-imp"><label class="btn btn-sec btn-chico izq">Elegir el archivo…<input type="file" id="imArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="imEjemplo" title="Un Excel con las cuatro columnas y unos renglones de muestra, para ver cómo se arma">Bajar un ejemplo</button>' +
         '<span class="pos-ayuda" id="imNombre"></span></div>' +
       '<div id="imPrevia" role="status"></div><div class="pos-error" id="imError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="imOk" disabled>Agregar</button></div>', true);
@@ -14419,6 +14442,7 @@
       caja.querySelector('#imNombre').textContent = f.name;
       leerArchivo(f).then(ver, function (e) { errorEn(caja, 'imError', e.message || String(e)); });
     };
+    caja.querySelector('#imEjemplo').onclick = bajarEjemploImportar;
     caja.querySelector('#imOk').onclick = function () {
       if (!res || !res.items.length) return;
       cerrarVentana();
