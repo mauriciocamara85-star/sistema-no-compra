@@ -829,6 +829,8 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
 /* SQL 191: los retiros de fondos (de qué caja, y si entra en el cierre), los totales abajo como en BlueSoft, y el tilde «Controlado». */
 .rf-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
 .pos-totales.abajo { margin: 10px 0 4px; }
+/* v474: la ayuda de «Controlado» (Retiros, Movimientos de salida) va al lado de los totales; si no entra, baja sola. */
+.pos-totales > .pos-ayuda { flex: 1 1 240px; align-self: center; margin: 0 0 0 6px; }
 .pos-tabla input.mv-ctl { width: 17px; height: 17px; margin: 0; accent-color: var(--acc); cursor: pointer; vertical-align: middle; }
 .pos-tabla input.mv-ctl:disabled { cursor: default; }
 .pos-lbl.rt-lbl { margin: 12px 0 6px; }
@@ -1969,6 +1971,8 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .rg-tabla td.rg-obs { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .rg-pie { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px 10px; margin-top: 10px; }
 .rg-pie > .tkl-pie { flex: 1 1 auto; min-width: 0; margin-top: 0; }
+/* v474: sin nada adentro (Remitos buscando un producto: sus totales van en la lista), no ocupa lugar y esos totales quedan a la altura de siempre. */
+.rg-pie:not(:has(> :not(:empty))) { display: none; }
 .rg-pie > .tkl-pie .tk-caja { flex: 0 1 112px; min-width: 96px; }
 .rg-pie > .tkl-pie .pos-por-letra { flex: 1 1 200px; }
 /* Los botones no se achican nunca: si no entra, el renglón chico de los totales baja. */
@@ -1996,6 +2000,22 @@ tr[data-pd]:hover td { background: var(--surface-2); }
   .pos-cuerpo.lleno > .rgl { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .rgl > .pos-marco-tabla { flex: 1 1 auto; height: 0; min-height: 150px; overflow: auto; }
   .rgl .pos-tabla th { position: sticky; top: 0; z-index: 1; }
+  /* v474 (Mauricio, 12/11: «toda esta parte de los totales, en todas las secciones, para mí tendría que estar abajo, como
+     hace BlueSoft y como tenemos la parte de ticket de venta»): en la compu, TODA lista con totales usa este molde (el
+     cuerpo «lleno» + .rgl): la grilla ocupa el alto que queda y se desliza adentro con los títulos fijos, y los totales
+     quedan pegados al fondo, haya un renglón o quinientos. Los totales vienen adentro de la lista, después de la grilla
+     (.pos-totales.abajo), o como hermano de abajo (.tkl-pie). En el celular no cambia: van debajo de la grilla.
+     Sin renglones (un cartel en vez de la grilla), igual al fondo: */
+  .rgl > .pos-totales.abajo { margin: auto 0 0; padding-top: 10px; }
+  /* La tabla con las barras al lado (Ventas por vendedor y por productos): la tabla se desliza adentro; las barras, si no entran, también. */
+  .rgl > .vv-dos { flex: 1 1 auto; height: 0; min-height: 150px; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .rgl > .vv-dos > .pos-marco-tabla { overflow: auto; }
+  .rgl > .vv-dos > .vv-barras { align-self: start; max-height: 100%; overflow-y: auto; }
+  /* El renglón «Total» de esas tablas, fijo abajo; y la esquina del cruce (Vendedor), por encima de los títulos y de los nombres. */
+  .rgl .vv-tabla tfoot td { position: sticky; bottom: 0; z-index: 1; box-shadow: inset 0 1px 0 var(--line-alta); }
+  .rgl .vv-cruce thead .vv-fijo, .rgl .vv-cruce tfoot .vv-fijo { z-index: 2; }
+  /* Las tablitas de arriba del producto vendido (talles y colores, por sucursal) no se deslizan: sus títulos, quietos. */
+  .rgl > .vd-dos th { position: static; }
 }
 @media (max-width: 999px) {
   .rg-pie > #rgBarra { flex: 1 1 100%; }

@@ -4703,6 +4703,7 @@
   var ARCA_CORTO = { pendiente: 'Sin CAE', autorizada: 'Con CAE', de_prueba: 'De prueba', sin_factura: 'No va', no_va: 'No va' };
   function verNotas() {
     var c = $('cuerpo'), prueba = enPrueba(), ultima = null;
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Notas de crédito' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Las facturas A y B anuladas. Se hacen desde el ticket: en Tickets, abrí la venta y tocá «Nota de crédito».',
         '<button type="button" class="btn btn-sec btn-chico" id="ncBajar" disabled>Bajar para Excel</button>' +
@@ -4712,7 +4713,7 @@
         campo('', 'Comprobante', '<select id="ncLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B]], '') + '</select>') +
         /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
         campo('', 'Notas', '<select id="ncPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="ncLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="ncLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     c.querySelector('[data-ir="tickets"]').onclick = function () { ir('tickets'); };
     var per = periodoPos($('ncPer'), { inicial: 'hoy', guardar: 'pos_notas_periodo', hastaHoy: true, alCambiar: cargar });
     ['ncLocal', 'ncLetra', 'ncPrueba'].forEach(function (id) { $(id).onchange = cargar; });
@@ -4731,20 +4732,21 @@
     }
     function pintarLista(d, r) {
       var t = d.totales || {};
-      var kpis = '<div class="pos-totales">' +
+      /* v474: abajo de la grilla, como en BlueSoft y en Tickets (antes iban arriba). */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi"><span>Notas de crédito</span><b>' + (t.notas || 0) + '</b></div>' +
         '<div class="pos-kpi"><span>Prendas</span><b>' + (t.productos || 0) + '</b></div>' +
         '<div class="pos-kpi"><span>Neto</span><b>' + plata(cent(t.neto || 0)) + '</b></div>' +
         '<div class="pos-kpi"><span>Descuentos</span><b>' + plata(cent(t.descuentos || 0)) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.total || 0)) + '</b></div></div>' +
-        (dePrueba() ? '<div class="pos-cartel prueba">Las notas de <b>prueba</b>: no cuentan para nada. Se borran con su venta, con «Borrar las pruebas» de Tickets.</div>' : '');
+        '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.total || 0)) + '</b></div></div>';
+      var aviso = (dePrueba() ? '<div class="pos-cartel prueba">Las notas de <b>prueba</b>: no cuentan para nada. Se borran con su venta, con «Borrar las pruebas» de Tickets.</div>' : '');
       if (!d.filas || !d.filas.length) {
-        $('ncLista').innerHTML = kpis + '<div class="pos-cartel">' + (dePrueba() ? 'No hay notas de crédito de prueba en ese período.' : 'No hay notas de crédito en ese período.') + '</div>';
+        $('ncLista').innerHTML = aviso + '<div class="pos-cartel">' + (dePrueba() ? 'No hay notas de crédito de prueba en ese período.' : 'No hay notas de crédito en ese período.') + '</div>' + pie;
         return;
       }
       ultima = { d: d, r: r };
       $('ncBajar').disabled = false;
-      $('ncLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla nc-lista"><thead><tr><th>Fecha</th><th class="n">Comprobante</th><th class="c">Letra</th><th class="n">Anula</th>' +
+      $('ncLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla nc-lista"><thead><tr><th>Fecha</th><th class="n">Comprobante</th><th class="c">Letra</th><th class="n">Anula</th>' +
         '<th>Sucursal</th><th>Vendedor</th><th>Cliente</th><th>Motivo</th><th>La hizo</th><th>ARCA</th><th class="n">Cant.</th><th class="n">Total</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           return '<tr data-nota="' + esc(f.venta_id) + '" tabindex="0"' + (f.prueba ? ' class="prueba"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td>' +
@@ -4755,7 +4757,7 @@
             '<td class="apagado" title="' + esc(arcaNota(f.arca, f.cae)) + '">' + esc(ARCA_CORTO[f.arca] || f.arca) + '</td>' +
             '<td class="n">' + f.cantidad + '</td><td class="n"><b>' + plata(cent(f.total)) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '') + pie;
       $('ncLista').querySelectorAll('tr[data-nota]').forEach(function (tr) {
         tr.onclick = function () { abrirNota(tr.getAttribute('data-nota'), cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
@@ -4791,6 +4793,7 @@
 
   function verGiftcards() {
     var c = $('cuerpo'), l = localListado(), ultima = null;
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Gift cards', 'Las vendidas en ' + esc(lasSucursales()) + ': cuánto valen, cuándo vencen y si ya se usaron. ' +
         'Se venden en Nueva venta, pasando la tarjeta por la pistola; para cobrar con una, se pasa la tarjeta en la venta.',
         '<button type="button" class="btn btn-sec btn-chico" id="gcBajar" disabled>Bajar para Excel</button>' +
@@ -4800,7 +4803,7 @@
         campo('', 'Estado', '<select id="gcEstado"><option value="">Todas</option>' +
           opciones(Object.keys(ESTADO_GC_LISTA).map(function (k) { return [k, ESTADO_GC_LISTA[k]]; }), '') + '</select>') +
         campo('gc-buscar', 'Número', '<input type="search" id="gcBuscar" inputmode="numeric" autocomplete="off" placeholder="Nº de la tarjeta">') +
-      '</div><div id="gcLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="gcLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     c.querySelector('[data-ir="venta"]').onclick = function () { ir('venta'); };
     ['gcLocal', 'gcEstado'].forEach(function (id) { $(id).onchange = cargar; });
     var tBus = null;
@@ -4821,20 +4824,21 @@
     }
     function pintarLista(d) {
       var t = d.totales || {};
-      var kpis = '<div class="pos-totales">' +
+      /* v474: abajo de la grilla, como en BlueSoft y en Tickets (antes iban arriba). */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi" title="Las tarjetas que quedan en el stock, para vender"><span>En el stock</span><b>' + (Number(d.stock) || 0) + '</b></div>' +
         '<div class="pos-kpi fuerte" title="Vendidas, sin usar y sin vencer: lo que los clientes tienen para gastar"><span>Sin usar</span><b>' + (t.disponible || 0) + ' · ' + plata(cent(t.disponible_valor || 0)) + '</b></div>' +
         '<div class="pos-kpi"><span>Vencen en 7 días</span><b>' + (t.vencen_7 || 0) + '</b></div>' +
         '<div class="pos-kpi"><span>Usadas</span><b>' + (t.usado || 0) + ' · ' + plata(cent(t.usado_valor || 0)) + '</b></div>' +
         '<div class="pos-kpi"><span>Vencidas</span><b>' + (t.vencido || 0) + ' · ' + plata(cent(t.vencido_valor || 0)) + '</b></div></div>';
       if (!d.filas || !d.filas.length) {
-        $('gcLista').innerHTML = kpis + '<div class="pos-cartel">' + ($('gcEstado').value || $('gcBuscar').value.trim() ? 'No hay gift cards con esos filtros.' :
-          'Todavía no se vendió ninguna gift card. Se venden en Nueva venta: pasá la tarjeta por la pistola en «Producto» y escribí el valor.') + '</div>';
+        $('gcLista').innerHTML = '<div class="pos-cartel">' + ($('gcEstado').value || $('gcBuscar').value.trim() ? 'No hay gift cards con esos filtros.' :
+          'Todavía no se vendió ninguna gift card. Se venden en Nueva venta: pasá la tarjeta por la pistola en «Producto» y escribí el valor.') + '</div>' + pie;
         return;
       }
       ultima = d;
       $('gcBajar').disabled = false;
-      $('gcLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla gc-lista"><thead><tr><th>Tarjeta</th><th>Vendida</th><th>Sucursal</th><th>Vendedor</th>' +
+      $('gcLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla gc-lista"><thead><tr><th>Tarjeta</th><th>Vendida</th><th>Sucursal</th><th>Vendedor</th>' +
         '<th class="n">Venta</th><th class="n">Valor</th><th class="n">Cobrado</th><th>Vence</th><th>Estado</th><th>Usada</th><th class="n">Compra</th></tr></thead><tbody>' +
         d.filas.map(function (f, i) {
           return '<tr data-gc="' + i + '" tabindex="0"><td><b>' + esc(f.color + ' Nº ' + f.nro) + '</b></td><td>' + esc(fechaHora(f.creado)) + '</td>' +
@@ -4845,7 +4849,7 @@
             '<td>' + (f.usado ? esc(diaDe(f.usado)) + (f.local_canje && f.local_canje !== f.local ? ' · ' + esc(localDeCodigo(f.local_canje)) : '') : '') + '</td>' +
             '<td class="n">' + (f.usado && f.monto_compra != null ? plata(cent(f.monto_compra)) : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven las últimas 1.000. Buscá el número para ver una más vieja.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 1.000. Buscá el número para ver una más vieja.</p>' : '') + pie;
       $('gcLista').querySelectorAll('tr[data-gc]').forEach(function (tr) {
         tr.onclick = function () { abrirGc(d.filas[Number(tr.getAttribute('data-gc'))], cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
@@ -4926,6 +4930,7 @@
 
   function verIva() {
     var c = $('cuerpo');
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     /* En el mostrador arranca en su local; en Gestión, en todas (como Ventas por vendedor). */
     var l = OFICINA && puede('locales') ? null : localInicial();
     c.innerHTML = cabeza('IVA Ventas', 'Las facturas A y B y las notas de crédito, con el IVA separado: lo que se le manda a la fábrica el 1.º de cada mes. Las X no van.',
@@ -4937,7 +4942,7 @@
         campo('', 'Comprobante', '<select id="ivLetra"><option value="">A y B</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B]], '') + '</select>') +
         campo('iv-buscar', 'Cliente', '<input type="search" id="ivCli" autocomplete="off" spellcheck="false" placeholder="Nombre, CUIT o DNI">') +
       '</div>' +
-      '<div id="ivLista"><p class="cargando">Cargando…</p></div>' +
+      '<div id="ivLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="ivPie"></div>';
     var pedido = 0, ultimo = null, rango = null, tCli = null;
     /* Siempre arranca en el mes pasado (no se guarda): el 1.º es el que se manda. */
@@ -5092,6 +5097,7 @@
 
   function verVendedores() {
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     /* En el mostrador arranca en su local; en Gestión, en todas. */
     var l = OFICINA && puede('locales') ? null : localInicial();
     var por = leer('pos_vendedores_vista') || 'vendedor';
@@ -5108,7 +5114,7 @@
       '<nav class="pestanas st-vistas vv-vistas" aria-label="Cómo verlas">' + VV_POR.map(function (x) {
         return '<button type="button" class="pestana" data-por="' + x[0] + '"' + (x[0] === por ? ' aria-current="page"' : '') + '>' + x[1] + '</button>';
       }).join('') + '</nav>' +
-      '<div id="vvLista"><p class="cargando">Cargando…</p></div>' +
+      '<div id="vvLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="vvPie"></div>';
     /* Los vendedores de la sucursal elegida (con "Todas", los de todas); si el elegido sigue estando, queda. */
     function llenarVend() {
@@ -5268,6 +5274,7 @@
   /* volver: desde «‹ Ventas por productos», con los filtros de antes; desde el menú, de cero. */
   function verPorProducto(volver) {
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     S.vpVer = null;
     if (!volver) S.vpFiltro = null;
     var F = S.vpFiltro || {};
@@ -5286,7 +5293,7 @@
         campo('', 'Vendedor', '<select id="vpVend"></select>') +
         campo('', 'Ventas', '<select id="vpPrueba"><option value="">De verdad</option><option value="1"' + ((F.prueba !== undefined ? F.prueba : prueba) ? ' selected' : '') + '>De prueba</option></select>') +
       '</div>' +
-      '<div id="vpLista"><p class="cargando">Cargando…</p></div>' +
+      '<div id="vpLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="vpPie"></div>';
     function llenarVend() {
       var loc = $('vpLocal').value, antes = $('vpVend').value || F.vendedor || '', ns = {};
@@ -5398,6 +5405,7 @@
      sucursal. El período es el mismo de la lista; el vendedor y "de prueba", los que estaban elegidos. */
   function verProdVendido() {
     var c = $('cuerpo'), sel = S.vpVer, F = S.vpFiltro || {}, pedido = 0, ult = null;
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza(esc(nombreVendido(sel)) + (sel.codigo ? '<span class="vd-cod">' + esc(sel.codigo) + '</span>' : ''),
         'Sus ventas una por una, de la más nueva a la más vieja' + (F.vendedor ? ', las de ' + esc(F.vendedor) : '') + (F.prueba ? ' (las de prueba)' : '') +
           '. Tocá una para ver el ticket.',
@@ -5405,7 +5413,7 @@
         '<button type="button" class="btn btn-sec btn-chico" id="vdExcel" disabled>Bajar para Excel</button>') +
       '<div class="pos-filtros"><div id="vdPer"></div>' +
         campo('', 'Sucursal', '<select id="vdLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(F.local || '') + '</select>') +
-      '</div><div id="vdLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="vdLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     $('vdVolver').onclick = function () { verPorProducto(true); };
     var per = periodoPos($('vdPer'), { inicial: 'mes', guardar: 'pos_productos_periodo', hastaHoy: true, alCambiar: cargar });
     $('vdLocal').onchange = function () { F.local = this.value; S.vpFiltro = F; cargar(); };
@@ -5425,8 +5433,10 @@
     function kpi(lbl, v, cls) { return '<div class="pos-kpi' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
     function pintar(d) {
       var t = d.totales || {}, rs = d.renglones || [];
-      $('vdLista').innerHTML = '<div class="pos-totales">' + kpi('Vendidas', num(t.cantidad), 'fuerte') + kpi('Total', p(t.total)) + kpi('Ventas', num(t.ventas)) +
-          kpi('Precio promedio', t.cantidad ? plata(Math.round(cent(t.total) / t.cantidad)) : '—') + kpi('Última venta', t.ultima ? esc(fechaHora(t.ultima)) : '—') + '</div>' +
+      /* v474: abajo de la grilla, como en las demás listas (antes iban arriba). */
+      var pie = '<div class="pos-totales abajo">' + kpi('Vendidas', num(t.cantidad), 'fuerte') + kpi('Total', p(t.total)) + kpi('Ventas', num(t.ventas)) +
+          kpi('Precio promedio', t.cantidad ? plata(Math.round(cent(t.total) / t.cantidad)) : '—') + kpi('Última venta', t.ultima ? esc(fechaHora(t.ultima)) : '—') + '</div>';
+      $('vdLista').innerHTML =
         (!rs.length ? '<div class="pos-cartel">No se vendió en ese período' + ($('vdLocal').value ? ' en esa sucursal' : '') + '.</div>' :
           '<div class="vd-dos">' + matriz(d.variantes || []) + porSucursal(d.sucursales || []) + '</div>' +
           '<div class="pos-marco-tabla"><table class="pos-tabla vd-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th class="n">Ticket</th><th>Vendedor</th><th>Cliente</th>' +
@@ -5437,7 +5447,7 @@
               '<td>' + esc(r.talle || '—') + '</td><td>' + esc(r.color ? nombreColor(r.color, sel.codigo) : '—') + '</td>' +
               '<td class="n">' + num(r.cantidad) + '</td><td class="n">' + p(r.total) + '</td></tr>';
           }).join('') + '</tbody></table></div>' +
-          (d.mas ? '<p class="pos-mas">Se ven las últimas 2000. Achicá el período para ver el resto.</p>' : ''));
+          (d.mas ? '<p class="pos-mas">Se ven las últimas 2000. Achicá el período para ver el resto.</p>' : '')) + pie;
       $('vdExcel').disabled = !rs.length;
       $('vdLista').querySelectorAll('tr[data-vd]').forEach(function (tr) {
         var r = rs[Number(tr.getAttribute('data-vd'))];
@@ -5537,6 +5547,7 @@
   /* La lista: buscar, Mostrar (activos, inactivos, todos) y Club (socios o no). Tocar uno abre su ficha. */
   function verClientes(volver) {
     var c = $('cuerpo');
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     S.cliVer = null;
     if (!volver) S.cliFiltro = null;
     var F = S.cliFiltro || {};
@@ -5549,7 +5560,7 @@
         campo('', 'Mostrar', '<select id="clMostrar">' + opciones([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']], F.mostrar || 'activos') + '</select>') +
         campo('', 'Club', '<select id="clClub">' + opciones([['todos', 'Todos'], ['socios', 'Socios del Club'], ['sin', 'Sin el Club']], F.club || 'todos') + '</select>') +
       '</div>' +
-      '<div id="clLista"><p class="cargando">Cargando…</p></div>' +
+      '<div id="clLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="clPie"></div>';
     var pedido = 0, ultimo = null, tBus = null, miLista = $('clLista');
     $('clBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
@@ -5627,6 +5638,7 @@
   /* La ficha: un cliente ({id}), un socio sin ficha ({socio}: lo del Club para completar) o uno nuevo ({nuevo: lo buscado}). */
   function verCliente() {
     var sel = S.cliVer || {}, c = $('cuerpo');
+    c.classList.remove('lleno');   // v474: viene de una lista a todo el alto; esta pantalla no lo es
     c.innerHTML = cabeza(sel.id || sel.socio ? 'Cliente' : 'Nuevo cliente', sel.id || sel.socio ? 'Sus datos y los de la factura.' : 'Con los datos para la factura, si los tiene.',
         '<button type="button" class="btn btn-sec btn-chico" id="clVolver">‹ Clientes</button>') +
       '<div id="clFicha"><p class="cargando">Cargando…</p></div>';
@@ -6195,6 +6207,7 @@
   /* La lista de las ventas fallidas: con qué motivo se fueron y cuánta plata se perdió. Se borra la que se cargó mal. */
   function verFallidas() {
     var c = $('cuerpo'), prueba = enPrueba(), vistos = {}, l = localListado();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Ventas fallidas' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Los clientes que se fueron sin comprar y no dejaron su WhatsApp. Los que lo dejan van al No Compra.',
         '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El cliente dejó su WhatsApp">No Compra</a>' +
@@ -6204,7 +6217,7 @@
         campo('', 'Vendedor', '<select id="vfFVend"></select>') +
         campo('', 'Motivo', '<select id="vfFMotivo"><option value="">Todos</option>' + opciones(MOTIVOS, '') + '</select>') +
         campo('', 'Ventas fallidas', '<select id="vfFPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="vfLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="vfLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('vfPer'), { inicial: 'hoy', guardar: 'pos_fallidas_periodo', hastaHoy: true, alCambiar: cargar });
     llenarFiltroVend($('vfFVend'), $('vfFLocal').value, vistos);
     ['vfFVend', 'vfFMotivo', 'vfFPrueba'].forEach(function (id) { $(id).onchange = cargar; });
@@ -7521,6 +7534,7 @@
 
   function verGastos() {
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Gastos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Los gastos del local, en efectivo. Los de la caja chica entran solos en el próximo cierre de caja.',
@@ -7528,7 +7542,7 @@
       '<div class="pos-filtros"><div id="gsPer"></div>' +
         campo('', 'Sucursal', '<select id="gsLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Gastos', '<select id="gsPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="gsLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="gsLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('gsPer'), { inicial: 'mes', guardar: 'pos_gastos_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre: al volver al cierre, queda la que se eligió acá. */
     $('gsLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
@@ -7704,6 +7718,7 @@
      ════════════════════════════════════════════════════════════════════ */
   function verSalidas() {
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Movimientos de salida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que pasa de la caja chica a la caja fuerte. Se hace antes de cerrar la caja: el cierre lo resta de lo que tendría que haber.',
@@ -7711,7 +7726,7 @@
       '<div class="pos-filtros"><div id="msPer"></div>' +
         campo('', 'Sucursal', '<select id="msLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Movimientos', '<select id="msPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="msLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="msLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('msPer'), { inicial: 'mes', guardar: 'pos_salidas_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre y de Gastos. */
     $('msLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
@@ -7736,8 +7751,9 @@
       var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
         (ctl ? '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' : '') +
-        '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
-        (ctl && puede('gestion') && filas.length ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas esa plata en la caja fuerte. Lo tilda sólo la oficina.</p>' : '');
+        '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div>' +
+        /* v474: la ayuda, al lado de los totales (no debajo): así quedan a la misma altura que en las demás listas. */
+        (ctl && puede('gestion') && filas.length ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas esa plata en la caja fuerte. Lo tilda sólo la oficina.</p>' : '') + '</div>';
       var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
       if (!filas.length) {
         $('msLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay movimientos de salida de prueba' : 'No hay movimientos de salida') +
@@ -7864,6 +7880,7 @@
      ════════════════════════════════════════════════════════════════════ */
   function verRetiros() {
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Retiros de fondos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'La plata que sale de la caja chica o de la caja fuerte del local: para la fábrica, un depósito, un pago. El de la caja chica lo resta el próximo cierre.',
@@ -7872,7 +7889,7 @@
         campo('', 'Sucursal', '<select id="rfLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Estado', '<select id="rfEstado"><option value="">Todos</option><option value="ok">Realizados</option><option value="anulado">Anulados</option></select>') +
         campo('', 'Retiros', '<select id="rfPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="rfLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="rfLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('rfPer'), { inicial: 'mes', guardar: 'pos_retiros_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre, de Gastos y de Movimientos de salida. */
     $('rfLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
@@ -7899,8 +7916,9 @@
       var pie = est === 'anulado' ? '' : '<div class="pos-totales abajo">' +
         '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + p(t.retiro) + '</b></div>' +
         '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' +
-        '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
-        (puede('gestion') ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas que la plata llegó. Lo tilda sólo la oficina.</p>' : '');
+        '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div>' +
+        /* v474: la ayuda, al lado de los totales (no debajo): así quedan a la misma altura que en las demás listas. */
+        (puede('gestion') ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas que la plata llegó. Lo tilda sólo la oficina.</p>' : '') + '</div>';
       var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Los retiros de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
       if (!filas.length) {
         $('rfLista').innerHTML = aviso + '<div class="pos-cartel">' + (est === 'anulado' ? 'No hay retiros anulados' : deLaPrueba() ? 'No hay retiros de prueba' : 'No hay retiros de fondos') +
@@ -8462,6 +8480,7 @@
 
   function verMovimientos() {
     var c = $('cuerpo');
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, lo que pasó a la caja fuerte (Movimientos de salida) y los retiros de fondos.',
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
@@ -8469,7 +8488,7 @@
         campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'salida' && k !== 'ingreso' && (k !== 'retiro' || puede('retiros')); })
           .map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +   // SQL 262: el retiro, con su casilla
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
-      '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
+      '</div><div id="mvLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
     ['mvLocal', 'mvTipo', 'mvPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('mvNuevo').onclick = function () { abrirMovimiento($('mvLocal').value || localInicial().id, false, cargar); };
@@ -8486,18 +8505,19 @@
     }
     function pintarMovs(d) {
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
-      var kpis = '<div class="pos-totales">' +
+      /* v474: abajo de la grilla, como en BlueSoft y en Tickets (antes iban arriba). */
+      var pie = '<div class="pos-totales abajo">' +
         '<div class="pos-kpi"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
         /* Las otras salidas y los otros ingresos ya no se cargan (11/11); si quedó alguno de antes, se sigue viendo su total. */
         (Number(t.salida) ? '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' : '') +
         (Number(t.ingreso) ? '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' : '') +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
-        (t.retiro !== undefined && puede('retiros') ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>' +   // SQL 191
-        ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
-      if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = kpis + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>'; return; }
+        (t.retiro !== undefined && puede('retiros') ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>';   // SQL 191
+      var aviso = ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
+      if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = aviso + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>' + pie; return; }
       var prueba = $('mvPrueba').value === '1', ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
       d.filas.forEach(function (f) { if (f.origen !== 'cierre') f.prueba = prueba; });
-      $('mvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
+      $('mvLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
         '<th>Cargó</th><th>Cierre</th><th>Estado</th>' + (ctl ? '<th class="c">Controlado</th>' : '') + '<th class="n">Monto</th></tr></thead><tbody>' +
         d.filas.map(function (f, i) {
           var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
@@ -8511,7 +8531,7 @@
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</td>' + (ctl ? celdaControlado(f) : '') +
             '<td class="n tachar"><b>' + (f.tipo === 'ingreso' ? '+' : '−') + p(f.monto) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '') + pie;
       if (ctl) tildesControlado($('mvLista'), cargar);
       $('mvLista').querySelectorAll('tr[data-mov]').forEach(function (tr) {
         var f = d.filas[Number(tr.getAttribute('data-mov'))];
@@ -8972,6 +8992,7 @@
 
   function verProductos(volver) {
     var c = $('cuerpo'), li = listaPrincipal();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     S.prodVer = null;
     if (!volver) S.prodFiltro = null;
     var F = S.prodFiltro || { buscar: '', rubro: '', temporada: '', mostrar: 'activos', precio: '' };
@@ -8985,7 +9006,7 @@
         campo('', 'Mostrar', '<select id="pdMostrar">' + opciones([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']], F.mostrar) + '</select>') +
         campo('', 'Precio', '<select id="pdPrecio">' + opciones([['', 'Todos'], ['con', 'Con precio'], ['sin', 'Sin precio']], F.precio) + '</select>') +
       '</div>' +
-      '<div id="pdAviso"></div><div id="pdLista"><p class="cargando">Cargando…</p></div><div class="tkl-pie" id="pdPie"></div>';
+      '<div id="pdAviso"></div><div id="pdLista" class="rgl"><p class="cargando">Cargando…</p></div><div class="tkl-pie" id="pdPie"></div>';
     var miLista = $('pdLista'), t = null, vistas = [], hasta = PD_TANDA;
     function llenarSelects() {
       $('pdRubro').innerHTML = '<option value="">Todos</option>' + opciones(valoresDe(2).map(function (r) { return [r, r]; }), F.rubro);
@@ -9073,6 +9094,7 @@
      lo usan los precios, el stock y las ventas. */
   function verProducto() {
     var sel = S.prodVer || {}, p = sel.nuevo ? null : PROD[sel.codigo], c = $('cuerpo'), li = listaPrincipal(), nuevo = !p;
+    c.classList.remove('lleno');   // v474: viene de una lista a todo el alto; esta pantalla no lo es
     c.innerHTML = cabeza(nuevo ? 'Nuevo producto' : esc(p[1]), nuevo ? 'Con el código de la etiqueta y los talles y colores que existen.' : esc(p[0]) + (p[8] ? ' · ' + esc(p[8]) : ''),
         '<button type="button" class="btn btn-sec btn-chico" id="pdVolver">‹ Productos</button>') +
       sin202Cartel() + '<div id="pdFicha"><p class="cargando">Cargando…</p></div>';
@@ -11570,13 +11592,14 @@
       lleg += f.llegaron || 0;
     });
     var nCods = Object.keys(cods).length;
-    var kpis = '<div class="pos-totales">' +
+    /* v474: abajo de la grilla, como en las demás listas (antes iban arriba). */
+    var pie = '<div class="pos-totales abajo">' +
       '<div class="pos-kpi"><span>Remitos</span><b>' + num(Object.keys(ids).length) + '</b></div>' +
       (nCods > 1 ? '<div class="pos-kpi"><span>Productos</span><b>' + num(nCods) + '</b></div>' : '') +
       '<div class="pos-kpi"><span>Por recibir</span><b>' + num(Object.keys(pend).length) + '</b></div>' +
       (ciegas ? '' : '<div class="pos-kpi"><span>Mandaron</span><b>' + num(mand) + '</b></div>') +
       '<div class="pos-kpi fuerte"><span>Llegaron</span><b>' + num(lleg) + '</b></div></div>';
-    return kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Remito</th>' +
+    return '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Remito</th>' +
         (gestion ? '<th>Sale de</th><th>Llega a</th>' : '<th>Viene de</th>') + '<th>Producto</th><th class="n">Mandaron</th><th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
       fs.map(function (f) {
         var dif = f.llegaron != null && f.mandaron != null && f.estado !== 'pendiente' && f.llegaron !== f.mandaron;
@@ -11588,7 +11611,7 @@
           '<td class="n tachar' + (dif ? ' st-sale' : '') + '">' + (f.llegaron == null ? '—' : num(f.llegaron)) + '</td>' +
           '<td>' + pillRemito(f.estado) + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
-      (mas ? '<p class="pos-mas">Se ven los últimos 1.000. Achicá el período para ver el resto.</p>' : '');
+      (mas ? '<p class="pos-mas">Se ven los últimos 1.000. Achicá el período para ver el resto.</p>' : '') + pie;
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -11705,6 +11728,7 @@
      ════════════════════════════════════════════════════════════════════ */
   function verEnvios() {
     var c = $('cuerpo'), l = localStock(), prueba = enPrueba();
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Envíos internos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que el local le manda a otro local, y lo que otros le mandan. Sale del stock al guardarlo; el otro local lo recibe contándolo en POS → Remitos.',
         '<button type="button" class="btn btn-sec btn-chico" id="evBajar" disabled>Bajar para Excel</button>' +
@@ -11714,7 +11738,7 @@
                                              ['depositos', 'Entre depósitos (el stock del local)']], S.evVer || '') + '</select>') +
       '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para hacer uno.</div>' : '') +
-      '<div id="evLista"><p class="cargando">Cargando…</p></div>';
+      '<div id="evLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
     /* SQL 193: desde «Entre depósitos», el envío nuevo arranca en ése. */
     c.querySelector('.pos-acciones [data-ir="envio_nuevo"]').onclick = function () { S.evTipo = $('evVer').value === 'depositos' ? 'entre' : null; ir('envio_nuevo'); };
@@ -11769,7 +11793,7 @@
             '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + (f.unidades == null ? '<span class="apagado" title="Se ven al contarlo">—</span>' : num(f.unidades)) + '</td>' +
             (vp ? '<td class="n tachar"><b>' + (f.total == null && !sale ? '<span class="apagado">—</span>' : totalDev(f)) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
             '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
-        }).join('') + '</tbody></table></div>' + pie + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '') + pie;
       $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-env'))];
         /* El que lo mandó lo ve entero; el que lo recibe, a ciegas hasta contarlo (con «Recibirlo»). */
@@ -11808,7 +11832,7 @@
             '<td>' + esc(f.origen_deposito || '—') + '</td><td><b>' + esc(f.destino_deposito || '—') + '</b></td>' +
             '<td class="n tachar">' + num(f.unidades) + '</td><td>' + (f.estado === 'anulado' ? pillRemito('anulado') : pillTestigos(f)) + '</td>' +
             '<td>' + esc(f.creado_nombre || '—') + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
-        }).join('') + '</tbody></table></div>' + pie + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '') + pie;
       $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-env'))];
         tr.onclick = function () { abrirPase(f.id, cargar); };
@@ -14852,6 +14876,7 @@
 
   function verTiempos() {
     var c = $('cuerpo');
+    c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     var vista = leer('pos_tiempos_vista') || 'registros';
     if (!TI_VISTAS.some(function (x) { return x[0] === vista; })) vista = 'registros';
     var loc0 = leer('pos_tiempos_local') || '';
@@ -14870,7 +14895,7 @@
       '<nav class="pestanas st-vistas ti-vistas" aria-label="Cómo verlos">' + TI_VISTAS.map(function (x) {
         return '<button type="button" class="pestana" data-vista="' + x[0] + '"' + (x[0] === vista ? ' aria-current="page"' : '') + '>' + x[1] + '</button>';
       }).join('') + '</nav>' +
-      '<div id="tiLista"><p class="cargando">Cargando…</p></div>' +
+      '<div id="tiLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="tiPie"></div>';
     var pedido = 0, D = null, rango = null;   // D: lo que trajo la base, ya armado
     var per = Interfaz.periodo($('tiPer'), { inicial: 'mes', guardar: 'pos_tiempos_periodo', hastaHoy: true, alCambiar: cargar });
