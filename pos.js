@@ -1355,7 +1355,7 @@
       /* Los borradores de antes del 29/10 traen "sacadas" (las promos iban solas): ahí ninguna está elegida. */
       b.puestas = b.puestas || {}; delete b.sacadas; b.manuales = b.manuales || []; b.pago = b.pago || {};
       if (!LETRAS[b.letra]) b.letra = 'B';
-      if (b.letra === 'X' && b.forma !== 'efectivo') { b.forma = 'efectivo'; b.multiples = null; }
+      if (b.letra === 'X' && !formaEnX(b)) { b.forma = 'efectivo'; b.multiples = null; }
       return b;
     }
     return ventaNueva();
@@ -1365,10 +1365,21 @@
       en X". Al elegir la forma de pago, el comprobante se acomoda solo: Efectivo → X; cualquier otro medio → Factura B
       (la X va sólo con efectivo). Después se puede volver a poner B a mano: "el cliente puede pedir la factura B, aunque
       pague en efectivo". La factura A (un responsable inscripto) no se toca. letraMano = la eligió el vendedor en
-      «Comprobante»; la que pone la forma de pago no cuenta como elegida (un cliente con CUIT la pasa a A). */
+      «Comprobante»; la que pone la forma de pago no cuenta como elegida (un cliente con CUIT la pasa a A).
+      12/11 (SQL 282), hablando de ARCA: la Gift Card NO se factura dos veces. Se factura cuando se vende; la venta que se
+      PAGA con ella va en X («cuando te devuelven la gift card eso tendría que ir en X»). Y en «Múltiple»: si alguna parte va
+      con tarjeta, Mercado Pago, MODO, Go Cuotas o transferencia, la venta entera es B, «por más que te haya pagado 10 pesos
+      en tarjeta y el 90 % en efectivo»; si todas las partes son efectivo o Gift Card, X. */
+  function medioEnX(m) { return m === 'efectivo' || m === 'giftcard'; }
+  /** ¿Con esta forma de pago la venta puede ir en X? v: la venta (V) o un borrador. */
+  function formaEnX(v) {
+    if (!v) return false;
+    if (v.forma === 'multiple') return !!(v.multiples && v.multiples.length) && v.multiples.every(function (x) { return medioEnX(x.medio); });
+    return medioEnX(v.forma);
+  }
   function letraPorForma() {
     if (V.letra === 'A') return;
-    V.letra = V.forma === 'efectivo' ? 'X' : 'B';
+    V.letra = formaEnX(V) ? 'X' : 'B';
     V.letraMano = false;
   }
   /** La A ya no va (se sacó el cliente o no tiene CUIT de inscripto): vuelve a lo que dice la forma de pago. */
@@ -1728,7 +1739,7 @@
     if (V.lineas.some(function (l) { return l.giftcard; })) { avisar('err', 'Una Gift Card no se compra con otra Gift Card: sacá la que se vende o cobrá esta venta con otro medio.'); return; }
     V.forma = 'giftcard';
     V.multiples = null;
-    letraPorForma();   // 8/11: la X pasa sola a B
+    letraPorForma();   // 12/11 (SQL 282): pagada con la Gift Card, va en X (ya se facturó al venderla)
     V.pago = { gc: Object.assign({}, r, { ok: !motivoGc(r, 'pagar') }) };
     pintarPago();
     pintar();
@@ -1830,12 +1841,12 @@
       if (this.value === 'A' && !clienteParaA(V.cliente)) { this.value = V.letra; pedirDatosA(); return; }
       V.letra = this.value;
       V.letraMano = true;   // 8/11: la eligió el vendedor (ver letraPorForma)
-      /* La X va sólo con efectivo (como en BlueSoft: "X: en efectivo, sin factura"). */
-      if (V.letra === 'X' && V.forma !== 'efectivo') {
+      /* La X va sólo con efectivo (como en BlueSoft: "X: en efectivo, sin factura") o con una Gift Card (SQL 282). */
+      if (V.letra === 'X' && !formaEnX(V)) {
         V.forma = 'efectivo';
         V.multiples = null;
         pintarPago();
-        avisar('info', 'La X va sólo con efectivo: la forma de pago pasó a Efectivo.');
+        avisar('info', 'La X va sólo con efectivo o Gift Card: la forma de pago pasó a Efectivo.');
       }
       pintar();
     };
@@ -1850,7 +1861,7 @@
       if (this.value === 'multiple') { this.value = V.forma; abrirMultiple(); return; }
       V.forma = this.value;
       V.multiples = null;
-      letraPorForma();   // 8/11: Efectivo → X, lo demás → B
+      letraPorForma();   // 8/11: Efectivo → X, lo demás → B; 12/11 (SQL 282): la Gift Card también X
       pintarPago();
       pintar();
       if (V.forma === 'giftcard' && $('vGc')) $('vGc').focus();   // SQL 200: lista para la pistola
@@ -2036,7 +2047,12 @@
     $('vNota').innerHTML = club + (V.edita ? '<b>Editando el ticket ' + esc(V.edita.ref) + '</b> (antes, ' + plata(V.edita.total) + '): al guardar queda ' +
         'con lo que ves acá, con el mismo número y en su día. Lo que agregues o saques se mueve en el stock.' :
       enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
-      V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo: si el cliente pide factura, elegí «Factura B» en Comprobante.' :
+      V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va con efectivo o con una Gift Card (que ya se facturó al venderla): ' +
+        'si el cliente pide factura, elegí «Factura B» en Comprobante.' :
+      /* SQL 276: la sucursal que ya hace la factura electrónica (contra el ARCA de prueba o el de verdad) lo dice. */
+      (arcaSucursal(V.local_id) || {}).ambiente === 'produccion' ? '<b>Factura electrónica:</b> al guardar se le pide el CAE a ARCA.' :
+      (arcaSucursal(V.local_id) || {}).ambiente === 'homologacion' ? '<b>Factura electrónica de prueba:</b> al guardar se le pide el CAE al ARCA de prueba (sin valor fiscal). ' +
+        'La factura que vale la sigue haciendo BlueSoft.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
       (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : ''));
@@ -3041,7 +3057,7 @@
         return p;
       });
       V.forma = 'multiple';
-      letraPorForma();   // 8/11: la X pasa sola a B
+      letraPorForma();   // 12/11 (SQL 282): con una parte en tarjeta, Mercado Pago, etc., B; todo efectivo y Gift Card, X
       cerrarVentana();
       pintarPago();
       pintar();
@@ -3062,7 +3078,7 @@
       V.lineas.some(function (l) { return l.premio; }) && !V.socio ? 'El premio del Club va con el socio: elegilo en «Cargar».' :
       V.socio && puntosPremios() > (Number(V.socio.puntos) || 0) ? 'Al socio no le alcanzan los puntos para el premio (tiene ' + miles(Number(V.socio.puntos) || 0) + ').' :
       V.letra === 'A' && !clienteParaA(V.cliente) ? 'La factura A necesita el cliente con su CUIT: tocá «Cargar».' :
-      V.letra === 'X' && V.forma !== 'efectivo' ? 'La X va sólo con efectivo.' :
+      V.letra === 'X' && !formaEnX(V) ? 'La X va sólo con efectivo o Gift Card: con tarjeta, Mercado Pago, Go Cuotas o transferencia es Factura B.' :
       /* SQL 200 */
       pagos.some(function (x) { return x.medio === 'giftcard'; }) && V.lineas.some(function (l) { return l.giftcard; }) ? 'Una Gift Card no se compra con otra Gift Card.' :
       V.forma === 'giftcard' && !(V.pago.gc && V.pago.gc.ok) ? (V.pago.gc && V.pago.gc.codigo ? motivoGc(V.pago.gc, 'pagar') : 'Pasá por la pistola la Gift Card con la que paga.') :
