@@ -181,7 +181,47 @@ document.addEventListener('DOMContentLoaded', asomarRail);
 window.addEventListener('load', asomarRail);
 if (document.fonts && document.fonts.ready) { document.fonts.ready.then(asomarRail); }
 
+/* ── LO GUARDADO EN LA COMPU, FIJO (12/11/2026) ────────────────────────
+   En cada compu quedan guardadas cosas que no están en ningún otro lado
+   hasta que llegan a la base: las ventas hechas sin internet (pos_cola) y
+   la llave del local (nc_caja). El navegador puede borrar lo guardado por
+   su cuenta si al disco le falta lugar; con esto se le pide que no. Chrome
+   y Edge lo conceden solos (más fácil con el sistema instalado) y no le
+   preguntan nada a nadie. Firefox sí pregunta con un cartel: ahí no se pide.
+   No protege de quien borra los datos del navegador a mano.
+   Devuelve una promesa: true (quedó fijo), false (el navegador no lo
+   concedió) o null (este navegador no lo tiene). Se pide una sola vez. */
+var _guardadoFijo = null;
+function guardadoFijo() {
+  if (_guardadoFijo) { return _guardadoFijo; }
+  var s = navigator.storage;
+  if (!s || typeof s.persisted !== 'function' || typeof s.persist !== 'function' || location.protocol === 'file:') {
+    _guardadoFijo = Promise.resolve(null);
+    return _guardadoFijo;
+  }
+  var pregunta = /Firefox\//.test(navigator.userAgent || '');
+  try {
+    _guardadoFijo = s.persisted()
+      .then(function (ya) { return ya ? true : (pregunta ? false : s.persist()); })
+      .then(function (r) { return !!r; })
+      .catch(function () { return null; });
+  } catch (e) { _guardadoFijo = Promise.resolve(null); }
+  return _guardadoFijo;
+}
+
+/* Si esta ventana es el sistema instalado (con su ícono y su ventana propia)
+   o una pestaña del navegador. */
+function abiertoInstalado() {
+  try {
+    if (navigator.standalone === true) { return true; }   // iPhone / iPad
+    return ['standalone', 'window-controls-overlay', 'minimal-ui', 'fullscreen'].some(function (m) {
+      return window.matchMedia('(display-mode: ' + m + ')').matches;
+    });
+  } catch (e) { return false; }
+}
+
 function iniciarPWA() {
+  guardadoFijo();
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;   // abierto a mano desde el disco
   window.addEventListener('load', function () {

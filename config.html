@@ -510,7 +510,7 @@
         <!-- SQL 235 (3/11/2026): el modo aviso. Sólo lo ve Administración. -->
         <div id="compusAvisoBloque" hidden>
           <h3 class="general-sub">Desde qué compu entra cada uno</h3>
-          <p class="bloque-sub">Modo aviso: se anota cada compu o celular donde alguien entra con su usuario, y si tiene la llave de un local. Todavía no traba nada. Son los últimos 14 días.</p>
+          <p class="bloque-sub">Modo aviso: se anota cada compu o celular donde alguien entra con su usuario, si tiene la llave de un local y si abre el sistema instalado o desde el navegador. Todavía no traba nada. Son los últimos 14 días.</p>
           <div id="compusAviso"></div>
         </div>
       </div>
@@ -2423,9 +2423,32 @@
           return;
         }
         var sinLlave = lista.filter(function (c) { return !c.local; }).length;
+        /* SQL 283 (12/11/2026): cómo lo abre cada aparato. «Instalado» = con su
+           ícono y su ventana propia; «Desde el navegador» = en una pestaña. Sin
+           el 283 la base no manda el dato y la lista queda como antes, con el
+           aviso de que falta. Un aparato que no entró desde que se publicó
+           esto no dice nada (todavía no se sabe). */
+        var conDato = lista.some(function (c) { return 'instalado' in c; });
+        var instalados = lista.filter(function (c) { return c.instalado === true; }).length;
+        var comoAbre = function (c) {
+          if (c.instalado === true) { return ' <span class="pill pill-ok">Instalado</span>'; }
+          if (c.instalado === false) { return ' <span class="pill pill-warn">Desde el navegador</span>'; }
+          return '';
+        };
+        var guardado = function (c) {
+          var t = '';
+          if (c.instalado === false && c.instalado_ultima) {
+            t = 'Lo tiene instalado (lo abrió así el ' + esc(fechaHora(c.instalado_ultima)) + '), pero la última vez entró desde el navegador';
+          }
+          if (c.fijo === true) { t += (t ? ' · ' : '') + 'Lo guardado en este aparato: protegido'; }
+          else if (c.fijo === false) { t += (t ? ' · ' : '') + 'Lo guardado en este aparato: sin proteger (el navegador no lo concedió)'; }
+          return t ? '<br><span>' + t + '</span>' : '';
+        };
         cuerpo.innerHTML =
           '<p class="bloque-sub"><b>' + sinLlave + ' sin llave</b> · ' +
-            (lista.length - sinLlave) + ' con la llave de su local</p>' +
+            (lista.length - sinLlave) + ' con la llave de su local' +
+            (conDato ? ' · ' + instalados + (instalados === 1 ? ' lo abre instalado' : ' lo abren instalado') : '') + '</p>' +
+          (conDato ? '' : '<p class="bloque-sub">Para ver cuál lo tiene instalado falta correr el SQL 283 en Supabase.</p>') +
           lista.map(function (c) {
             var gente = (c.personas || []).map(function (p) {
               return esc(p.nombre) + ' (' + esc(fechaHora(p.ultima)) + (p.dias > 1 ? ', ' + p.dias + ' días' : '') + ')';
@@ -2437,9 +2460,11 @@
               '<div class="promo-fila-txt"><b>' + (c.local ? esc(nombreLocal(c.local)) + ' · ' : '') + esc(c.tipo || 'Aparato') +
                 (c.local ? ' <span class="pill pill-ok">Con llave</span>' : ' <span class="pill pill-warn">Sin llave</span>') +
                 (c.llave_mala ? ' <span class="pill pill-bad">Llave vieja</span>' : '') +
+                comoAbre(c) +
                 (c.esta ? ' <span class="pill pill-neutra">Esta compu</span>' : '') + '</b>' +
                 '<span>Entró: ' + (gente || '—') + '</span>' +
                 (internet ? '<br><span>' + internet + '</span>' : '') +
+                guardado(c) +
                 '<br><span>Primera vez: ' + esc(fechaHora(c.primera)) + ' · última: ' + esc(fechaHora(c.ultima)) + '</span>' +
               '</div>' +
             '</div>';

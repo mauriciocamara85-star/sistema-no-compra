@@ -383,8 +383,20 @@ var persona = (function () {
     } catch (e) { return; }
     var cod = codigoAparato();
     if (!cod) return;
-    token().then(function (t) {
-      return funcion('nc_compu_anotar', { p_aparato: cod, p_llave: llave || null, p_tipo: tipoAparato(), p_tactil: !POR_VENTANA, p_pagina: pagina() }, t);
+    var datos = { p_aparato: cod, p_llave: llave || null, p_tipo: tipoAparato(), p_tactil: !POR_VENTANA, p_pagina: pagina() };
+    /* SQL 283 (12/11/2026): además, si el sistema se abrió instalado o desde una
+       pestaña del navegador, y si lo guardado en la compu quedó fijo (comun.js).
+       Sin el 283 la base no conoce esos dos datos: se anota como antes. */
+    var instalado = typeof abiertoInstalado === 'function' ? abiertoInstalado() : null;
+    var fijo = typeof guardadoFijo === 'function' ? guardadoFijo() : Promise.resolve(null);
+    Promise.all([token(), fijo]).then(function (r) {
+      var t = r[0], mas = { p_instalado: instalado, p_fijo: r[1] };
+      for (var k in datos) { mas[k] = datos[k]; }
+      return funcion('nc_compu_anotar', mas, t).catch(function (e) {
+        var m = (e && e.message) || '';
+        if (!/PGRST202|could not find the function/i.test(m)) { throw e; }
+        return funcion('nc_compu_anotar', datos, t);
+      });
     }).catch(function () { /* sin el SQL 235 o sin señal: no cambia nada */ });
   }
 
