@@ -13237,3 +13237,127 @@ begin
 end $function$;
 
 NOTIFY pgrst, 'reload schema';
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 281 (12/11/2026): LA FACTURA POR MAIL (App Orden: correr-en-supabase-281.sql)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SQL 281 (12/11/2026): mandar la factura por mail desde el ticket del POS.
+--   Pedido de Mauricio (12/11, con la foto del Ticket B-00000002 de Rivadavia): «No le mandé el ticket, me olvidé.
+--   Estaría bueno que haya la opción de mandarlo. Pongamos el mail y se mande.» En los locales no hay impresora: la
+--   factura se le entrega al cliente por mail, como hace BlueSoft.
+--   Cómo es:
+--     - En el ticket con factura electrónica (A o B, con su CAE) aparece «Mandar por mail»: se escribe el mail (viene
+--       cargado si el cliente lo tiene) y sale la factura en PDF, la misma hoja de «Exportar PDF».
+--     - El mail lo arma y lo manda el servidor (la función «mail»), desde la casilla del sistema. La base sólo dice si
+--       se puede (pos_venta_mail_preparar) y anota cada envío (pos_venta_mail_anotar).
+--     - Queda anotado a quién se mandó, cuándo y quién lo mandó (pos_venta_mails): el ticket lo muestra, y se puede
+--       mandar de nuevo. Si un envío falla, también queda anotado, con el porqué (no se muestra: es para revisar).
+--     - Lo puede mandar quien puede ver ese ticket (el permiso del POS y que sea de un local suyo).
+--     - Dos frenos: el mismo mail a la misma dirección, una vez por minuto (los dos clics seguidos); y 400 mails por
+--       día entre todos los locales (la casilla de Gmail deja unos 500 por día).
+--   No cambia ningún dato que ya esté ni ninguna función que ya exista: son una tabla y tres funciones nuevas. Con este
+--   SQL corrido, el botón aparece solo en el ticket. Se deshace con deshacer-281.sql.
+
+-- 1) Cada mail que se mandó (o que se quiso mandar y falló). Sin clave foránea a pos_ventas a propósito (como el 248 y
+--    el 277): crearla traba las ventas de todos los locales mientras corre el SQL.
+CREATE TABLE IF NOT EXISTS public.pos_venta_mails (
+  id              bigserial PRIMARY KEY,
+  venta_id        uuid NOT NULL,
+  fecha           timestamptz NOT NULL DEFAULT now(),
+  mail            text NOT NULL,
+  comprobante     text,
+  persona         uuid,
+  persona_nombre  text,
+  estado          text NOT NULL DEFAULT 'enviado' CHECK (estado IN ('enviado', 'fallo')),
+  error           text
+);
+CREATE INDEX IF NOT EXISTS pos_venta_mails_venta ON public.pos_venta_mails (venta_id, fecha);
+CREATE INDEX IF NOT EXISTS pos_venta_mails_fecha ON public.pos_venta_mails (fecha);
+COMMENT ON TABLE public.pos_venta_mails IS 'SQL 281: cada factura del POS que se mandó por mail: a quién, cuándo, quién la mandó y, si falló, por qué.';
+ALTER TABLE public.pos_venta_mails ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_venta_mails FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.pos_venta_mails_id_seq FROM PUBLIC, anon, authenticated;
+
+-- 2) ¿Se puede mandar? Lo pregunta el servidor con la sesión de la persona, antes de armar el mail. Devuelve la venta
+--    entera (lo mismo que ve el ticket: con eso se arma el PDF) y quién la manda.
+CREATE OR REPLACE FUNCTION public.pos_venta_mail_preparar(p_venta uuid, p_mail text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t      jsonb;
+  v_mail text := lower(trim(coalesce(p_mail, '')));
+  v_hoy  int;
+begin
+  t := pos_venta(p_venta);   -- mira el permiso del POS y que la venta sea de un local de la persona
+  if coalesce(t->'factura'->>'cae', '') = '' then
+    raise exception 'Esta venta no tiene factura electrónica: no hay nada para mandar.';
+  end if;
+  /* Sólo letras sin acento, números y . _ % + - : lo que entiende cualquier servidor de mails. */
+  if length(v_mail) > 120 or v_mail !~ '^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$' then
+    raise exception 'El mail no está bien escrito.';
+  end if;
+  /* Los dos clics seguidos: la misma factura a la misma dirección, una vez por minuto. */
+  if exists (select 1 from pos_venta_mails m
+              where m.venta_id = p_venta and m.mail = v_mail and m.estado = 'enviado' and m.fecha > now() - interval '1 minute') then
+    raise exception 'Esa factura se le acaba de mandar a %. Si no le llegó, que mire en «Spam». En un minuto se puede mandar de nuevo.', v_mail;
+  end if;
+  /* El tope de la casilla: Gmail deja unos 500 por día. Se frena antes, en 400 (el día es el de Argentina). */
+  select count(*) into v_hoy from pos_venta_mails m
+   where m.estado = 'enviado' and m.fecha >= (pos_hoy()::timestamp at time zone 'America/Argentina/Buenos_Aires');
+  if v_hoy >= 400 then
+    raise exception 'Hoy ya salieron % mails y la casilla tiene un tope por día. Mañana se puede de nuevo.', v_hoy;
+  end if;
+  return jsonb_build_object('venta', t, 'mail', v_mail, 'persona', orden_yo_id(),
+                            'persona_nombre', (select p.nombre from orden_personas p where p.id = orden_yo_id()));
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_mail_preparar(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_mail_preparar(uuid, text) TO authenticated;
+
+-- 3) Anotar el envío (o que falló). Sólo el servidor, después de entregarle el mail a la casilla.
+CREATE OR REPLACE FUNCTION public.pos_venta_mail_anotar(p_venta uuid, p_mail text, p_persona uuid, p_estado text, p_error text, p_comprobante text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare r pos_venta_mails;
+begin
+  if not exists (select 1 from pos_ventas v where v.id = p_venta) then raise exception 'No existe esa venta.'; end if;
+  if p_estado is null or p_estado not in ('enviado', 'fallo') then raise exception 'El estado es «enviado» o «fallo».'; end if;
+  if nullif(trim(coalesce(p_mail, '')), '') is null then raise exception 'Falta el mail.'; end if;
+  insert into pos_venta_mails (venta_id, mail, comprobante, persona, persona_nombre, estado, error)
+  values (p_venta, lower(trim(p_mail)), nullif(trim(coalesce(p_comprobante, '')), ''), p_persona,
+          (select p.nombre from orden_personas p where p.id = p_persona), p_estado, nullif(left(trim(coalesce(p_error, '')), 500), ''))
+  returning * into r;
+  return jsonb_build_object('id', r.id, 'fecha', r.fecha, 'mail', r.mail, 'persona', r.persona_nombre, 'estado', r.estado);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_mail_anotar(uuid, text, uuid, text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.pos_venta_mail_anotar(uuid, text, uuid, text, text, text) TO service_role;
+
+-- 4) Lo que muestra el ticket: a quién se le mandó, cuándo y quién, del más viejo al último. Sólo los que salieron.
+CREATE OR REPLACE FUNCTION public.pos_venta_mails_lista(p_venta uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_local uuid;
+begin
+  perform pos_permiso();
+  select v.local_id into v_local from pos_ventas v where v.id = p_venta;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v_local);   -- SQL 190
+  return coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'mail', m.mail, 'persona', m.persona_nombre) order by m.fecha, m.id)
+                     from pos_venta_mails m where m.venta_id = p_venta and m.estado = 'enviado'), '[]'::jsonb);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_mails_lista(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_mails_lista(uuid) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

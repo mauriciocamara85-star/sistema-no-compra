@@ -501,7 +501,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_club_beneficios|pos_cupon/.test(m) ? '265 (el Club en la venta: cupones, cumpleaños y premios)' :
+      return 'Todavía falta correr el SQL ' + (/pos_venta_mail/.test(m) ? '281 (mandar la factura por mail)' : /pos_club_beneficios|pos_cupon/.test(m) ? '265 (el Club en la venta: cupones, cumpleaños y premios)' :
                                              /pos_fabrica_/.test(m) ? '258 (el depósito de la Fábrica)' : /pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
@@ -3170,7 +3170,8 @@
         notas: [r.ya ? 'Ya estaba guardada: no se duplicó.' : '', otroNum, pts], factura: r.factura, facturaError: r.factura_error,
         /* ARCA: la A o B de prueba (SQL 274) y la normal de la sucursal que factura (SQL 276: Rivadavia, ARCA de prueba).
            La base decide. */
-        arca: !r.factura && leTocaArca({ letra: p.letra, prueba: p.prueba, local_id: p.local_id }) ? r.id : null });
+        arca: !r.factura && leTocaArca({ letra: p.letra, prueba: p.prueba, local_id: p.local_id }) ? r.id : null,
+        venta: r.id, mail: p.cliente_email || '' });   // SQL 281: «Mandar por mail» al lado de Aceptar
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -3199,8 +3200,9 @@
      ARCA (todavía no está conectado): cuando lo esté, pos_venta_guardar (y pos_nc_hacer) devuelve en `factura` lo mismo que guarda
      —{ cae, cae_vence ('2026-11-17' o el '20261117' que da ARCA), tipo ('A' | 'B'), punto_venta, numero }— y, si ARCA no la
      autorizó, `factura_error` con el porqué. Con eso esta ventana ya muestra el recuadro de la factura.
-     El ticket por mail va en la de la venta, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, sólo si el cliente
-     tiene mail, y con Enter sigue siendo Aceptar (BlueSoft deja elegido el «No»). Hasta que exista el envío, no hay botón.
+     El ticket por mail va en la de la venta, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, y con Enter
+     sigue siendo Aceptar (BlueSoft deja elegido el «No»). Desde el SQL 281 (12/11) está: botonMailEn, con la factura aprobada; abre
+     la ventanita del mail (mandarMail), con el del cliente ya cargado si lo tiene.
      o: titulo; datos (al lado del título: la sucursal, el total); notas (los renglones de abajo; los vacíos no salen); factura y
      facturaError; tono: 'cola' (sin internet, con la nube) o 'prueba', en el amarillo del cartel de la venta (si no, el tilde
      verde); despues.
@@ -3217,8 +3219,10 @@
     caja.classList.add('vg');
     if (o.tono) caja.classList.add('vg-aviso');
     if (o.despues) _alCerrar = o.despues;
-    if (o.arca) pedirFacturaEn(caja, o.arca);
+    /* SQL 281: «Mandar por mail», con la factura aprobada. o.venta: el id de la venta; o.mail: el del cliente, si lo tiene. */
+    if (o.arca) pedirFacturaEn(caja, o.arca, false, o.mail);
     else if (o.arcaNota) pedirFacturaEn(caja, o.arcaNota, true);   // SQL 279: el CAE de la nota de crédito
+    else botonMailEn(caja, o.venta, o.factura, o.mail);
     return caja;
   }
   /** El recuadro de la factura electrónica: la aprobada (comprobante, CAE y vencimiento) o por qué no salió. La del ARCA de
@@ -3264,7 +3268,7 @@
   /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
   function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
   /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
-  function pedirFacturaEn(caja, id, nota) {
+  function pedirFacturaEn(caja, id, nota, mail) {
     var lugar = caja.querySelector('.vg-fac-lugar'), listo = false, que = nota ? 'Nota de crédito electrónica' : 'Factura electrónica';
     setTimeout(function () {
       if (!listo && lugar && lugar.isConnected) {
@@ -3273,7 +3277,11 @@
     }, 500);
     (nota ? pedirNota(id) : pedirFactura(id)).then(function (x) {
       listo = true;
-      if (lugar && lugar.isConnected) { lugar.innerHTML = x.factura ? htmlFactura(x.factura, null, false, nota) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x), nota); return; }
+      if (lugar && lugar.isConnected) {
+        lugar.innerHTML = x.factura ? htmlFactura(x.factura, null, false, nota) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x), nota);
+        if (!nota) botonMailEn(caja, id, x.factura, mail);   // SQL 281: «Mandar por mail» la factura recién aprobada
+        return;
+      }
       if (x.factura) avisar('ok', que + ' ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
       else if (!x.no_va) avisar('err', nota ? 'No se pudo crear la nota de crédito electrónica: ' + conPunto(x.error) + ' La nota quedó guardada, todavía sin CAE.'
                                             : 'No se pudo crear la factura electrónica: ' + conPunto(x.error) + ' La venta quedó guardada, todavía sin CAE.');
@@ -3606,6 +3614,7 @@
          está la venta; mientras no entró en un cierre. */
       var editaX = c77 && !anulada && t.letra === 'X' && !t.cierre && puede('anular') && MODO === 'mostrador';
       var pideCae = !t.factura && !anulada && leTocaArca(t);   // ARCA (SQL 274 y 276)
+      var conCae = !!(t.factura && t.factura.cae);              // tiene su factura electrónica: va el PDF y el mail (SQL 281)
       /* Como BlueSoft (11/11): con factura de ARCA, el ticket se llama por su número de ARCA («B-00021654») y el nuestro va en
          «Referencia»; el recuadro de ARCA (el CAE y su vencimiento, o «Pedir el CAE») va arriba a la derecha. */
       var fis = numFiscal(t.factura);
@@ -3640,6 +3649,8 @@
           return '<li>Editado el ' + esc(fechaHora(e.fecha)) + (e.persona ? ' por ' + esc(e.persona) : '') + '. Antes: ' + esc(resumenEdicion(e.antes).replace(/.$/, '')) +
             '. Por qué: ' + esc(e.motivo || '') + '</li>';
         }).join('') + '</ul>' : '') +
+        /* SQL 281: a quién se le mandó la factura por mail, cuándo y quién. Se llena cuando contesta la base (mailsDe). */
+        (conCae ? '<ul class="tk-corr" id="tkMails" hidden></ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (anulada && nota ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada con la nota de crédito <b>' + esc(refNota(nota)) + '</b> el ' + esc(fechaHora(nota.fecha)) +
             (nota.hizo_nombre ? ' por ' + esc(nota.hizo_nombre) : '') + ': ' + esc(nota.motivo || '') +
@@ -3655,9 +3666,15 @@
           (corrige ? (c77 ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Editar el pago: el medio, la tarjeta y las cuotas sin interés. El total no cambia (es una factura)">Editar</button>' :
                             '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>') : '') +
           (editaX ? '<button type="button" class="btn btn-sec btn-chico" id="tkEditar" title="Cambiar las prendas, las cantidades, los precios, los descuentos o el vendedor: el ticket sigue con su número y en su día">Editar</button>' : '') +
-          /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
-          (t.factura && t.factura.cae ? '<button type="button" class="btn btn-sec btn-chico" id="tkPdf" title="La factura en una hoja A4, como la de BlueSoft: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
-          (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
+          /* SQL 281: «Mandar por mail» la factura (Mauricio, 12/11: «no le mandé el ticket, me olvidé… pongamos el mail y se
+             mande»). Aparece cuando la base contesta que tiene el 281 (mailsDe); después, de entrada. */
+          (conCae ? '<button type="button" class="btn btn-sec btn-chico" id="tkMail" title="Le llega al cliente la factura en PDF, la misma hoja de «Exportar PDF»"' +
+            (S.conMail ? '' : ' hidden') + '>Mandar por mail</button>' : '') +
+          (conCae ? '<button type="button" class="btn btn-sec btn-chico" id="tkPdf" title="La factura en una hoja A4, como la de BlueSoft: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
+          /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la
+             Nueva venta). Mauricio (12/11): «¿Sirve duplicar? Yo la verdad que nunca lo usé» → sólo en el ticket anulado, que es
+             para lo que sirve; en la nota de crédito ya está «Hacer la venta de nuevo». */
+          (anulada && MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
           (volver ? '<button type="button" class="btn btn-sec btn-chico" id="tkVolver">‹ Volver</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       var vv = dentro.querySelector('#tkVolver');
@@ -3687,6 +3704,26 @@
       if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
       var pd = dentro.querySelector('#tkPdf');
       if (pd) pd.onclick = function () { facturaPdf(t); };
+      /* SQL 281: el mail. El campo viene con el mail del cliente o, si no tiene, con el último al que se mandó. */
+      var bm = dentro.querySelector('#tkMail'), ultimoMail = '';
+      if (bm) {
+        bm.onclick = function () {
+          mandarMail({ id: t.id, factura: t.factura, mail: t.cliente_email || ultimoMail,
+            volver: function () { abrirTicket(t.id, alCambiar, volver); } });
+        };
+        mailsDe(t.id).then(function (xs) {
+          if (!bm.isConnected) return;   // cerraron el ticket (o abrieron otro) mientras contestaba
+          if (!xs) { if (S.conMail === false) bm.hidden = true; return; }
+          bm.hidden = false;
+          var ul = dentro.querySelector('#tkMails');
+          if (!ul || !xs.length) return;
+          ultimoMail = xs[xs.length - 1].mail || '';
+          ul.innerHTML = xs.map(function (x) {
+            return '<li>Factura enviada por mail a <b>' + esc(x.mail) + '</b> el ' + esc(fechaHora(x.fecha)) + (x.persona ? ' por ' + esc(x.persona) : '') + '</li>';
+          }).join('');
+          ul.hidden = false;
+        });
+      }
       var du = dentro.querySelector('#tkDuplicar');
       if (du) du.onclick = function () { duplicarVenta(t); };
       var co = dentro.querySelector('#tkCorregir');
@@ -3870,6 +3907,117 @@
     '.fa-arca-sub { font-size: 5pt; font-weight: 700; color: #1f2a5a; margin-top: 1mm; }' +
     '.fa-arca-txt i { display: block; font-size: 13pt; margin-bottom: 2mm; } .fa-arca-txt div { font-size: 8pt; }' +
     '.fa-qr svg { display: block; width: 30mm; height: 30mm; }';
+
+  /* ── La factura por mail (SQL 281, 12/11) ──
+     Mauricio (12/11, con la foto del Ticket B-00000002): «No le mandé el ticket, me olvidé. Estaría bueno que haya la opción de
+     mandarlo. Pongamos el mail y se mande.» En los locales no hay impresora: la factura se entrega por mail, como en BlueSoft.
+     «Mandar por mail» está en el ticket con factura electrónica y en la ventana de «listo» de la venta (al lado de Aceptar, que
+     sigue siendo el Enter: BlueSoft deja elegido el «No»). Abre una ventanita con el Mail (viene cargado si el cliente lo tiene)
+     y lo manda el servidor (la función «mail»): arma el PDF —la misma hoja de «Exportar PDF»— y lo entrega por la casilla del
+     sistema. Queda anotado a quién, cuándo y quién (el ticket lo muestra) y se puede mandar de nuevo.
+     El botón aparece solo cuando la base tiene el SQL 281: lo dice mailsDe. */
+  /** Los mails que salieron de una venta: [{ fecha, mail, persona }], del más viejo al último. Sin el SQL 281, null (y S.conMail
+      queda en false: no hay botón). Con el 281, S.conMail queda en true y el botón del ticket siguiente sale de entrada. */
+  function mailsDe(id) {
+    return llamar('pos_venta_mails_lista', { p_venta: id }).then(function (xs) {
+      S.conMail = true;
+      return xs || [];
+    }, function (e) {
+      if (/Could not find the function|schema cache|PGRST202/.test(String((e && e.message) || ''))) S.conMail = false;
+      return null;
+    });
+  }
+  /** La función «mail» del servidor manda la factura. Nunca rechaza: devuelve { ok, mail } o { ok: false, error, codigo }. */
+  function pedirMail(id, mail) {
+    return persona.token().then(function (t) {
+      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      var reloj = setTimeout(function () { if (ctl) ctl.abort(); }, 75000);
+      return fetch(BASE + '/functions/v1/mail', {
+        method: 'POST',
+        signal: ctl ? ctl.signal : undefined,
+        headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accion: 'factura', venta_id: id, mail: mail })
+      }).then(function (r) {
+        clearTimeout(reloj);
+        if (r.status === 404) return { ok: false, codigo: 'sin_funcion', error: 'Falta publicar la función «mail» en el servidor.' };
+        return r.json().catch(function () { return { ok: false, error: 'El servidor contestó algo que no se entiende.' }; });
+      }, function () {
+        clearTimeout(reloj);
+        return { ok: false, codigo: 'sin_respuesta', error: 'No se pudo hablar con el servidor (¿hay internet?). Si tardó mucho, puede que el mail haya salido igual: fijate en el ticket antes de mandarlo de nuevo.' };
+      });
+    }, function () {
+      return { ok: false, codigo: 'sin_sesion', error: 'Se cerró tu sesión: entrá de nuevo.' };
+    }).then(function (x) {
+      x = x || {};
+      if (!x.ok && !x.error) x.error = 'No se pudo mandar el mail.';
+      return x;
+    });
+  }
+  /** La ventanita del mail. o: { id (la venta), factura, mail (el que viene cargado), volver (al ticket; sin eso, «Cancelar») }. */
+  function mandarMail(o) {
+    var f = o.factura || {}, comp = compArca(f), deP = f.ambiente === 'homologacion';
+    var caja = ventana('<h3 id="posVentTit">Mandar la factura por mail</h3>' +
+      '<p class="pos-bajada">Al cliente le llega la factura' + (comp ? ' <b>' + esc(comp) + '</b>' : '') + ' en PDF: la misma hoja de «Exportar PDF».</p>' +
+      (deP ? '<div class="pos-cartel prueba">Es del ARCA de prueba: el PDF y el mail dicen «sin valor fiscal». Sirve para probar el envío, ' +
+        'no para entregársela a un cliente.</div>' : '') +
+      campo('', 'Mail del cliente', '<input type="email" id="mmMail" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
+        'placeholder="nombre@ejemplo.com" value="' + esc(o.mail || '') + '" autofocus>') +
+      '<div class="pos-error" id="mmError"></div>' +
+      '<div class="pos-pie">' + (o.volver ? '<button type="button" class="btn btn-sec btn-chico izq" id="mmVolver">Volver al ticket</button>' :
+          '<button type="button" class="btn btn-sec btn-chico izq" data-cerrar>Cancelar</button>') +
+        '<button type="button" class="btn btn-pri btn-chico" id="mmMandar">Mandar</button></div>');
+    var campoMail = caja.querySelector('#mmMail'), bt = caja.querySelector('#mmMandar'), vv = caja.querySelector('#mmVolver');
+    if (vv) vv.onclick = o.volver;
+    setTimeout(function () { if (campoMail.isConnected && campoMail.value) campoMail.select(); }, 0);
+    function mandar() {
+      if (bt.disabled) return;
+      var mail = campoMail.value.trim().toLowerCase();
+      /* Lo mismo que mira el servidor: letras sin acento, números y . _ % + - */
+      var mal = !mail ? 'Escribí el mail del cliente.' : !/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(mail) || mail.length > 120 ?
+        'El mail no está bien escrito. Va sin espacios ni acentos, como nombre@ejemplo.com.' : '';
+      if (!errorEn(caja, 'mmError', mal)) { campoMail.focus(); return; }
+      bt.disabled = true;
+      bt.textContent = 'Mandando…';
+      pedirMail(o.id, mail).then(function (x) {
+        if (x.ok) {
+          S.conMail = true;
+          if (!caja.isConnected) { avisar('ok', 'La factura ' + comp + ' se mandó a ' + mail + '.'); return; }
+          ventanaHecho({ titulo: 'Factura enviada', datos: [comp, mail],
+            notas: ['Si no le llega en unos minutos, que mire en «Spam» o «Promociones».', deP ? 'Es del ARCA de prueba: sin valor fiscal.' : ''],
+            despues: o.volver });
+          return;
+        }
+        if (!caja.isConnected) { avisar('err', 'No se pudo mandar la factura a ' + mail + ': ' + conPunto(x.error)); return; }
+        bt.disabled = false;
+        bt.textContent = 'Mandar';
+        errorEn(caja, 'mmError', conPunto(x.error));
+        if (x.codigo === 'sin_sesion') persona.entrar();
+      });
+    }
+    bt.onclick = mandar;
+    campoMail.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); mandar(); } });
+    campoMail.addEventListener('input', function () { errorEn(caja, 'mmError', ''); });
+    return caja;
+  }
+  /** «Mandar por mail» en la ventana de «listo» de la venta, a la izquierda de Aceptar (que sigue siendo el Enter). Sólo con la
+      factura aprobada y si la base tiene el SQL 281. */
+  function botonMailEn(caja, id, factura, mail) {
+    if (!id || !factura || !factura.cae) return;
+    var poner = function () {
+      var pie = caja.isConnected ? caja.querySelector('.pos-pie') : null;
+      if (!pie || pie.querySelector('#vgMail')) return;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn btn-sec btn-chico izq';
+      b.id = 'vgMail';
+      b.textContent = 'Mandar por mail';
+      b.title = 'Le llega al cliente la factura en PDF';
+      b.onclick = function () { mandarMail({ id: id, factura: factura, mail: mail || '' }); };
+      pie.insertBefore(b, pie.firstChild);
+    };
+    if (S.conMail) { poner(); return; }
+    mailsDe(id).then(function (xs) { if (xs) poner(); });
+  }
 
   /* ════════════════════════════════════════════════════════════════════
      CORREGIR EL PAGO (SQL 248) · «EDITAR» EL PAGO DE LA A Y LA B (SQL 277)
