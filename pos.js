@@ -14026,6 +14026,10 @@
      Las explicaciones paso a paso salieron de la pantalla («yo solo
      explico»): quedan en «Ver la cuenta de cada local». Y «Cargar la
      planilla…» dice antes cómo tiene que venir, con un ejemplo para bajar.
+     SQL 292 (13/11, su «dale»): la planilla que carga uno queda en la base
+     y la ven todas las compus (sin el 292, en cada compu, como antes); y
+     cada reparto que termina en remitos deja anotado qué proponía cada
+     forma y qué se mandó: «Historial» dice cuál se acercó más.
      ════════════════════════════════════════════════════════════════════ */
   var K_RP_PLANILLA = 'pos_rp_planilla', K_RP_PREFS = 'pos_rp_prefs';
   function verRepartir() { RP.ver(); }
@@ -14033,7 +14037,7 @@
     /* [la clave, como se elige, como se titula en «Comparar»] */
     var FORMAS = [['fam', '% de la venta de la familia', '% familia'], ['rub', '% de la venta del rubro', '% rubro'], ['gen', '% de la venta general', '% general'],
                   ['mix', '% de la familia, contando lo que ya tiene', 'Familia y stock'], ['nec', 'Lo que necesita', 'Necesidad'], ['par', 'Parejo', 'Parejo']];
-    var PL = null, PL_DE = '';   // la planilla guardada en esta compu, y de cuándo es
+    var PL = null, PL_DE = '', PL_BASE = false;   // la planilla (la copia de esta compu), de cuándo es y si es la que está guardada en la base (SQL 292)
     /* P: el producto. CEL: los casilleros (talle × color). HAY: lo de la fábrica en cada casillero (STOCK: lo que dice el depósito).
        LOC: los locales. A: lo que le va a cada local en cada casillero; MANO: lo corregido a mano. MAY: los mayoristas con pedido.
        LOTE: los remitos de este reparto que ya se guardaron (si se cortó en la mitad, no se repiten). */
@@ -14321,6 +14325,24 @@
     function leerGuardada() {
       var g = leerJSON(K_RP_PLANILLA, null);
       if (g && g.v === 1 && g.pl && Array.isArray(g.pl.locales)) { PL = g.pl; PL_DE = g.de || ''; } else { PL = null; PL_DE = ''; }
+      PL_BASE = false;
+    }
+    /* SQL 292: la planilla que cargó cualquiera de la Fábrica queda en la base y la ven todas las compus. Sin el 292
+       (S.sin292), cada compu con la suya, como antes. La copia de la compu queda igual, para abrir sin esperar a la base. */
+    function deBase(d) { return (d.de || 'La planilla') + ' (cargada el ' + fechaHora(d.cargada_en) + (d.cargada_nombre ? ' por ' + d.cargada_nombre : '') + ')'; }
+    /** Trae la de la base. Devuelve si cambió la que se estaba usando. */
+    function traerPlanilla() {
+      if (S.sin292) return Promise.resolve(false);
+      return llamar('pos_reparto_planilla').then(function (d) {
+        S.con292 = true;
+        if (!d || !d.pl || !Array.isArray(d.pl.locales)) return false;
+        var de = deBase(d);
+        if (PL && PL_DE === de) { PL_BASE = true; return false; }   // la misma que ya está en esta compu
+        PL = d.pl; PL_DE = de; PL_BASE = true;
+        guardarJSON(K_RP_PLANILLA, { v: 1, de: PL_DE, pl: PL });
+        if (!MULT_MANO) MULT = PL.mult || 1.2;
+        return true;
+      }, function (e) { if (sinFuncion(e)) S.sin292 = true; return false; });
     }
 
     /* ── El producto ── */
@@ -14758,13 +14780,15 @@
     function faltaDatos() {
       var R = REP, hay = R.tipo === 'par' || LOC.some(function (l) { return R.tipo === 'nec' ? necDe(l) != null : l.v != null; });
       return hay ? '' : PL ? '<p class="rp-mal-txt"><b>La planilla no tiene ' + esc(queTxt(R.nivel)) + ':</b> elegí otra forma de repartir o escribí a mano lo que le va a cada uno.</p>'
-                           : '<p class="rp-mal-txt"><b>Falta la planilla en esta compu:</b> tocá «Cargar la planilla…». Mientras tanto se puede repartir «Parejo» o a mano.</p>';
+                           : '<p class="rp-mal-txt"><b>' + (S.con292 ? 'Falta la planilla:' : 'Falta la planilla en esta compu:') + '</b> tocá «Cargar la planilla…». Mientras tanto se puede repartir «Parejo» o a mano.</p>';
     }
     function notaPlanilla() {
       var gen = ((PL && PL.avisos) || []).length;
       $('rpNota').innerHTML = PL ? 'Lo que vendió y lo que tiene cada local sale de la planilla ' + esc(PL_DE) + ' · ' + PL.locales.length + ' locales, ' + PL.familias + ' familias · ' +
-          '<a href="#" id="rpRevisar">' + (gen ? 'lo que revisó el sistema (' + gen + (gen === 1 ? ' aviso' : ' avisos') + ')' : 'lo que revisó el sistema') + '</a>. Queda guardada en esta compu. Cada número se puede corregir a mano.'
-        : 'Todavía no hay planilla en esta compu. Tocá «Cargar la planilla…» y elegí el Excel de la fábrica (una hoja por local, con lo vendido y el stock por rubro y familia). Queda guardada acá.';
+          '<a href="#" id="rpRevisar">' + (gen ? 'lo que revisó el sistema (' + gen + (gen === 1 ? ' aviso' : ' avisos') + ')' : 'lo que revisó el sistema') + '</a>. ' + (PL_BASE ? 'Está guardada en el sistema: la ven todas las compus de la Fábrica.' : 'Queda guardada en esta compu.') + ' Cada número se puede corregir a mano.'
+        : (S.con292 ? 'Todavía no hay ninguna planilla cargada.' : 'Todavía no hay planilla en esta compu.') + ' Tocá «Cargar la planilla…»: ahí dice cómo tiene que venir.' +
+          (S.con292 ? ' Queda guardada en el sistema, para todas las compus de la Fábrica.' : ' Queda guardada acá.');
+      var hi = $('rpHistorial'); if (hi) hi.hidden = !!S.sin292;
       var r = $('rpRevisar'); if (r) r.onclick = function (e) { e.preventDefault(); resumen(false); };
     }
     function explicar() {
@@ -14788,6 +14812,7 @@
         '<ul class="rp-lista-loc">' + PL.locales.map(function (l) { return '<li><b>' + esc(l.nombre) + '</b> <small>«' + esc(l.hoja) + '»</small></li>'; }).join('') + '</ul>' +
         (av.length ? '<p class="rp-av-tit">Lo raro (' + av.length + '):</p><ul class="rp-avisos">' + av.map(function (a) { return '<li>' + esc(a.txt) + '</li>'; }).join('') + '</ul>'
                    : '<p class="rp-av-tit">No encontré nada raro.</p>') +
+        (recien ? '<p class="rp-nota rp-nota-v">' + (PL_BASE ? 'Quedó guardada en el sistema: la ven todas las compus de la Fábrica.' : 'Quedó guardada en esta compu.') + '</p>' : '') +
         '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
     }
     /* «Ver la cuenta de cada local»: el cuadro, con los mismos pasos al lado. */
@@ -14877,6 +14902,91 @@
           '<td class="n rp-totc"><b>' + suma(tp) + '</b></td></tr></tfoot></table></div>' +
         '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>', true).classList.add('rp-ancha');
     }
+    /* SQL 292 (13/11, Mauricio: «vemos qué funciona mejor»): cada reparto que termina en remitos deja anotado qué proponía cada
+       forma de repartir y qué se mandó al final (con lo corregido a mano). */
+    /** Lo que propone cada forma para cada producto de la tanda, por local: [{ codigo, formas: { fam: { idLocal: prendas }, … } }]. */
+    function propuestas() {
+      var r = [];
+      enCada(function () {
+        var f = {};
+        FORMAS.forEach(function (x) { var R = calcular(x[0]), m = {}; LOC.forEach(function (l, i) { if (R.t[i]) m[l.id] = R.t[i]; }); f[x[0]] = m; });
+        r.push({ codigo: P[0], formas: f });
+      });
+      return r;
+    }
+    /** Lo que se anota de la tanda que se acaba de guardar. nums: los números de sus remitos. */
+    function registro(nums) {
+      var prods = [], total = 0, loc = {};
+      enCada(function (k) {
+        var mand = {}, pr = LOTE.propuesto[k] && LOTE.propuesto[k].codigo === P[0] ? LOTE.propuesto[k].formas : {};
+        LOC.forEach(function (l, i) { var u = totLocal(i); loc[l.id] = l.n; if (u && l.va) { mand[l.id] = u; total += u; } });
+        prods.push({ codigo: P[0], nombre: P[1], rubro: P[2] || '', familia: P[7] || '', hay: suma(HAY), mayoristas: suma(MAY.map(totMay)), propuesto: pr, mandado: mand });
+      });
+      return { clave: LOTE.clave, forma: segun(), talles: $('rpTalles').value, chico: $('rpChico').value, tope: $('rpTope').checked, mult: MULT, modo: LOTE.modo, planilla: PL_DE,
+               prendas: total, remitos: nums, locales: loc, productos: prods };
+    }
+    /* 4, 5, 6, 9 → «R-4 a R-6, R-9». */
+    function rangos(nums) {
+      var a = nums.slice().sort(function (x, y) { return x - y; }), r = [], i = 0;
+      while (i < a.length) { var j = i; while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++; r.push(j > i ? 'R-' + a[i] + ' a R-' + a[j] : 'R-' + a[i]); i = j + 1; }
+      return r.length > 4 ? r.slice(0, 4).join(', ') + '…' : r.join(', ');
+    }
+    /** «Historial»: los repartos de los últimos 90 días y qué forma se acercó más a lo que se mandó de verdad. */
+    function historial() {
+      var hoy = String((S.ini && S.ini.hoy) || '').slice(0, 10), d = new Date(hoy + 'T12:00:00');
+      d.setDate(d.getDate() - 90);
+      var desde = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+      var caja = ventana('<h3 id="posVentTit">Los repartos hechos</h3>' +
+        '<p class="pos-bajada">De los últimos 90 días. Cada vez que se arman los remitos desde acá queda anotado qué proponía cada forma de repartir y qué se mandó al final, con lo corregido a mano.</p>' +
+        '<div id="rpHist"><p class="cargando">Cargando…</p></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+      caja.classList.add('rp-ancha');
+      llamar('pos_repartos_ver', { p_desde: desde, p_hasta: hoy }).then(function (r) {
+        var z = caja.querySelector('#rpHist'), fs = (r && r.filas) || [];
+        S.con292 = true;
+        if (!z) return;
+        if (!fs.length) { z.innerHTML = '<div class="pos-cartel"><b>Todavía no se guardó ningún reparto.</b> Cuando armes los remitos desde acá, queda anotado solo.</div>'; return; }
+        /* Por cada forma: las prendas que proponía para un local y terminaron en otro (o no se mandaron). Menos es mejor. */
+        var M = 0, dif = {}, usada = {};
+        FORMAS.forEach(function (f) { dif[f[0]] = 0; usada[f[0]] = 0; });
+        fs.forEach(function (x) {
+          usada[x.forma] = (usada[x.forma] || 0) + 1;
+          ((x.datos && x.datos.productos) || []).forEach(function (p) {
+            var mand = p.mandado || {};
+            Object.keys(mand).forEach(function (k) { M += mand[k]; });
+            FORMAS.forEach(function (f) {
+              var pr = (p.propuesto || {})[f[0]] || {}, mas = 0, menos = 0, todos = {};
+              Object.keys(mand).concat(Object.keys(pr)).forEach(function (k) { todos[k] = 1; });
+              Object.keys(todos).forEach(function (k) { var q = (pr[k] || 0) - (mand[k] || 0); if (q > 0) mas += q; else menos -= q; });
+              dif[f[0]] += Math.max(mas, menos);
+            });
+          });
+        });
+        var orden = FORMAS.slice().sort(function (a, b) { return dif[a[0]] - dif[b[0]]; }), peor = dif[orden[orden.length - 1][0]] || 1;
+        var unica = orden.length > 1 && dif[orden[0][0]] < dif[orden[1][0]];
+        z.innerHTML = '<p class="rp-av-tit">Qué forma se acercó más a lo que se mandó</p>' +
+          '<div class="tk-grilla rp-grilla-c rp-hist-formas"><table class="tk-tabla rp-tabla rp-cuenta rp-hist"><thead><tr><th>Forma de repartir</th>' +
+            '<th class="n" title="Las prendas que esa forma proponía para un local y terminaron en otro, o no se mandaron">Prendas distintas</th><th class="n">De cada 100</th><th><span class="sr">Barra</span></th><th class="n">Veces usada</th></tr></thead><tbody>' +
+          orden.map(function (f, i) {
+            return '<tr><td class="rp-loc">' + esc(f[1]) + (i === 0 && unica ? ' <span class="pill pill-ok">La más parecida</span>' : '') + '</td><td class="n"><b>' + dif[f[0]] + '</b></td>' +
+              '<td class="n">' + (M ? Math.round(100 * dif[f[0]] / M) : 0) + '</td><td class="rp-hist-barra"><i style="width:' + Math.max(2, Math.round(100 * dif[f[0]] / peor)) + '%"></i></td>' +
+              '<td class="n">' + (usada[f[0]] || '<span class="rp-sin">·</span>') + '</td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          '<p class="rp-nota rp-comp-nota">«Prendas distintas»: las que esa forma proponía para un local y terminaron en otro (o no se mandaron). Menos es mejor: hubo que corregir menos a mano. Sobre ' + M +
+            (M === 1 ? ' prenda mandada' : ' prendas mandadas') + ' en ' + fs.length + (fs.length === 1 ? ' reparto.' : ' repartos.') + '</p>' +
+          '<p class="rp-av-tit rp-hist-tit">Los repartos</p>' +
+          '<div class="tk-grilla rp-grilla-c rp-hist-lista"><table class="tk-tabla rp-tabla rp-cuenta"><thead><tr><th>Cuándo</th><th>Quién</th><th>Productos</th><th class="n">Prendas</th><th>Forma usada</th><th>Remitos</th></tr></thead><tbody>' +
+          fs.map(function (x) {
+            var ps = ((x.datos && x.datos.productos) || []).map(function (p) { return p.codigo; }), fo = FORMAS.filter(function (f) { return f[0] === x.forma; })[0];
+            return '<tr><td>' + esc(fechaHora(x.creado_en)) + '</td><td>' + esc(x.creado_nombre || '—') + '</td><td title="' + esc(ps.join(', ')) + '">' + esc(ps.slice(0, 4).join(', ')) + (ps.length > 4 ? ' y ' + (ps.length - 4) + ' más' : '') + '</td>' +
+              '<td class="n">' + (x.prendas || 0) + '</td><td>' + esc(fo ? fo[2] : x.forma) + '</td><td>' + esc(rangos((x.datos && x.datos.remitos) || [])) + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }, function (e) {
+        var z = caja.querySelector('#rpHist');
+        if (sinFuncion(e)) { S.sin292 = true; if ($('rpHistorial')) $('rpHistorial').hidden = true; }
+        if (z) z.innerHTML = '<div class="pos-cartel mal">' + esc(sinFuncion(e) ? 'Todavía falta correr el SQL 292 (el historial de los repartos) en Supabase.' : mensajeDe(e)) + '</div>';
+      });
+    }
     /* «Armar los remitos»: como el Nuevo remito de la fábrica (salen del depósito al guardarlos y quedan «Pendiente de envío»).
        Uno por local con todos los productos de la tanda, o uno por local y producto. Se guardan de a uno; si se corta en la
        mitad, los que ya están no se repiten (LOTE: una clave por remito). */
@@ -14899,7 +15009,8 @@
         MAY.forEach(function (m) { var t = totMay(m), n = m.n || 'el mayorista'; if (t > 0) { uMay += t; if (mays.indexOf(n) < 0) mays.push(n); } });
       });
       mal = unicos(mal);
-      if (!LOTE) LOTE = { modo: pp ? 'producto' : 'local', claves: {}, hechos: {}, nombres: {}, totales: {} };
+      if (!LOTE) LOTE = { modo: pp ? 'producto' : 'local', claves: {}, hechos: {}, nombres: {}, totales: {}, clave: nuevaClave() };
+      if (!conGuardados()) LOTE.propuesto = propuestas();   // SQL 292: lo que propone cada forma, antes de guardar nada
       var lista = us.map(function (u) {
         if (!LOTE.claves[u.k]) LOTE.claves[u.k] = nuevaClave();
         LOTE.nombres[u.k] = u.l.n + (pp && nP > 1 ? ' (' + u.prods[0].cod + ')' : '');
@@ -14991,6 +15102,10 @@
         var ks = Object.keys(LOTE.hechos).sort(function (a, b) { return LOTE.hechos[a] - LOTE.hechos[b]; });
         var nums = ks.map(function (c) { return 'R-' + LOTE.hechos[c] + ' ' + (LOTE.nombres[c] || ''); }), tot = suma(ks.map(function (c) { return LOTE.totales[c] || 0; }));
         var que = TANDA.length === 1 ? P[0] + ' ' + P[1] : TANDA.length + ' productos';
+        /* SQL 292: queda anotado qué proponía cada forma y qué se mandó. Si no se puede (sin el 292, sin red), no frena nada. */
+        if (!S.sin292 && LOTE.propuesto) {
+          llamar('pos_reparto_anotar', { p: registro(ks.map(function (c) { return LOTE.hechos[c]; })) }).then(function () { S.con292 = true; }, function (e) { if (sinFuncion(e)) S.sin292 = true; });
+        }
         /* Lo que sigue es otra tanda: la pantalla queda vacía. */
         vaciar();
         if (S.vista === 'repartir') pintar();
@@ -15011,9 +15126,9 @@
     function abrirPlanilla() {
       var gen = ((PL && PL.avisos) || []).length;
       var caja = ventana('<h3 id="posVentTit">La planilla de ventas y stock</h3>' +
-        '<p class="pos-bajada">De acá sale lo que vendió y lo que tiene cada local, por rubro y familia: con eso se calcula la parte de cada uno. Se carga una vez y queda guardada en esta compu; cuando cambian los números, se carga de nuevo.</p>' +
+        '<p class="pos-bajada">De acá sale lo que vendió y lo que tiene cada local, por rubro y familia: con eso se calcula la parte de cada uno. Se carga una vez y queda guardada ' + (S.con292 ? 'en el sistema (la ven todas las compus de la Fábrica)' : 'en esta compu') + '; cuando cambian los números, se carga de nuevo.</p>' +
         (PL ? '<p class="rp-pl-hay"><b>Cargada:</b> ' + esc(PL_DE) + ' · ' + PL.locales.length + ' locales, ' + PL.familias + ' familias · <a href="#" id="rpPlRevisar">lo que revisó el sistema' + (gen ? ' (' + gen + ')' : '') + '</a></p>'
-            : '<p class="rp-pl-hay rp-pl-falta">Todavía no hay ninguna cargada en esta compu.</p>') +
+            : '<p class="rp-pl-hay rp-pl-falta">' + (S.con292 ? 'Todavía no hay ninguna cargada.' : 'Todavía no hay ninguna cargada en esta compu.') + '</p>') +
         '<p class="rp-av-tit">Cómo tiene que venir (sirve cualquiera de las dos):</p>' +
         '<ol class="rp-formatos">' +
           '<li><b>Una sola hoja, con un renglón por local y familia</b> y estos títulos en la primera fila, en cualquier orden:' +
@@ -15047,18 +15162,26 @@
       var b = $('rpCargar'); b.disabled = true; b.textContent = 'Leyendo…';
       var leer = /\.(csv|txt|tsv)$/i.test(archivo.name) ? archivo.text().then(function (t) { return [{ nombre: archivo.name, filas: filasDeTexto(t) }]; }) : archivo.arrayBuffer().then(leerLibro);
       leer.then(function (hojas) {
-        var pl = interpretar(hojas, archivo.name), d = new Date();
-        PL = pl;
-        PL_DE = '«' + archivo.name + '» (cargada el ' + d.getDate() + '/' + (d.getMonth() + 1) + ' a las ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + ')';
-        guardarJSON(K_RP_PLANILLA, { v: 1, de: PL_DE, pl: PL });
-        var quedo = (leerJSON(K_RP_PLANILLA, {}) || {}).de === PL_DE;
-        if (!MULT_MANO) { MULT = PL.mult || 1.2; if ($('rpMult')) $('rpMult').value = coma(MULT); }   // si lo cambió a mano, queda el suyo
-        if (S.vista !== 'repartir' || !$('rpFilas')) return;
-        /* Con un reparto a medio guardar, la planilla nueva vale desde el próximo: lo que ya salió no se mueve. */
-        if (!conGuardados()) enCada(function () { NEC_MANO = {}; armarLocales(); repartir(); });
-        pintar();
-        resumen(true);
-        if (!quedo) avisar('info', 'La planilla se leyó, pero no se pudo guardar en esta compu: vale hasta que cierres la ventana.');
+        var pl = interpretar(hojas, archivo.name), d = new Date(), de = '«' + archivo.name + '»';
+        /* SQL 292: primero a la base, para todas las compus. Sin el 292, o si no se pudo, queda en ésta. */
+        var subir = S.sin292 ? Promise.resolve(null) : llamar('pos_reparto_planilla_guardar', { p: { de: de, pl: pl } }).then(function (r) { S.con292 = true; return r; },
+          function (e) { if (sinFuncion(e)) { S.sin292 = true; return null; } return { error: e }; });
+        return subir.then(function (r) {
+          var enBase = !!r && !r.error;
+          PL = pl; PL_BASE = enBase;
+          PL_DE = enBase ? deBase({ de: de, cargada_en: r.cargada_en, cargada_nombre: r.cargada_nombre })
+                         : de + ' (cargada el ' + d.getDate() + '/' + (d.getMonth() + 1) + ' a las ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + ')';
+          guardarJSON(K_RP_PLANILLA, { v: 1, de: PL_DE, pl: PL });
+          var quedo = (leerJSON(K_RP_PLANILLA, {}) || {}).de === PL_DE;
+          if (!MULT_MANO) { MULT = PL.mult || 1.2; if ($('rpMult')) $('rpMult').value = coma(MULT); }   // si lo cambió a mano, queda el suyo
+          if (S.vista !== 'repartir' || !$('rpFilas')) return;
+          /* Con un reparto a medio guardar, la planilla nueva vale desde el próximo: lo que ya salió no se mueve. */
+          if (!conGuardados()) enCada(function () { NEC_MANO = {}; armarLocales(); repartir(); });
+          pintar();
+          resumen(true);
+          if (r && r.error) avisar('info', 'La planilla quedó en esta compu, pero no se pudo guardar en el sistema para las demás: ' + mensajeDe(r.error));
+          else if (!enBase && !quedo) avisar('info', 'La planilla se leyó, pero no se pudo guardar en esta compu: vale hasta que cierres la ventana.');
+        });
       }).catch(function (e) {
         ventana('<h3 id="posVentTit">No pude leer la planilla</h3><p class="pos-bajada">' + esc((e && e.message) || e) + '</p><div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>');
       }).then(function () { if (b.isConnected) { b.disabled = false; b.textContent = 'Cargar la planilla…'; } var a = $('rpArchivo'); if (a) a.value = ''; });
@@ -15119,6 +15242,7 @@
           '<button type="button" class="btn btn-sec btn-chico" id="rpCargar" title="Lo que vendió y lo que tiene cada local, por rubro y familia. Abre cómo tiene que venir, con un ejemplo. Queda guardada en esta compu.">Cargar la planilla…</button>' +
           '<input type="file" id="rpArchivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>' +
           '<button type="button" class="btn btn-sec btn-chico" id="rpComparar" title="Cuántas recibiría cada local con cada forma de repartir, lado a lado">Comparar</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="rpHistorial" title="Los repartos que ya se hicieron y qué forma se acercó más a lo que se mandó"' + (S.sin292 ? ' hidden' : '') + '>Historial</button>' +
           '<button type="button" class="btn btn-sec btn-chico" id="rpVolver" title="Borra lo que cambiaste a mano en el producto que se ve y lo reparte de nuevo">Volver a repartir</button>' +
           '<button type="button" class="btn btn-pri btn-chico" id="rpArmar" disabled>Armar los remitos</button>') +
         '<div class="tk rp">' +
@@ -15162,6 +15286,7 @@
       $('rpImportar').onclick = importar;
       $('rpArchivo').onchange = function () { if (this.files && this.files[0]) cargar(this.files[0]); };
       $('rpComparar').onclick = comparar;
+      $('rpHistorial').onclick = historial;
       $('rpVolver').onclick = function () { if (!P) return; NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); repartir(); pintar(); };
       $('rpArmar').onclick = armar;
       $('rpSegun').onchange = cambioForma;
@@ -15232,9 +15357,14 @@
       if (P) enCada(function () { nivelar(); if (!REP) repartir(); });
       pintar();
       var traer = function (forzar) {
-        return Promise.all([traerEnvios(forzar), traerDepositos(FAB, forzar)]).then(function () {
+        return Promise.all([traerEnvios(forzar), traerDepositos(FAB, forzar), traerPlanilla()]).then(function (x) {
           if (S.vista !== 'repartir' || !$('rpFilas')) return;
           pintarDatos();
+          if (x[2]) {   // SQL 292: en la base hay otra planilla que la de esta compu
+            $('rpMult').value = coma(MULT);
+            if (!conGuardados()) enCada(function () { NEC_MANO = {}; armarLocales(); repartir(); });
+          }
+          pintar();
           return traerStock(true);
         });
       };

@@ -14714,3 +14714,142 @@ REVOKE ALL ON FUNCTION public.pos_iva_mail_disparar() FROM PUBLIC, anon, authent
 SELECT cron.schedule('pos-iva-mensual', '0 12 1-3 * *', 'select public.pos_iva_mail_disparar()');
 
 NOTIFY pgrst, 'reload schema';
+
+-- ════════════════════════════════════════════════════════════════════
+--  SQL 292 (13/11/2026): REPARTIR UN PRODUCTO, LA PLANILLA Y EL HISTORIAL (App Orden: correr-en-supabase-292.sql)
+-- ════════════════════════════════════════════════════════════════════
+-- ═══ SQL 292 · Repartir un producto: la planilla en el sistema y el registro de cada reparto (13/11/2026) ═══
+-- Pedido de Mauricio (13/11), sobre «Repartir un producto» de la Fábrica: «dale» a dos mejoras que necesitan la base:
+--   · la planilla de ventas y stock, que hoy cada compu carga por su lado, la carga una persona y la ven todas las compus;
+--   · cada vez que se arman los remitos queda anotado qué proponía cada forma de repartir y qué se mandó al final, para
+--     decidir con números cuál forma funciona mejor («vemos qué funciona mejor»).
+--
+-- Qué hace:
+--   1. Dos tablas nuevas: pos_reparto_planilla (un solo renglón: la planilla que está cargada, quién la cargó y cuándo) y
+--      pos_repartos (un renglón por reparto guardado: los productos, lo que proponía cada forma y lo que se mandó).
+--   2. Cuatro funciones, para quien tiene «Entra a Fábrica»: pos_reparto_planilla (leerla), pos_reparto_planilla_guardar
+--      (cargar otra), pos_reparto_anotar (anotar un reparto) y pos_repartos_ver (el historial).
+-- Las tablas no se leen ni se escriben desde afuera: sólo por esas funciones.
+-- No cambia ninguna función, ninguna tabla ni ningún dato de los que ya están. Sin este SQL la pantalla sigue como hoy
+-- (la planilla en cada compu y sin historial).
+-- Se puede correr más de una vez (no pisa lo ya cargado). Se deshace con deshacer-292.sql. Corre entero o nada.
+
+CREATE TABLE IF NOT EXISTS public.pos_reparto_planilla (
+  id             boolean PRIMARY KEY DEFAULT true CHECK (id),
+  de             text        NOT NULL DEFAULT '',
+  datos          jsonb       NOT NULL,
+  cargada_en     timestamptz NOT NULL DEFAULT now(),
+  cargada_por    uuid,
+  cargada_nombre text
+);
+COMMENT ON TABLE public.pos_reparto_planilla IS 'SQL 292: la planilla de ventas y stock de «Repartir un producto» (un solo renglón): lo que vendió y lo que tiene cada local por rubro y familia, ya leída por la pantalla.';
+ALTER TABLE public.pos_reparto_planilla ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_reparto_planilla FROM PUBLIC, anon, authenticated;
+
+CREATE TABLE IF NOT EXISTS public.pos_repartos (
+  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  clave         text        NOT NULL UNIQUE,
+  creado_en     timestamptz NOT NULL DEFAULT now(),
+  dia           date        NOT NULL DEFAULT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date,
+  creado_por    uuid,
+  creado_nombre text,
+  forma         text        NOT NULL,
+  prendas       integer     NOT NULL DEFAULT 0,
+  datos         jsonb       NOT NULL
+);
+COMMENT ON TABLE public.pos_repartos IS 'SQL 292: cada reparto de «Repartir un producto» que terminó en remitos: los productos, lo que proponía cada forma de repartir y lo que se mandó a cada local.';
+CREATE INDEX IF NOT EXISTS pos_repartos_dia ON public.pos_repartos (dia DESC, id DESC);
+ALTER TABLE public.pos_repartos ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_repartos FROM PUBLIC, anon, authenticated;
+
+/* La planilla que está cargada (o null si todavía no cargaron ninguna). */
+CREATE OR REPLACE FUNCTION public.pos_reparto_planilla()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_fabrica_ok();
+  return (select jsonb_build_object('de', p.de, 'cargada_en', p.cargada_en, 'cargada_nombre', p.cargada_nombre, 'pl', p.datos)
+            from pos_reparto_planilla p where p.id);
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_reparto_planilla() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_reparto_planilla() TO authenticated;
+
+/* Cargar otra planilla: p = { de: «el nombre del archivo», pl: lo que leyó la pantalla (con «locales») }. Pisa la anterior. */
+CREATE OR REPLACE FUNCTION public.pos_reparto_planilla_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_de  text := left(btrim(coalesce(p->>'de', '')), 200);
+  v_pl  jsonb := p->'pl';
+  v_yo  uuid := orden_yo_id();
+  v_nom text;
+  v_en  timestamptz := now();
+begin
+  perform pos_fabrica_ok();
+  if v_pl is null or jsonb_typeof(v_pl) <> 'object' or jsonb_typeof(v_pl->'locales') <> 'array' or jsonb_array_length(v_pl->'locales') = 0 then
+    raise exception 'La planilla no tiene locales: no se guardó.';
+  end if;
+  if length(v_pl::text) > 3000000 then raise exception 'La planilla es demasiado grande para guardarla.'; end if;
+  select pe.nombre into v_nom from orden_personas pe where pe.id = v_yo;
+  insert into pos_reparto_planilla (id, de, datos, cargada_en, cargada_por, cargada_nombre)
+  values (true, v_de, v_pl, v_en, v_yo, v_nom)
+  on conflict (id) do update set de = excluded.de, datos = excluded.datos, cargada_en = excluded.cargada_en,
+                                 cargada_por = excluded.cargada_por, cargada_nombre = excluded.cargada_nombre;
+  return jsonb_build_object('cargada_en', v_en, 'cargada_nombre', v_nom);
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_reparto_planilla_guardar(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_reparto_planilla_guardar(jsonb) TO authenticated;
+
+/* Anotar un reparto que terminó en remitos: p = { clave, forma, prendas, productos: [ … ], … }. Con la misma clave no se repite. */
+CREATE OR REPLACE FUNCTION public.pos_reparto_anotar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_clave text := nullif(btrim(coalesce(p->>'clave', '')), '');
+  v_forma text := coalesce(p->>'forma', '');
+  v_yo    uuid := orden_yo_id();
+  v_id    bigint;
+begin
+  perform pos_fabrica_ok();
+  if v_clave is null or length(v_clave) > 80 then raise exception 'Falta la clave del reparto.'; end if;
+  if v_forma not in ('fam', 'rub', 'gen', 'mix', 'nec', 'par') then raise exception 'No conozco esa forma de repartir.'; end if;
+  if jsonb_typeof(p->'productos') <> 'array' or jsonb_array_length(p->'productos') = 0 then raise exception 'El reparto no tiene productos.'; end if;
+  if length(p::text) > 2000000 then raise exception 'El reparto es demasiado grande para anotarlo.'; end if;
+  select r.id into v_id from pos_repartos r where r.clave = v_clave;
+  if found then return jsonb_build_object('id', v_id, 'ya', true); end if;
+  insert into pos_repartos (clave, creado_por, creado_nombre, forma, prendas, datos)
+  values (v_clave, v_yo, (select pe.nombre from orden_personas pe where pe.id = v_yo), v_forma,
+          greatest(coalesce(nullif(p->>'prendas', '')::integer, 0), 0), p - 'clave')
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'ya', false);
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_reparto_anotar(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_reparto_anotar(jsonb) TO authenticated;
+
+/* El historial: los repartos de un período (los últimos 300), del más nuevo al más viejo. */
+CREATE OR REPLACE FUNCTION public.pos_repartos_ver(p_desde date, p_hasta date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_fabrica_ok();
+  return jsonb_build_object('filas', coalesce((
+    select jsonb_agg(jsonb_build_object('id', x.id, 'creado_en', x.creado_en, 'dia', x.dia, 'creado_nombre', x.creado_nombre,
+                                        'forma', x.forma, 'prendas', x.prendas, 'datos', x.datos) order by x.id desc)
+      from (select r.* from pos_repartos r where r.dia between p_desde and p_hasta order by r.id desc limit 300) x), '[]'::jsonb));
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_repartos_ver(date, date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_repartos_ver(date, date) TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

@@ -2227,6 +2227,14 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .rp-formatos b { color: var(--txt); }
 .rp-cols { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .rp-cols i { padding: 2px 10px; border-radius: 7px; border: 1px solid var(--line-alta); background: var(--surface-2); font: 700 12.5px var(--sans); color: var(--txt); }
+/* SQL 292: el historial de los repartos. */
+.pos-caja .rp-hist-formas { max-height: none; }
+.rp-hist td.rp-hist-barra { width: 30%; padding-right: 12px; }
+.rp-hist-barra i { display: block; height: 8px; border-radius: 4px; background: var(--acc); opacity: .5; }
+.rp-hist tbody tr:first-child .rp-hist-barra i { opacity: 1; }
+.rp-hist .pill { margin-left: 6px; }
+.rp-hist-tit { margin-top: 14px; }
+.pos-caja .rp-hist-lista { max-height: 30vh; }
 /* La columna de la izquierda no estira la página: si no entra, se desliza adentro. */
 @media (min-width: 1000px) and (min-height: 560px) {
   #cuerpo.pos-cuerpo.lleno.rp-cuerpo { height: calc(100vh - 22px); }
