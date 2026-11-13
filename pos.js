@@ -5281,6 +5281,8 @@
         campo('', 'Sucursal', '<select id="ivLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Comprobante', '<select id="ivLetra"><option value="">A y B</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B]], '') + '</select>') +
         campo('iv-buscar', 'Cliente', '<input type="search" id="ivCli" autocomplete="off" spellcheck="false" placeholder="Nombre, CUIT o DNI">') +
+        /* SQL 286: «Mail del 1.º», a la derecha de los filtros (arriba no entra: en la compu del local la cabecera crecía un renglón). Sólo en la oficina y si la base lo tiene. */
+        '<span id="ivMailHost" class="iv-mail-host"></span>' +
       '</div>' +
       '<div id="ivLista" class="rgl"><p class="cargando">Cargando…</p></div>' +
       '<div class="tkl-pie" id="ivPie"></div>';
@@ -5408,8 +5410,114 @@
                   nro(cent(f.base)), '0,00', nro(cent(f.iva)), '0,00', '0,00', '0,00', nro(cent(f.total))];
         }).concat([['Total', '', '', '', '', '', '', '', '', '', nro(t.base), '0,00', nro(t.iva), '0,00', '0,00', '0,00', nro(t.total)]]));
     };
+
+    /* ── SQL 286 (Mauricio, 12/11: "todos los primeros automáticamente reciben un mail con la consulta de IVA de todo el mes"):
+       el IVA Ventas del mes anterior sale solo por mail el 1.º, con el resumen por local y un Excel por local (el mismo de
+       «Bajar para Excel»: lo arma la función «mail», iva.ts). Acá, en la oficina, el botón «Mail del 1.º» abre la ventanita:
+       un administrador con el POS lo prende, carga a quién y lo puede mandar en el momento (una prueba, u otro mes); los
+       demás ven si está prendido, a quién le llega y los últimos envíos. Sin el SQL 286 el botón no aparece. ── */
+    var MAIL = null;   // lo que dice la base (pos_iva_mail_ver); null: sin el SQL 286 o sin permiso
+    function mesLargo(m) { return VV_MESES[Number(String(m).slice(5, 7)) - 1].toLowerCase() + ' ' + String(m).slice(0, 4); }
+    function botonMail() {
+      var h = $('ivMailHost');
+      if (!h) return;
+      h.innerHTML = !MAIL ? '' : '<button type="button" class="btn btn-sec btn-chico" id="ivMailBtn" title="El IVA Ventas del mes anterior, por mail, solo, el 1.º de cada mes">' +
+        'Mail del 1.º: ' + (MAIL.activo ? 'prendido' : 'apagado') + '</button>';
+      if (MAIL) $('ivMailBtn').onclick = abrirMail;
+    }
+    function traerMail() {
+      if (!OFICINA) return Promise.resolve(null);
+      return llamar('pos_iva_mail_ver').then(function (d) { MAIL = d; botonMail(); return d; }, function () { MAIL = null; botonMail(); return null; });
+    }
+    function enviosMail() {
+      var es = (MAIL && MAIL.envios) || [];
+      if (!es.length) return '<p class="pos-ayuda">Todavía no se mandó ninguno.</p>';
+      return '<ul class="ivm-envios">' + es.map(function (e) {
+        var a = (e.destinatarios || []).join(', '), mal = e.estado === 'fallo', n = Number(e.comprobantes) || 0;
+        return '<li' + (mal ? ' class="mal"' : '') + '><b>' + esc(mesLargo(e.mes)) + '</b> · ' +
+          (mal ? 'no salió' : e.automatico ? 'salió solo' : 'lo mandó ' + esc(e.persona || 'la oficina')) + ' el ' + esc(fechaHora(e.fecha)) +
+          (a ? (mal ? ' (era para ' + esc(a) + ')' : ' a ' + esc(a)) : '') +
+          (mal ? '' : ' · ' + miles(n) + (n === 1 ? ' comprobante' : ' comprobantes') + ', ' + plata(cent(e.total))) +
+          (e.error ? '<small>' + esc(e.error) + '</small>' : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    function abrirMail() {
+      if (!MAIL) return;
+      var adm = MAIL.puede_cambiar === true, dest = MAIL.destinatarios || [];
+      /* Los últimos 12 meses, con éste (hasta hoy). Arranca en el que se está mirando, si es uno de ésos; si no, el mes pasado. */
+      var hoy = S.ini.hoy, este = hoy.slice(0, 7) + '-01', ms = [];
+      for (var i = 0, y = +hoy.slice(0, 4), m = +hoy.slice(5, 7); i < 12; i++) { ms.push(y + '-' + ('0' + m).slice(-2) + '-01'); if (--m < 1) { m = 12; y--; } }
+      var visto = rango ? rango.desde.slice(0, 7) + '-01' : '';
+      var elegido = ms.indexOf(visto) >= 0 ? visto : MAIL.mes_pasado;
+      var caja = ventana('<h3 id="posVentTit">El IVA Ventas por mail</h3>' +
+        '<p class="pos-bajada">El 1.º de cada mes, a las 9 de la mañana, sale solo un mail con el IVA Ventas del mes anterior de todos los locales: ' +
+          'el resumen por local en el mail y, adjunto, un Excel por local (el mismo de «Bajar para Excel»).</p>' +
+        (adm ?
+          '<label class="pos-check ivm-activo"><input type="checkbox" id="ivmActivo"' + (MAIL.activo ? ' checked' : '') + '> Mandarlo solo el 1.º de cada mes</label>' +
+          campo('ancho ivm-dest', 'A quién se le manda (un mail por renglón)', '<textarea id="ivmDest" rows="3" spellcheck="false" autocomplete="off" placeholder="contador@estudio.com.ar">' +
+            esc(dest.join('\n')) + '</textarea>') +
+          '<div class="ivm-fila"><button type="button" class="btn btn-pri btn-chico" id="ivmGuardar">Guardar</button><span id="ivmGuardado" class="ivm-nota" role="status"></span></div>' +
+          '<h4 class="ivm-tit">Mandarlo ahora</h4>' +
+          '<p class="pos-ayuda">Para probarlo, o para mandar de nuevo un mes: sale en el momento, sin esperar al 1.º.</p>' +
+          '<div class="ivm-fila">' + campo('', 'Mes', '<select id="ivmMes">' + opciones(ms.map(function (x) { return [x, mesLargo(x) + (x === este ? ' (hasta hoy)' : '')]; }), elegido) + '</select>') +
+            campo('ivm-a', 'A qué mail', '<input type="email" id="ivmA" autocomplete="off" spellcheck="false" placeholder="Vacío: a los guardados">') +
+            '<button type="button" class="btn btn-sec btn-chico" id="ivmMandar">Mandar</button></div>' +
+          '<div id="ivmRes" role="status"></div>'
+        : '<div class="pos-cartel">' + (MAIL.activo && dest.length ? 'Está prendido: le llega a <b>' + esc(dest.join(', ')) + '</b>.' :
+            'Está apagado: no sale ningún mail. Lo prende un administrador.') + '</div>') +
+        '<h4 class="ivm-tit">Los últimos envíos</h4><div id="ivmEnvios">' + enviosMail() + '</div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-' + (adm ? 'sec' : 'pri') + ' btn-chico" data-cerrar>Cerrar</button></div>');
+      caja.classList.add('ivm');
+      if (!adm) return;
+      var q = function (id) { return caja.querySelector('#' + id); };
+      q('ivmGuardar').onclick = function () {
+        var b = this, lista = q('ivmDest').value.split(/[\s,;]+/).filter(Boolean);
+        b.disabled = true; q('ivmGuardado').textContent = '';
+        llamar('pos_iva_mail_guardar', { p: { activo: q('ivmActivo').checked, destinatarios: lista } }).then(function (d) {
+          MAIL = d; botonMail();
+          b.disabled = false;
+          q('ivmDest').value = (d.destinatarios || []).join('\n');
+          q('ivmGuardado').textContent = d.activo ? 'Guardado: sale solo el 1.º de cada mes.' : 'Guardado: queda apagado, no sale solo.';
+        }).catch(function (e) { b.disabled = false; q('ivmGuardado').textContent = ''; avisar('err', mensajeDe(e)); });
+      };
+      function mandar(a) {
+        var b = q('ivmMandar');
+        b.disabled = true; b.textContent = 'Mandando…';
+        q('ivmRes').innerHTML = '';
+        pedirAlMail({ accion: 'iva_mensual', mes: q('ivmMes').value, a: a || undefined }, 120000).then(function (x) {
+          b.disabled = false; b.textContent = 'Mandar';
+          if (!x.ok) {
+            q('ivmRes').innerHTML = '<div class="pos-cartel mal">' + esc(x.error || 'No se pudo mandar el mail.') +
+              (x.codigo === 'sin_respuesta' ? ' Si tardó mucho, puede que haya salido igual: fijate abajo, en los últimos envíos.' : '') + '</div>';
+          } else {
+            var n = Number(x.comprobantes) || 0;
+            q('ivmRes').innerHTML = '<div class="pos-cartel ivm-ok">Listo: salió el IVA Ventas de ' + esc(mesLargo(x.mes)) + ' a <b>' + esc((x.enviados || []).join(', ')) + '</b> (' +
+              (n ? miles(n) + (n === 1 ? ' comprobante' : ' comprobantes') : 'sin comprobantes ese mes') + ').' +
+              (x.fallaron && x.fallaron.length ? ' No se le pudo mandar a ' + esc(x.fallaron.map(function (f) { return f.mail; }).join(', ')) + '.' : '') + '</div>';
+          }
+          return traerMail().then(function () { if (MAIL) q('ivmEnvios').innerHTML = enviosMail(); });
+        });
+      }
+      q('ivmMandar').onclick = function () {
+        var a = q('ivmA').value.trim().toLowerCase(), ds = MAIL.destinatarios || [];
+        if (a) { mandar(a); return; }
+        if (!ds.length) {
+          q('ivmRes').innerHTML = '<div class="pos-cartel mal">Escribí a qué mail mandarlo: todavía no hay ninguno guardado.</div>';
+          q('ivmA').focus();
+          return;
+        }
+        /* A los de verdad, recién con un sí: no es una prueba. */
+        q('ivmRes').innerHTML = '<div class="pos-cartel ivm-seguro">Va a salir ahora a <b>' + esc(ds.join(', ')) + '</b>. ' +
+          '<span><button type="button" class="btn btn-pri btn-chico" id="ivmSi">Sí, mandarlo</button> <button type="button" class="btn btn-sec btn-chico" id="ivmNo">No</button></span></div>';
+        q('ivmSi').onclick = function () { mandar(''); };
+        q('ivmNo').onclick = function () { q('ivmRes').innerHTML = ''; };
+      };
+      q('ivmA').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); q('ivmMandar').click(); } };
+    }
+
     cargar();
     actualizable(cargar);
+    traerMail();
   }
 
   /* ════════════════════════════════════════════════════════════════════

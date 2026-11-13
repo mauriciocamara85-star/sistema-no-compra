@@ -1666,6 +1666,24 @@ button.dp-r[aria-pressed="true"] { background: var(--surface-2); box-shadow: ins
 .dp-cajas tbody tr:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .dp-cajas td { white-space: nowrap; }
 .dp-cajas td.dp-nunca { color: var(--warn-txt); font-weight: 600; }
+/* SQL 286: el botón «Mail del 1.º» del IVA Ventas, a la derecha del renglón de los filtros, y su ventanita «El IVA Ventas por mail». */
+.iv-mail-host { margin-left: auto; align-self: flex-end; }
+.iv-mail-host:empty { display: none; }
+.pos-caja.ivm .ivm-activo { margin: 2px 0 10px; font-weight: 600; }
+.pos-caja.ivm .ivm-dest textarea { width: 100%; resize: vertical; font: 13.5px/1.45 ui-monospace, Consolas, monospace; }
+.ivm-fila { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin: 10px 0 0; }
+.ivm-fila .pos-f { margin: 0; }
+.ivm-fila .ivm-a { flex: 1 1 200px; }
+.ivm-nota { font-size: 13px; color: var(--txt-2); align-self: center; }
+.ivm-tit { margin: 18px 0 4px; font-size: 14px; font-weight: 700; color: var(--txt); }
+#ivmRes { margin-top: 10px; }
+#ivmRes .pos-cartel { margin-bottom: 0; }
+.pos-cartel.ivm-ok { background: var(--ok-soft); border-color: transparent; color: var(--ok-txt); }
+.pos-cartel.ivm-ok b { color: inherit; }
+.pos-cartel.ivm-seguro span { display: inline-flex; gap: 8px; margin-left: 6px; vertical-align: middle; }
+.ivm-envios { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; line-height: 1.4; color: var(--txt-2); }
+.ivm-envios li.mal { color: var(--bad-txt); }
+.ivm-envios small { display: block; color: var(--txt-3); }
 /* SQL 285: la sucursal que todavía no usa el POS (apagada) y los renglones que sólo se miran: sin la manito ni el resalte. */
 .dp-cajas tbody tr.dp-sin-pos td, .dp-cajas tbody tr.dp-sin-pos td b { color: var(--txt-3); font-weight: 400; }
 .pos-tabla tbody tr.no-abre, .dp-cajas tbody tr.no-abre { cursor: default; }

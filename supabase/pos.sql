@@ -14463,3 +14463,254 @@ begin
 end $function$;
 
 notify pgrst, 'reload schema';
+
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+--  SQL 286 (13/11/2026): EL IVA VENTAS POR MAIL, EL 1.º DE CADA MES (App Orden: correr-en-supabase-286.sql)
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+-- ═══ SQL 286 · El IVA Ventas del mes, por mail, solo, el 1.º de cada mes (13/11/2026) ═══
+-- Pedido de Mauricio (12/11): «Automáticamente a todos los primeros se les tiene que mandar un mail… Ahora que tenemos
+-- marketing VDH lo podemos mandar. Todos los primeros automáticamente reciben un mail con la consulta de IVA de todo el mes».
+--
+-- VA DESPUÉS DEL SQL 285 (Fábrica → Contable): si el 285 no está corrido, éste se frena solo y no cambia nada.
+--
+-- Qué hace:
+--   1. Dos tablas nuevas: pos_iva_mail (un solo renglón: si está prendido y a quién se manda) y pos_iva_mail_envios (cada
+--      envío: de qué mes, a quién, cuándo, y si salió o por qué no).
+--   2. pos_iva_mail_ver (lo que muestra la pantalla del IVA Ventas) y pos_iva_mail_guardar (prenderlo, apagarlo y cambiar a
+--      quién se manda: sólo un administrador con el POS).
+--   3. pos_iva_mail_preparar y pos_iva_mail_anotar: las usa la función «mail» del servidor para armar el mail y dejar
+--      anotado cómo le fue. Un administrador con el POS también puede mandarlo a mano (una prueba, o el de otro mes).
+--   4. Una tarea programada (pos-iva-mensual): los días 1, 2 y 3 de cada mes a las 9 de la mañana le pide a la función «mail»
+--      el IVA Ventas del mes anterior. Si ya salió, o está apagado, no hace nada (el 2 y el 3 son el reintento).
+-- ARRANCA APAGADO Y SIN DESTINATARIOS: no sale ningún mail hasta que un administrador lo prenda y cargue a quién mandarlo
+-- (en la pantalla del IVA Ventas). No cambia ninguna función ni ningún dato de los que ya están.
+-- Se puede correr más de una vez (no pisa lo ya cargado). Se deshace con deshacer-286.sql. Corre entero o nada.
+
+DO $$
+BEGIN
+  IF public.pos_permiso_del_rol('supervisor', false, 'contable') THEN
+    RAISE EXCEPTION 'Primero hay que correr el SQL 285 (Fábrica → Contable): el 286 va después.';
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS public.pos_iva_mail (
+  id            boolean PRIMARY KEY DEFAULT true CHECK (id),
+  activo        boolean NOT NULL DEFAULT false,
+  destinatarios text[]  NOT NULL DEFAULT '{}',
+  llave         text    NOT NULL DEFAULT replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+  cambiado_por  uuid REFERENCES public.orden_personas(id),
+  cambiado_en   timestamptz
+);
+COMMENT ON TABLE public.pos_iva_mail IS 'SQL 286: el mail automático del IVA Ventas (un solo renglón): si está prendido, a quién se manda y la llave de la tarea programada.';
+INSERT INTO public.pos_iva_mail (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+ALTER TABLE public.pos_iva_mail ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_iva_mail FROM PUBLIC, anon, authenticated;
+
+CREATE TABLE IF NOT EXISTS public.pos_iva_mail_envios (
+  id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  mes            date NOT NULL,
+  automatico     boolean NOT NULL,
+  destinatarios  text[] NOT NULL,
+  estado         text NOT NULL CHECK (estado IN ('enviado', 'fallo')),
+  error          text,
+  comprobantes   integer NOT NULL DEFAULT 0,
+  total          numeric NOT NULL DEFAULT 0,
+  persona_id     uuid REFERENCES public.orden_personas(id),
+  persona_nombre text,
+  creado_en      timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE public.pos_iva_mail_envios IS 'SQL 286: cada vez que se mandó (o se quiso mandar) el IVA Ventas por mail: de qué mes, a quién, cuándo y cómo le fue.';
+CREATE INDEX IF NOT EXISTS pos_iva_mail_envios_mes ON public.pos_iva_mail_envios (mes, creado_en DESC);
+ALTER TABLE public.pos_iva_mail_envios ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.pos_iva_mail_envios FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.pos_iva_mail_envios_id_seq FROM PUBLIC, anon, authenticated;
+
+/* Un mail bien escrito, en minúsculas y sin espacios; null si no lo es. Lo mismo que pide la factura por mail (SQL 281):
+   letras sin acento, números y . _ % + - */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_dir(p text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select case when x.d ~ '^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$' and length(x.d) <= 120 then x.d end
+    from (select lower(btrim(coalesce(p, ''))) d) x
+$function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_dir(text) FROM PUBLIC, anon, authenticated;
+
+/* Lo que muestra la pantalla del IVA Ventas (Gestión y Fábrica → Contable): si sale solo, a quién y los últimos envíos. */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_ver()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c pos_iva_mail;
+begin
+  if not pos_puede('contable') then perform pos_permiso('gestion'); end if;
+  select * into c from pos_iva_mail where id;
+  return jsonb_build_object(
+    'activo', coalesce(c.activo, false),
+    'destinatarios', to_jsonb(coalesce(c.destinatarios, '{}'::text[])),
+    'puede_cambiar', orden_es_admin() and pos_puede('usa') and not orden_es_servicio(),
+    'mes_pasado', (date_trunc('month', pos_hoy()::timestamp) - interval '1 month')::date,
+    'envios', coalesce((
+      select jsonb_agg(jsonb_build_object('mes', e.mes, 'automatico', e.automatico, 'destinatarios', to_jsonb(e.destinatarios),
+                                          'estado', e.estado, 'error', e.error, 'comprobantes', e.comprobantes, 'total', e.total,
+                                          'persona', e.persona_nombre, 'fecha', e.creado_en) order by e.creado_en desc, e.id desc)
+        from (select * from pos_iva_mail_envios order by creado_en desc, id desc limit 6) e), '[]'::jsonb));
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_ver() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_iva_mail_ver() TO authenticated;
+
+/* Prenderlo, apagarlo y cambiar a quién se manda: p = { activo, destinatarios: ["a@b.com", …] }. Sólo un administrador con el POS. */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_act boolean;
+  v_dir text[] := '{}';
+  x     text;
+  d     text;
+begin
+  if orden_es_servicio() or not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'El mail del IVA Ventas lo configura un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p) is distinct from 'object' or jsonb_typeof(p->'activo') is distinct from 'boolean'
+     or jsonb_typeof(p->'destinatarios') is distinct from 'array' then
+    raise exception 'Faltan datos: si se manda solo y a quién.';
+  end if;
+  for x in select jsonb_array_elements_text(p->'destinatarios') loop
+    if btrim(coalesce(x, '')) = '' then continue; end if;
+    d := pos_iva_mail_dir(x);
+    if d is null then raise exception 'Este mail no está bien escrito: %', left(btrim(x), 80); end if;
+    if not (d = any(v_dir)) then v_dir := v_dir || d; end if;
+  end loop;
+  if cardinality(v_dir) > 8 then raise exception 'Son demasiados mails: como mucho, 8.'; end if;
+  v_act := (p->>'activo')::boolean;
+  if v_act and cardinality(v_dir) = 0 then raise exception 'Para prenderlo, cargá al menos un mail.'; end if;
+  update pos_iva_mail set activo = v_act, destinatarios = v_dir, cambiado_por = orden_yo_id(), cambiado_en = now() where id;
+  return pos_iva_mail_ver();
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_guardar(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_iva_mail_guardar(jsonb) TO authenticated;
+
+/* Lo que necesita la función «mail» para armar el mail: el mes, a quién y el IVA Ventas de todos los locales.
+   - La tarea programada (el servidor, con la llave que sólo tiene la base): el mes pasado, a los destinatarios cargados; si
+     está apagado, si ya salió o si no es principio de mes, contesta { saltear } y no se manda nada.
+   - Un administrador con el POS (a mano): el mes que elija, a los destinatarios cargados o a la dirección que escriba. */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_preparar(p_mes date DEFAULT NULL::date, p_a text DEFAULT NULL::text, p_llave text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c       pos_iva_mail;
+  v_auto  boolean := orden_es_servicio();
+  v_hoy   date := pos_hoy();
+  v_este  date := date_trunc('month', pos_hoy()::timestamp)::date;
+  v_mes   date;
+  v_hasta date;
+  v_dir   text[];
+  v_yo    orden_personas;
+begin
+  select * into c from pos_iva_mail where id;
+  if not found then raise exception 'Falta la configuración del mail del IVA Ventas.'; end if;
+  if v_auto then
+    if p_llave is null or p_llave is distinct from c.llave then
+      raise exception 'Este pedido no viene de la tarea programada.' using errcode = '42501';
+    end if;
+    v_mes := (v_este - interval '1 month')::date;
+    if not c.activo then return jsonb_build_object('saltear', 'apagado'); end if;
+    if cardinality(c.destinatarios) = 0 then return jsonb_build_object('saltear', 'sin_destinatarios'); end if;
+    if extract(day from v_hoy) > 5 then return jsonb_build_object('saltear', 'fuera_de_fecha'); end if;
+    if exists (select 1 from pos_iva_mail_envios e where e.mes = v_mes and e.automatico and e.estado = 'enviado') then
+      return jsonb_build_object('saltear', 'ya_enviado');
+    end if;
+    if (select count(*) from pos_iva_mail_envios e where e.automatico and e.creado_en > now() - interval '1 day') >= 6 then
+      return jsonb_build_object('saltear', 'demasiados_intentos');
+    end if;
+    v_dir := c.destinatarios;
+  else
+    if not orden_es_admin() or not pos_puede('usa') then
+      raise exception 'El IVA Ventas por mail lo manda un administrador que tiene el POS.' using errcode = '42501';
+    end if;
+    v_mes := date_trunc('month', coalesce(p_mes, (v_este - interval '1 month')::date)::timestamp)::date;
+    if v_mes > v_este or v_mes < (v_este - interval '24 months')::date then raise exception 'Ese mes no se puede mandar.'; end if;
+    if btrim(coalesce(p_a, '')) <> '' then
+      if pos_iva_mail_dir(p_a) is null then raise exception 'El mail no está bien escrito.'; end if;
+      v_dir := array[pos_iva_mail_dir(p_a)];
+    else
+      v_dir := c.destinatarios;
+    end if;
+    if cardinality(v_dir) = 0 then raise exception 'No hay a quién mandarlo: escribí un mail.'; end if;
+    if (select count(*) from pos_iva_mail_envios e where not e.automatico and e.creado_en > now() - interval '1 hour') >= 10 then
+      raise exception 'Ya se mandó muchas veces en la última hora: esperá un rato.';
+    end if;
+    select * into v_yo from orden_personas where id = orden_yo_id();
+  end if;
+  v_hasta := (v_mes + interval '1 month' - interval '1 day')::date;
+  return jsonb_build_object(
+    'mes', v_mes, 'desde', v_mes, 'hasta', v_hasta, 'hoy', v_hoy, 'automatico', v_auto,
+    'destinatarios', to_jsonb(v_dir),
+    'persona', case when v_auto then null else jsonb_build_object('id', v_yo.id, 'nombre', orden_nombre_lista(v_yo.nombre, v_yo.inicial)) end,
+    'iva', pos_iva_ventas(v_mes, v_hasta, null, null));
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_preparar(date, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_iva_mail_preparar(date, text, text) TO authenticated, service_role;
+
+/* Cómo le fue a un envío: lo anota la función «mail» (sólo el servidor). */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_anotar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_id bigint;
+begin
+  if not orden_es_servicio() then raise exception 'Esto lo anota el servidor.' using errcode = '42501'; end if;
+  insert into pos_iva_mail_envios (mes, automatico, destinatarios, estado, error, comprobantes, total, persona_id, persona_nombre)
+  values ((p->>'mes')::date, coalesce((p->>'automatico')::boolean, false),
+          array(select jsonb_array_elements_text(case when jsonb_typeof(p->'destinatarios') = 'array' then p->'destinatarios' else '[]'::jsonb end)),
+          case when p->>'estado' = 'enviado' then 'enviado' else 'fallo' end, nullif(left(coalesce(p->>'error', ''), 500), ''),
+          coalesce((p->>'comprobantes')::int, 0), coalesce((p->>'total')::numeric, 0),
+          (select q.id from orden_personas q where q.id = nullif(p->>'persona_id', '')::uuid), nullif(p->>'persona_nombre', ''))
+  returning id into v_id;
+  return jsonb_build_object('id', v_id);
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_anotar(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.pos_iva_mail_anotar(jsonb) TO service_role;
+
+/* Lo que corre la tarea programada: si está prendido y el del mes pasado todavía no salió, le pide el envío a la función
+   «mail» (va con la llave; la función se la devuelve a la base, que la revisa). */
+CREATE OR REPLACE FUNCTION public.pos_iva_mail_disparar()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c     pos_iva_mail;
+  v_mes date := (date_trunc('month', pos_hoy()::timestamp) - interval '1 month')::date;
+begin
+  select * into c from pos_iva_mail where id;
+  if not found or not c.activo or cardinality(c.destinatarios) = 0 then return 'apagado'; end if;
+  if exists (select 1 from pos_iva_mail_envios e where e.mes = v_mes and e.automatico and e.estado = 'enviado') then return 'ya_enviado'; end if;
+  perform net.http_post(
+    url := 'https://gfjdjupuwxohkgchqykx.supabase.co/functions/v1/mail',
+    body := jsonb_build_object('accion', 'iva_mensual', 'llave', c.llave),
+    headers := '{"Content-Type":"application/json"}'::jsonb,
+    timeout_milliseconds := 120000);
+  return 'pedido';
+end $function$;
+REVOKE ALL ON FUNCTION public.pos_iva_mail_disparar() FROM PUBLIC, anon, authenticated;
+
+/* Los días 1, 2 y 3 de cada mes a las 12:00 UTC (las 9 de la mañana en la Argentina). */
+SELECT cron.schedule('pos-iva-mensual', '0 12 1-3 * *', 'select public.pos_iva_mail_disparar()');
+
+NOTIFY pgrst, 'reload schema';

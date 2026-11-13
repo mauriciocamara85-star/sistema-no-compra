@@ -25,11 +25,15 @@
  *   POST /functions/v1/mail   { accion: 'wa_plantilla' }   sólo un administrador: le pide a Meta que revise la plantilla
  *     (si no existe, la crea; si ya existe, dice cómo está). No hace falta ninguna llave aparte: alcanza su sesión.
  *
+ *   POST /functions/v1/mail   { accion: 'iva_mensual', mes?, a? }   con la sesión de un administrador con el POS, o
+ *                             { accion: 'iva_mensual', llave }     de la tarea programada del 1.º de cada mes (SQL 286)
+ *     → { ok: true, mes, enviados, fallaron, comprobantes, total } | { ok: true, saltear } | { ok: false, error, codigo }
  * Se publica con --no-verify-jwt: quién entra lo decide esta función (y la base).
  */
 // deno-lint-ignore-file no-explicit-any
 import { armarMensaje, casilla, entregar, MailError } from './correo.ts';
 import { comprobante, fechaLarga, n2, pdfFactura } from './factura.ts';
+import { mailIva, resumenIva } from './iva.ts';
 import { crearPlantilla, CUERPO, IDIOMA, mandarFacturaWa, numero, PIE, plantilla, PLANTILLA, subirPdf, textoPlantilla } from './whatsapp.ts';
 
 const CORS = {
@@ -78,7 +82,8 @@ async function base(funcion: string, cuerpo: unknown, token?: string): Promise<a
   }
   if (r.status === 404) {
     await r.body?.cancel();
-    throw new MailError('sin_sql', /pos_venta_mail_/.test(funcion) ? 'Todavía falta correr el SQL 281 (mandar la factura por mail) en Supabase.'
+    throw new MailError('sin_sql', /pos_iva_mail_/.test(funcion) ? 'Todavía falta correr el SQL 286 (el IVA Ventas por mail) en Supabase.'
+      : /pos_venta_mail_/.test(funcion) ? 'Todavía falta correr el SQL 281 (mandar la factura por mail) en Supabase.'
       : 'Todavía falta correr el SQL 284 (mandar la factura por WhatsApp) en Supabase.');
   }
   if (!r.ok) throw new MailError(token ? 'venta' : 'base', await porqueBase(r));
@@ -279,6 +284,60 @@ const EJEMPLO = {
   },
 };
 
+/* ── El IVA Ventas del mes (SQL 286) ────────────────────────────────────── */
+
+/* Mauricio (12/11): «todos los primeros automáticamente reciben un mail con la consulta de IVA de todo el mes».
+   Dos caminos, y en los dos decide la base (pos_iva_mail_preparar):
+   - la tarea programada del 1.º: llega SIN sesión y con la llave que sólo tiene la base; va el mes pasado a los
+     destinatarios cargados. Si está apagado, si ya salió o si no es principio de mes, la base contesta «saltear»;
+   - un administrador con el POS, desde la pantalla del IVA Ventas: el mes que elija, a los cargados o a un mail escrito. */
+async function mandarIva(req: Request, p: any) {
+  const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  let prep: any;
+  if (token && token !== ANONIMA && token !== SERVICIO) {
+    const mes = typeof p.mes === 'string' && /^\d{4}-\d\d(-\d\d)?$/.test(p.mes) ? p.mes.slice(0, 7) + '-01' : null;
+    const a = typeof p.a === 'string' ? p.a.trim().toLowerCase() : '';
+    if (a && (a.length > 120 || !MAIL_OK.test(a))) throw new MailError('direccion', 'El mail no está bien escrito.');
+    prep = await base('pos_iva_mail_preparar', { p_mes: mes, p_a: a || null, p_llave: null }, token);
+  } else {
+    if (typeof p.llave !== 'string' || p.llave.length < 20 || p.llave.length > 200) throw new MailError('sin_sesion', 'Se cerró tu sesión: entrá de nuevo.');
+    prep = await base('pos_iva_mail_preparar', { p_mes: null, p_a: null, p_llave: p.llave });
+  }
+  if (prep?.saltear) return { ok: true, saltear: String(prep.saltear) };
+  if (!prep?.mes || !Array.isArray(prep.destinatarios) || !prep.destinatarios.length || !prep.iva) {
+    throw new MailError('base', 'La base contestó algo que no se entiende al preparar el IVA Ventas.');
+  }
+  const r = resumenIva(prep);
+  const anotar = (estado: 'enviado' | 'fallo', error: string | null, destinatarios: string[]) =>
+    base('pos_iva_mail_anotar', { p: {
+      mes: prep.mes, automatico: !!prep.automatico, destinatarios, estado, error,
+      comprobantes: r.t.tickets + r.t.notas, total: r.t.total / 100, persona_id: prep.persona?.id ?? null, persona_nombre: prep.persona?.nombre ?? null,
+    } });
+  const salieron: string[] = [], fallaron: { mail: string; error: string }[] = [];
+  try {
+    const c = casilla();   // sin la casilla conectada, se corta acá
+    for (const para of prep.destinatarios as string[]) {
+      try { await entregar(c, para, mailIva(prep, c, para)); salieron.push(para); }
+      catch (e) {
+        if (!(e instanceof MailError)) console.error('mail (iva):', e);
+        fallaron.push({ mail: para, error: e instanceof MailError ? e.codigo + ': ' + e.message : 'interno: No se pudo armar el mail.' });
+      }
+    }
+  } catch (e) {
+    const x = e instanceof MailError ? e : new MailError('interno', 'No se pudo armar el mail.');
+    await anotar('fallo', x.codigo + ': ' + x.message, prep.destinatarios).catch(() => {});
+    throw x;
+  }
+  if (!salieron.length) {
+    await anotar('fallo', fallaron[0].error, prep.destinatarios).catch(() => {});
+    throw new MailError('entrega', fallaron[0].error.replace(/^[a-z_]+: /, ''));
+  }
+  /* Salió. Si a alguno no le llegó, queda dicho. Si justo falla la anotación, el mail ya está mandado: se avisa igual. */
+  await anotar('enviado', fallaron.length ? 'No se le pudo mandar a ' + fallaron.map((x) => x.mail).join(', ') + ' (' + fallaron[0].error + ')' : null, salieron)
+    .catch((e) => console.error('mail (iva): salió pero no se anotó:', e));
+  return { ok: true, mes: prep.mes, nombre: r.nombre, enviados: salieron, fallaron, comprobantes: r.t.tickets + r.t.notas, total: r.t.total / 100 };
+}
+
 function conError(e: unknown, que: string): Response {
   if (e instanceof MailError) return responder({ ok: false, error: e.message, codigo: e.codigo }, e.codigo === 'sin_sesion' ? 401 : 200);
   console.error('mail:', e);
@@ -293,7 +352,12 @@ export async function manejar(req: Request): Promise<Response> {
   try { p = await req.json(); } catch { p = null; }
   if (!p || typeof p !== 'object') return responder({ ok: false, error: 'El pedido no se entiende.' }, 400);
 
-  if (p.accion !== 'factura' && p.accion !== 'canales' && p.accion !== 'wa_plantilla') return responder({ ok: false, error: 'Esa acción no existe.' }, 400);
+  if (p.accion !== 'factura' && p.accion !== 'canales' && p.accion !== 'wa_plantilla' && p.accion !== 'iva_mensual') return responder({ ok: false, error: 'Esa acción no existe.' }, 400);
+
+  /* SQL 286: el IVA Ventas del mes. Va antes de pedir la sesión: la tarea programada del 1.º llega sin sesión, con su llave. */
+  if (p.accion === 'iva_mensual') {
+    try { return responder(await mandarIva(req, p)); } catch (e) { return conError(e, 'Algo falló al mandar el IVA Ventas.'); }
+  }
 
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   if (!token || token === ANONIMA || token === SERVICIO) {
