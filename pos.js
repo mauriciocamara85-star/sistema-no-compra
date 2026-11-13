@@ -501,7 +501,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_venta_mail/.test(m) ? '281 (mandar la factura por mail)' : /pos_club_beneficios|pos_cupon/.test(m) ? '265 (el Club en la venta: cupones, cumpleaños y premios)' :
+      return 'Todavía falta correr el SQL ' + (/pos_venta_wa_|pos_venta_envio_|pos_envio_canales/.test(m) ? '284 (mandar la factura por WhatsApp)' : /pos_venta_mail/.test(m) ? '281 (mandar la factura por mail)' : /pos_club_beneficios|pos_cupon/.test(m) ? '265 (el Club en la venta: cupones, cumpleaños y premios)' :
                                              /pos_fabrica_/.test(m) ? '258 (el depósito de la Fábrica)' : /pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
@@ -3192,7 +3192,8 @@
         /* ARCA: la A o B de prueba (SQL 274) y la normal de la sucursal que factura (SQL 276: Rivadavia, ARCA de prueba).
            La base decide. */
         arca: !r.factura && leTocaArca({ letra: p.letra, prueba: p.prueba, local_id: p.local_id }) ? r.id : null,
-        venta: r.id, mail: p.cliente_email || '' });   // SQL 281: «Mandar por mail» al lado de Aceptar
+        /* SQL 281 y 284: «Mandar la factura» al lado de Aceptar, con el mail y el celular del cliente si los tiene. */
+        venta: r.id, para: { mail: p.cliente_email || '', tel: p.cliente_tel || '', envio: p.envio || '' } });
     }).catch(function (e) {
       S.guardando = false;
       if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
@@ -3221,9 +3222,9 @@
      ARCA (todavía no está conectado): cuando lo esté, pos_venta_guardar (y pos_nc_hacer) devuelve en `factura` lo mismo que guarda
      —{ cae, cae_vence ('2026-11-17' o el '20261117' que da ARCA), tipo ('A' | 'B'), punto_venta, numero }— y, si ARCA no la
      autorizó, `factura_error` con el porqué. Con eso esta ventana ya muestra el recuadro de la factura.
-     El ticket por mail va en la de la venta, «junto con ARCA» (él, 7/11): un «Mandar por mail» al lado de Aceptar, y con Enter
+     El ticket por mail va en la de la venta, «junto con ARCA» (él, 7/11): un «Mandar la factura» al lado de Aceptar, y con Enter
      sigue siendo Aceptar (BlueSoft deja elegido el «No»). Desde el SQL 281 (12/11) está: botonMailEn, con la factura aprobada; abre
-     la ventanita del mail (mandarMail), con el del cliente ya cargado si lo tiene.
+     la ventanita (mandarMail), con el mail o el celular del cliente ya cargado si lo tiene. Con el SQL 284, también por WhatsApp.
      o: titulo; datos (al lado del título: la sucursal, el total); notas (los renglones de abajo; los vacíos no salen); factura y
      facturaError; tono: 'cola' (sin internet, con la nube) o 'prueba', en el amarillo del cartel de la venta (si no, el tilde
      verde); despues.
@@ -3240,10 +3241,11 @@
     caja.classList.add('vg');
     if (o.tono) caja.classList.add('vg-aviso');
     if (o.despues) _alCerrar = o.despues;
-    /* SQL 281: «Mandar por mail», con la factura aprobada. o.venta: el id de la venta; o.mail: el del cliente, si lo tiene. */
-    if (o.arca) pedirFacturaEn(caja, o.arca, false, o.mail);
+    /* SQL 281 y 284: «Mandar la factura», con la factura aprobada. o.venta: el id de la venta; o.para: { mail, tel, envio } del
+       cliente, lo que tenga. */
+    if (o.arca) pedirFacturaEn(caja, o.arca, false, o.para);
     else if (o.arcaNota) pedirFacturaEn(caja, o.arcaNota, true);   // SQL 279: el CAE de la nota de crédito
-    else botonMailEn(caja, o.venta, o.factura, o.mail);
+    else botonMailEn(caja, o.venta, o.factura, o.para);
     return caja;
   }
   /** El recuadro de la factura electrónica: la aprobada (comprobante, CAE y vencimiento) o por qué no salió. La del ARCA de
@@ -3289,7 +3291,7 @@
   /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
   function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
   /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
-  function pedirFacturaEn(caja, id, nota, mail) {
+  function pedirFacturaEn(caja, id, nota, para) {
     var lugar = caja.querySelector('.vg-fac-lugar'), listo = false, que = nota ? 'Nota de crédito electrónica' : 'Factura electrónica';
     setTimeout(function () {
       if (!listo && lugar && lugar.isConnected) {
@@ -3300,7 +3302,7 @@
       listo = true;
       if (lugar && lugar.isConnected) {
         lugar.innerHTML = x.factura ? htmlFactura(x.factura, null, false, nota) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x), nota);
-        if (!nota) botonMailEn(caja, id, x.factura, mail);   // SQL 281: «Mandar por mail» la factura recién aprobada
+        if (!nota) botonMailEn(caja, id, x.factura, para);   // SQL 281 y 284: «Mandar la factura» recién aprobada
         return;
       }
       if (x.factura) avisar('ok', que + ' ' + compArca(x.factura) + ' aprobada: CAE ' + x.factura.cae + '.');
@@ -3670,7 +3672,7 @@
           return '<li>Editado el ' + esc(fechaHora(e.fecha)) + (e.persona ? ' por ' + esc(e.persona) : '') + '. Antes: ' + esc(resumenEdicion(e.antes).replace(/.$/, '')) +
             '. Por qué: ' + esc(e.motivo || '') + '</li>';
         }).join('') + '</ul>' : '') +
-        /* SQL 281: a quién se le mandó la factura por mail, cuándo y quién. Se llena cuando contesta la base (mailsDe). */
+        /* SQL 281 y 284: a quién se le mandó la factura (por mail o por WhatsApp), cuándo y quién. Se llena cuando contesta la base (mailsDe). */
         (conCae ? '<ul class="tk-corr" id="tkMails" hidden></ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (anulada && nota ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada con la nota de crédito <b>' + esc(refNota(nota)) + '</b> el ' + esc(fechaHora(nota.fecha)) +
@@ -3687,10 +3689,11 @@
           (corrige ? (c77 ? '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Editar el pago: el medio, la tarjeta y las cuotas sin interés. El total no cambia (es una factura)">Editar</button>' :
                             '<button type="button" class="btn btn-sec btn-chico" id="tkCorregir" title="Se cobró con un medio y se cargó con otro: se corrige sin anular la venta">Corregir el pago</button>') : '') +
           (editaX ? '<button type="button" class="btn btn-sec btn-chico" id="tkEditar" title="Cambiar las prendas, las cantidades, los precios, los descuentos o el vendedor: el ticket sigue con su número y en su día">Editar</button>' : '') +
-          /* SQL 281: «Mandar por mail» la factura (Mauricio, 12/11: «no le mandé el ticket, me olvidé… pongamos el mail y se
-             mande»). Aparece cuando la base contesta que tiene el 281 (mailsDe); después, de entrada. */
-          (conCae ? '<button type="button" class="btn btn-sec btn-chico" id="tkMail" title="Le llega al cliente la factura en PDF, la misma hoja de «Exportar PDF»"' +
-            (S.conMail ? '' : ' hidden') + '>Mandar por mail</button>' : '') +
+          /* SQL 281 y 284: «Mandar la factura», por mail o por WhatsApp (Mauricio, 12/11: «no le mandé el ticket, me olvidé…
+             pongamos el mail y se mande»; y después, «armar esto de WhatsApp también»). Aparece cuando la base contesta que
+             tiene el 281 (mailsDe); después, de entrada. */
+          (conCae ? '<button type="button" class="btn btn-sec btn-chico" id="tkMail" title="Le llega al cliente la factura en PDF (la misma hoja de «Exportar PDF»), por mail o por WhatsApp"' +
+            (S.conMail ? '' : ' hidden') + '>Mandar la factura</button>' : '') +
           (conCae ? '<button type="button" class="btn btn-sec btn-chico" id="tkPdf" title="La factura en una hoja A4, como la de BlueSoft: se imprime o se guarda con «Guardar como PDF»">Exportar PDF</button>' : '') +
           /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la
              Nueva venta). Mauricio (12/11): «¿Sirve duplicar? Yo la verdad que nunca lo usé» → sólo en el ticket anulado, que es
@@ -3725,11 +3728,12 @@
       if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
       var pd = dentro.querySelector('#tkPdf');
       if (pd) pd.onclick = function () { facturaPdf(t); };
-      /* SQL 281: el mail. El campo viene con el mail del cliente o, si no tiene, con el último al que se mandó. */
-      var bm = dentro.querySelector('#tkMail'), ultimoMail = '';
+      /* SQL 281 y 284: mandar la factura. El campo viene con el mail (o el celular) del cliente o, si no tiene, con el último
+         al que se mandó. */
+      var bm = dentro.querySelector('#tkMail'), ultimoMail = '', ultimoTel = '', ultimoCanal = '';
       if (bm) {
         bm.onclick = function () {
-          mandarMail({ id: t.id, factura: t.factura, mail: t.cliente_email || ultimoMail,
+          mandarMail({ id: t.id, factura: t.factura, mail: t.cliente_email || ultimoMail, tel: t.cliente_tel || ultimoTel, envio: t.envio || '', ultimo: ultimoCanal,
             volver: function () { abrirTicket(t.id, alCambiar, volver); } });
         };
         mailsDe(t.id).then(function (xs) {
@@ -3738,10 +3742,11 @@
           bm.hidden = false;
           var ul = dentro.querySelector('#tkMails');
           if (!ul || !xs.length) return;
-          ultimoMail = xs[xs.length - 1].mail || '';
-          ul.innerHTML = xs.map(function (x) {
-            return '<li>Factura enviada por mail a <b>' + esc(x.mail) + '</b> el ' + esc(fechaHora(x.fecha)) + (x.persona ? ' por ' + esc(x.persona) : '') + '</li>';
-          }).join('');
+          xs.forEach(function (x) {
+            ultimoCanal = x.canal === 'whatsapp' ? 'whatsapp' : 'mail';
+            if (ultimoCanal === 'whatsapp') ultimoTel = telLindo(x.mail); else ultimoMail = x.mail || '';
+          });
+          ul.innerHTML = xs.map(renglonEnvio).join('');
           ul.hidden = false;
         });
       }
@@ -3930,16 +3935,24 @@
     '.fa-arca-txt i { display: block; font-size: 13pt; margin-bottom: 2mm; } .fa-arca-txt div { font-size: 8pt; }' +
     '.fa-qr svg { display: block; width: 30mm; height: 30mm; }';
 
-  /* ── La factura por mail (SQL 281, 12/11) ──
+  /* ── La factura por mail (SQL 281) y por WhatsApp (SQL 284) · 12/11 ──
      Mauricio (12/11, con la foto del Ticket B-00000002): «No le mandé el ticket, me olvidé. Estaría bueno que haya la opción de
      mandarlo. Pongamos el mail y se mande.» En los locales no hay impresora: la factura se entrega por mail, como en BlueSoft.
-     «Mandar por mail» está en el ticket con factura electrónica y en la ventana de «listo» de la venta (al lado de Aceptar, que
+     Y después de probarlo: «yo quiero que nuestros sistemas sean los mejores, así que me gustaría armar esto de WhatsApp también».
+     «Mandar la factura» está en el ticket con factura electrónica y en la ventana de «listo» de la venta (al lado de Aceptar, que
      sigue siendo el Enter: BlueSoft deja elegido el «No»). Abre una ventanita con el Mail (viene cargado si el cliente lo tiene)
      y lo manda el servidor (la función «mail»): arma el PDF —la misma hoja de «Exportar PDF»— y lo entrega por la casilla del
      sistema. Queda anotado a quién, cuándo y quién (el ticket lo muestra) y se puede mandar de nuevo.
+     Por WhatsApp es la misma ventanita: arriba se elige «Por mail» o «Por WhatsApp» y se escribe el celular. Sale del WhatsApp
+     del sistema con un mensaje que aprueba Meta (una «plantilla»); el ticket dice después si se entregó, si la leyó o si no
+     llegó. La opción aparece sola cuando el servidor dice que se puede (canalesDe): la base con el SQL 284, la plantilla aprobada
+     y el número conectado. Mientras tanto, sólo el mail. Al administrador la ventanita le dice qué falta, y le deja pedirle la
+     aprobación a Meta.
      El botón aparece solo cuando la base tiene el SQL 281: lo dice mailsDe. */
-  /** Los mails que salieron de una venta: [{ fecha, mail, persona }], del más viejo al último. Sin el SQL 281, null (y S.conMail
-      queda en false: no hay botón). Con el 281, S.conMail queda en true y el botón del ticket siguiente sale de entrada. */
+  /** Lo que se mandó de una venta: [{ fecha, mail (a dónde: la dirección o el celular), persona, canal ('mail' | 'whatsapp'; sin
+      el SQL 284 no viene: es mail), wa (cómo va el WhatsApp: sent, delivered, read, failed) }], del más viejo al último. Sin el
+      SQL 281, null (y S.conMail queda en false: no hay botón). Con el 281, S.conMail queda en true y el botón del ticket
+      siguiente sale de entrada. */
   function mailsDe(id) {
     return llamar('pos_venta_mails_lista', { p_venta: id }).then(function (xs) {
       S.conMail = true;
@@ -3949,71 +3962,187 @@
       return null;
     });
   }
-  /** La función «mail» del servidor manda la factura. Nunca rechaza: devuelve { ok, mail } o { ok: false, error, codigo }. */
-  function pedirMail(id, mail) {
+  /** Un pedido a la función «mail» del servidor. Nunca rechaza: devuelve lo que contestó o { ok: false, error, codigo }. */
+  function pedirAlMail(cuerpo, espera) {
     return persona.token().then(function (t) {
       var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-      var reloj = setTimeout(function () { if (ctl) ctl.abort(); }, 75000);
+      var reloj = setTimeout(function () { if (ctl) ctl.abort(); }, espera || 75000);
       return fetch(BASE + '/functions/v1/mail', {
         method: 'POST',
         signal: ctl ? ctl.signal : undefined,
         headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accion: 'factura', venta_id: id, mail: mail })
+        body: JSON.stringify(cuerpo)
       }).then(function (r) {
         clearTimeout(reloj);
         if (r.status === 404) return { ok: false, codigo: 'sin_funcion', error: 'Falta publicar la función «mail» en el servidor.' };
         return r.json().catch(function () { return { ok: false, error: 'El servidor contestó algo que no se entiende.' }; });
       }, function () {
         clearTimeout(reloj);
-        return { ok: false, codigo: 'sin_respuesta', error: 'No se pudo hablar con el servidor (¿hay internet?). Si tardó mucho, puede que el mail haya salido igual: fijate en el ticket antes de mandarlo de nuevo.' };
+        return { ok: false, codigo: 'sin_respuesta', error: 'No se pudo hablar con el servidor (¿hay internet?).' };
       });
     }, function () {
       return { ok: false, codigo: 'sin_sesion', error: 'Se cerró tu sesión: entrá de nuevo.' };
-    }).then(function (x) {
-      x = x || {};
-      if (!x.ok && !x.error) x.error = 'No se pudo mandar el mail.';
+    }).then(function (x) { return x || {}; });
+  }
+  /** Mandar la factura. canal: 'mail' (destino: la dirección) o 'whatsapp' (destino: el celular, como lo escribieron). Devuelve
+      { ok, … } o { ok: false, error, codigo }. */
+  function pedirMail(id, destino, canal) {
+    var wa = canal === 'whatsapp';
+    return pedirAlMail(wa ? { accion: 'factura', canal: 'whatsapp', venta_id: id, tel: destino } : { accion: 'factura', venta_id: id, mail: destino }).then(function (x) {
+      if (!x.ok && x.codigo === 'sin_respuesta') x.error += ' Si tardó mucho, puede que haya salido igual: fijate en el ticket antes de mandarla de nuevo.';
+      if (!x.ok && !x.error) x.error = wa ? 'No se pudo mandar el WhatsApp.' : 'No se pudo mandar el mail.';
       return x;
     });
   }
-  /** La ventanita del mail. o: { id (la venta), factura, mail (el que viene cargado), volver (al ticket; sin eso, «Cancelar») }. */
+  /** Por dónde se puede mandar ahora: { mail, whatsapp: { listo, estado, numero }, admin }, o null si el servidor no contestó.
+      Con el WhatsApp listo se recuerda (S.canales); si todavía no está, se vuelve a preguntar la próxima vez que abren la
+      ventanita: así la opción aparece sola el día que Meta aprueba el mensaje. */
+  var _canales = null;
+  function canalesDe() {
+    if (S.canales && S.canales.whatsapp && S.canales.whatsapp.listo) return Promise.resolve(S.canales);
+    if (_canales) return _canales;
+    _canales = pedirAlMail({ accion: 'canales' }, 20000).then(function (x) {
+      _canales = null;
+      if (!x.ok) return null;
+      S.canales = x;
+      return x;
+    });
+    return _canales;
+  }
+  /** «5492235845942» → «223 584-5942»; «5491163778377» → «11 6377-8377». Lo que no es un celular de acá, como vino. */
+  function telLindo(t) {
+    var d = String(t || '').replace(/\D/g, '');
+    if (d.length === 13 && d.indexOf('549') === 0) d = d.slice(3);
+    if (d.length !== 10) return String(t || '');
+    return d.indexOf('11') === 0 ? '11 ' + d.slice(2, 6) + '-' + d.slice(6) : d.slice(0, 3) + ' ' + d.slice(3, 6) + '-' + d.slice(6);
+  }
+  /** El renglón del ticket de cada envío: por dónde, a dónde, cuándo, quién y, por WhatsApp, cómo va (lo avisa WhatsApp después). */
+  function renglonEnvio(x) {
+    var wa = x.canal === 'whatsapp';
+    var como = !wa ? '' : x.wa === 'read' ? ' · <b class="tk-wa-ok">la leyó</b>' : x.wa === 'delivered' ? ' · <b class="tk-wa-ok">entregada</b>' :
+      x.wa === 'failed' ? ' · <b class="tk-wa-mal">no llegó</b> (ese número no tiene WhatsApp o no la pudo recibir)' : '';
+    return '<li>Factura enviada por ' + (wa ? 'WhatsApp al <b>' + esc(telLindo(x.mail)) : 'mail a <b>' + esc(x.mail)) + '</b> el ' + esc(fechaHora(x.fecha)) +
+      (x.persona ? ' por ' + esc(x.persona) : '') + como + '</li>';
+  }
+  /** La ventanita. o: { id (la venta), factura, mail y tel (los que vienen cargados), envio (lo que prefiere el cliente: 'mail' |
+      'whatsapp'), ultimo (por dónde se le mandó la última vez, si ya se le mandó), volver (al ticket; sin eso, «Cancelar») }. */
   function mandarMail(o) {
     var f = o.factura || {}, comp = compArca(f), deP = f.ambiente === 'homologacion';
-    var caja = ventana('<h3 id="posVentTit">Mandar la factura por mail</h3>' +
+    var caja = ventana('<h3 id="posVentTit">Mandar la factura</h3>' +
       '<p class="pos-bajada">Al cliente le llega la factura' + (comp ? ' <b>' + esc(comp) + '</b>' : '') + ' en PDF: la misma hoja de «Exportar PDF».</p>' +
-      (deP ? '<div class="pos-cartel prueba">Es del ARCA de prueba: el PDF y el mail dicen «sin valor fiscal». Sirve para probar el envío, ' +
+      (deP ? '<div class="pos-cartel prueba">Es del ARCA de prueba: el PDF y el mensaje dicen «sin valor fiscal». Sirve para probar el envío, ' +
         'no para entregársela a un cliente.</div>' : '') +
-      campo('', 'Mail del cliente', '<input type="email" id="mmMail" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
+      /* SQL 284: por dónde. Aparece cuando el servidor dice que el WhatsApp está listo. */
+      '<div class="pos-f mm-canal" id="mmCanales" hidden><span>Por dónde</span><div class="chips">' +
+        '<button type="button" class="chip" data-canal="mail">Por mail</button><button type="button" class="chip" data-canal="whatsapp">Por WhatsApp</button></div></div>' +
+      campo('', '<span id="mmRotulo">Mail del cliente</span>', '<input type="email" id="mmMail" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" ' +
         'placeholder="nombre@ejemplo.com" value="' + esc(o.mail || '') + '" autofocus>') +
+      '<p class="pos-ayuda mm-ayuda" id="mmAyuda" hidden></p>' +
       '<div class="pos-error" id="mmError"></div>' +
+      '<p class="pos-ayuda mm-admin" id="mmAdmin" hidden></p>' +
       '<div class="pos-pie">' + (o.volver ? '<button type="button" class="btn btn-sec btn-chico izq" id="mmVolver">Volver al ticket</button>' :
           '<button type="button" class="btn btn-sec btn-chico izq" data-cerrar>Cancelar</button>') +
         '<button type="button" class="btn btn-pri btn-chico" id="mmMandar">Mandar</button></div>');
     var campoMail = caja.querySelector('#mmMail'), bt = caja.querySelector('#mmMandar'), vv = caja.querySelector('#mmVolver');
+    var canal = 'mail', escrito = { mail: o.mail || '', whatsapp: o.tel || '' }, numeroWa = '';
     if (vv) vv.onclick = o.volver;
     setTimeout(function () { if (campoMail.isConnected && campoMail.value) campoMail.select(); }, 0);
+    /** Cambia el campo según por dónde va: el mail o el celular. Lo escrito en cada uno se guarda. */
+    function elegir(c, foco) {
+      escrito[canal] = campoMail.value;
+      canal = c;
+      var wa = c === 'whatsapp';
+      caja.querySelectorAll('[data-canal]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-canal') === c); });
+      caja.querySelector('#mmRotulo').textContent = wa ? 'WhatsApp del cliente' : 'Mail del cliente';
+      campoMail.type = wa ? 'tel' : 'email';
+      campoMail.setAttribute('inputmode', wa ? 'tel' : 'email');
+      campoMail.placeholder = wa ? '223 584-5942' : 'nombre@ejemplo.com';
+      campoMail.maxLength = wa ? 30 : 120;
+      campoMail.value = escrito[c] || '';
+      var ay = caja.querySelector('#mmAyuda');
+      ay.textContent = wa ? 'Con la característica, sin el 0 y sin el 15. Le llega desde el WhatsApp de VDH' + (numeroWa ? ' (' + numeroWa + ')' : '') + '.' : '';
+      ay.hidden = !wa;
+      errorEn(caja, 'mmError', '');
+      if (foco) { campoMail.focus(); if (campoMail.value) campoMail.select(); }
+    }
+    caja.querySelectorAll('[data-canal]').forEach(function (b) { b.onclick = function () { elegir(b.getAttribute('data-canal'), true); }; });
+    /** Lo que ve sólo el administrador mientras el WhatsApp no está: qué falta y, si hace falta, pedirle la aprobación a Meta. */
+    function avisoAdmin(k) {
+      var p = caja.querySelector('#mmAdmin'), w = (k && k.whatsapp) || {};
+      if (!p || !k || !k.admin || w.listo) { if (p) p.hidden = true; return; }
+      var e = w.estado, pedir = '<button type="button" class="pos-link" id="mmPedir">Pedirle la aprobación a Meta</button>';
+      var txt = e === 'no_existe' ? 'Para mandarla también por WhatsApp, Meta tiene que aprobar el mensaje. ' + pedir :
+        e === 'PENDING' || e === 'IN_APPEAL' ? 'WhatsApp: Meta está revisando el mensaje. Cuando lo apruebe, la opción aparece sola acá.' :
+        e === 'REJECTED' ? 'WhatsApp: Meta rechazó el mensaje' + (w.motivo ? ' (' + esc(w.motivo) + ')' : '') + '. Hay que cambiarle el texto y pedirlo de nuevo.' :
+        e === 'PAUSED' || e === 'DISABLED' ? 'WhatsApp: Meta pausó el mensaje de la factura. Por ahora, sólo por mail.' :
+        e === 'sin_sql' ? 'Para mandarla también por WhatsApp falta correr el SQL 284 en Supabase.' :
+        e === 'sin_whatsapp' ? 'WhatsApp: el número del sistema no está conectado. Por ahora, sólo por mail.' : '';
+      p.innerHTML = txt ? '<b>Sólo lo ves vos (administrador).</b> ' + txt : '';
+      p.hidden = !txt;
+      var bp = p.querySelector('#mmPedir');
+      if (bp) bp.onclick = function () {
+        bp.disabled = true;
+        bp.textContent = 'Pidiéndosela a Meta…';
+        pedirAlMail({ accion: 'wa_plantilla' }, 60000).then(function (x) {
+          if (!p.isConnected) return;
+          if (!x.ok) { p.innerHTML = '<b>Sólo lo ves vos (administrador).</b> No se pudo pedir: ' + esc(conPunto(x.error || 'el servidor no contestó')); return; }
+          S.canales = null;
+          var est = (x.plantilla || {}).estado;
+          if (est === 'APPROVED') { canalesDe().then(function (k2) { if (caja.isConnected) segun(k2); }); return; }
+          avisoAdmin({ admin: true, whatsapp: { listo: false, estado: est || 'PENDING', motivo: (x.plantilla || {}).motivo } });
+        });
+      };
+    }
+    /** Con lo que dijo el servidor: aparece (o no) «Por dónde» y queda elegido lo que prefiere el cliente. */
+    function segun(k) {
+      var listo = !!(k && k.whatsapp && k.whatsapp.listo);
+      caja.querySelector('#mmCanales').hidden = !listo;
+      avisoAdmin(k);
+      if (!listo) return;
+      numeroWa = k.whatsapp.numero || '';
+      /* Si no tocó nada todavía, queda elegido: lo que prefiere el cliente (su ficha); si no dice, por donde se le mandó la
+         última vez; y si nunca se le mandó, WhatsApp cuando tiene celular y no tiene mail. */
+      var quiereWa = o.envio === 'whatsapp' || (o.envio !== 'mail' && (o.ultimo === 'whatsapp' || (!o.ultimo && !o.mail && !!o.tel)));
+      var sinTocar = canal === 'mail' && campoMail.value === (o.mail || '');
+      elegir(quiereWa && sinTocar ? 'whatsapp' : canal, document.activeElement === campoMail || document.activeElement === caja);
+    }
+    if (S.canales) segun(S.canales);
+    canalesDe().then(function (k) { if (k && caja.isConnected) segun(k); });
     function mandar() {
       if (bt.disabled) return;
-      var mail = campoMail.value.trim().toLowerCase();
-      /* Lo mismo que mira el servidor: letras sin acento, números y . _ % + - */
-      var mal = !mail ? 'Escribí el mail del cliente.' : !/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(mail) || mail.length > 120 ?
-        'El mail no está bien escrito. Va sin espacios ni acentos, como nombre@ejemplo.com.' : '';
+      var wa = canal === 'whatsapp', dato = campoMail.value.trim(), mal = '';
+      if (wa) {
+        var cifras = dato.replace(/\D/g, '');
+        mal = !dato ? 'Escribí el celular del cliente.' : !/^[0-9 +().-]+$/.test(dato) || cifras.length < 10 || cifras.length > 15 ?
+          'El número no está bien escrito. Va con la característica, como 223 584-5942.' : '';
+      } else {
+        dato = dato.toLowerCase();
+        /* Lo mismo que mira el servidor: letras sin acento, números y . _ % + - */
+        mal = !dato ? 'Escribí el mail del cliente.' : !/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(dato) || dato.length > 120 ?
+          'El mail no está bien escrito. Va sin espacios ni acentos, como nombre@ejemplo.com.' : '';
+      }
       if (!errorEn(caja, 'mmError', mal)) { campoMail.focus(); return; }
       bt.disabled = true;
       bt.textContent = 'Mandando…';
-      pedirMail(o.id, mail).then(function (x) {
+      pedirMail(o.id, dato, canal).then(function (x) {
+        var aQuien = wa ? 'WhatsApp ' + telLindo(x.tel_lindo || x.tel || dato) : dato;
         if (x.ok) {
           S.conMail = true;
-          if (!caja.isConnected) { avisar('ok', 'La factura ' + comp + ' se mandó a ' + mail + '.'); return; }
-          ventanaHecho({ titulo: 'Factura enviada', datos: [comp, mail],
-            notas: ['Si no le llega en unos minutos, que mire en «Spam» o «Promociones».', deP ? 'Es del ARCA de prueba: sin valor fiscal.' : ''],
+          if (!caja.isConnected) { avisar('ok', 'La factura ' + comp + ' se mandó ' + (wa ? 'por ' : 'a ') + aQuien + '.'); return; }
+          ventanaHecho({ titulo: 'Factura enviada', datos: [comp, aQuien],
+            notas: [wa ? 'Le llega desde el WhatsApp de VDH. En el ticket vas a ver si se entregó y si la leyó.' :
+                         'Si no le llega en unos minutos, que mire en «Spam» o «Promociones».',
+                    deP ? 'Es del ARCA de prueba: sin valor fiscal.' : ''],
             despues: o.volver });
           return;
         }
-        if (!caja.isConnected) { avisar('err', 'No se pudo mandar la factura a ' + mail + ': ' + conPunto(x.error)); return; }
+        if (!caja.isConnected) { avisar('err', 'No se pudo mandar la factura ' + (wa ? 'por ' : 'a ') + aQuien + ': ' + conPunto(x.error)); return; }
         bt.disabled = false;
         bt.textContent = 'Mandar';
         errorEn(caja, 'mmError', conPunto(x.error));
         if (x.codigo === 'sin_sesion') persona.entrar();
+        /* La plantilla dejó de estar (la pausaron, la están revisando): la opción se va hasta que el servidor diga que volvió. */
+        if (x.codigo === 'sin_plantilla' || x.codigo === 'sin_whatsapp') { S.canales = null; }
       });
     }
     bt.onclick = mandar;
@@ -4021,10 +4150,11 @@
     campoMail.addEventListener('input', function () { errorEn(caja, 'mmError', ''); });
     return caja;
   }
-  /** «Mandar por mail» en la ventana de «listo» de la venta, a la izquierda de Aceptar (que sigue siendo el Enter). Sólo con la
-      factura aprobada y si la base tiene el SQL 281. */
-  function botonMailEn(caja, id, factura, mail) {
+  /** «Mandar la factura» en la ventana de «listo» de la venta, a la izquierda de Aceptar (que sigue siendo el Enter). Sólo con la
+      factura aprobada y si la base tiene el SQL 281. para: { mail, tel, envio } del cliente de la venta (lo que tenga). */
+  function botonMailEn(caja, id, factura, para) {
     if (!id || !factura || !factura.cae) return;
+    para = para || {};
     var poner = function () {
       var pie = caja.isConnected ? caja.querySelector('.pos-pie') : null;
       if (!pie || pie.querySelector('#vgMail')) return;
@@ -4032,9 +4162,9 @@
       b.type = 'button';
       b.className = 'btn btn-sec btn-chico izq';
       b.id = 'vgMail';
-      b.textContent = 'Mandar por mail';
-      b.title = 'Le llega al cliente la factura en PDF';
-      b.onclick = function () { mandarMail({ id: id, factura: factura, mail: mail || '' }); };
+      b.textContent = 'Mandar la factura';
+      b.title = 'Le llega al cliente la factura en PDF, por mail o por WhatsApp';
+      b.onclick = function () { mandarMail({ id: id, factura: factura, mail: para.mail || '', tel: para.tel || '', envio: para.envio || '' }); };
       pie.insertBefore(b, pie.firstChild);
     };
     if (S.conMail) { poner(); return; }

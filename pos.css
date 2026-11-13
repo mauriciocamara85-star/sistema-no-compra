@@ -595,6 +595,13 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-pago-cuenta.mal { background: var(--warn-soft); color: var(--warn-txt); }
 /* SQL 248: corregir el pago y, en el ticket, cada corrección. */
 .tk-corr { margin: 8px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.4; color: var(--txt-2); display: grid; gap: 3px; }
+/* SQL 284: cómo va la factura que se mandó por WhatsApp (entregada, la leyó, no llegó), y la ventanita «Mandar la factura». */
+.tk-corr .tk-wa-ok { color: var(--ok-txt); font-weight: 600; }
+.tk-corr .tk-wa-mal { color: var(--bad-txt); font-weight: 700; }
+.pos-caja .mm-canal { margin-bottom: 10px; }
+.pos-caja .mm-ayuda { margin: 5px 0 0; }
+.pos-caja .mm-admin { margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12.5px; }
+.pos-caja .mm-admin b { color: var(--txt-2); }
 .cp-fijos { margin: 0 0 10px; font-size: 14px; }
 .cp-fijos ul { margin: 4px 0 0; padding-left: 18px; }
 .cp-cuota { margin: 0; align-self: end; padding-bottom: 9px; font-size: 13px; color: var(--txt-2); }

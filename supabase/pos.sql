@@ -13889,3 +13889,198 @@ begin
 end $function$;
 
 notify pgrst, 'reload schema';
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 284 (12/11/2026): LA FACTURA POR WHATSAPP (App Orden: correr-en-supabase-284.sql)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SQL 284 (12/11/2026): mandar la factura por WhatsApp desde el ticket del POS.
+--   Pedido de Mauricio (12/11, después de probar el mail del SQL 281): «yo quiero que nuestros sistemas sean los mejores,
+--   así que me gustaría armar esto de WhatsApp también para tenerlo».
+--   Cómo es:
+--     - «Mandar la factura» (en el ticket y al guardar la venta) deja elegir: por mail o por WhatsApp. Por WhatsApp se
+--       escribe el celular del cliente (viene cargado si lo tiene) y le llega el PDF con un mensaje corto.
+--     - Lo manda el servidor (la función «mail») desde el WhatsApp del sistema, con una plantilla que aprueba Meta
+--       («factura_vdh»): a un cliente que no nos escribió sólo se le puede mandar una plantilla aprobada. Mientras Meta no
+--       la aprueba, la opción de WhatsApp no aparece y todo sigue por mail.
+--     - Queda anotado igual que el mail (pos_venta_mails, ahora con «canal»): a qué número, cuándo y quién. Además se
+--       guarda el identificador del mensaje: con eso el ticket dice si se entregó, si lo leyó o si no llegó (lo avisa
+--       WhatsApp después, y lo deja en wa_mensajes la función «whatsapp»). Y queda en el CRM: si el cliente contesta,
+--       ahí se ve qué se le mandó.
+--     - Sólo celulares de Argentina (la característica y el número, 10 cifras; se sacan solos el +54, el 9, el 0 y el
+--       15). Al que tiene la etiqueta «No escribir» en el CRM no se le manda.
+--     - Dos frenos, como en el mail: la misma factura al mismo número, una vez por minuto; y 200 por día entre todos los
+--       locales (el número del sistema tiene un tope de 250 personas nuevas por día).
+--   Necesita el SQL 281 corrido. No cambia ningún dato: le agrega dos columnas a pos_venta_mails (que es del 281), crea
+--   tres funciones y reemplaza dos del 281 (pos_venta_mail_preparar y pos_venta_mails_lista). Se puede correr más de
+--   una vez. Se deshace con deshacer-284.sql.
+
+-- 1) Cada envío dice por dónde salió. En «mail» queda a dónde: la dirección o el celular (549 + las 10 cifras).
+ALTER TABLE public.pos_venta_mails ADD COLUMN IF NOT EXISTS canal text NOT NULL DEFAULT 'mail';
+ALTER TABLE public.pos_venta_mails ADD COLUMN IF NOT EXISTS wamid text;
+DO $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'pos_venta_mails_canal_ok' and conrelid = 'public.pos_venta_mails'::regclass) then
+    alter table public.pos_venta_mails add constraint pos_venta_mails_canal_ok check (canal in ('mail', 'whatsapp'));
+  end if;
+end $$;
+COMMENT ON COLUMN public.pos_venta_mails.canal IS 'SQL 284: por dónde se mandó la factura: mail o whatsapp.';
+COMMENT ON COLUMN public.pos_venta_mails.mail IS 'A dónde se mandó: la dirección de mail o, por WhatsApp, el celular (549 + las 10 cifras).';
+COMMENT ON COLUMN public.pos_venta_mails.wamid IS 'SQL 284: el identificador del mensaje de WhatsApp (con él, wa_mensajes dice si se entregó o se leyó).';
+
+-- 2) ¿Se puede mandar por mail? Igual que en el 281; los frenos ahora cuentan sólo los mails.
+CREATE OR REPLACE FUNCTION public.pos_venta_mail_preparar(p_venta uuid, p_mail text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t      jsonb;
+  v_mail text := lower(trim(coalesce(p_mail, '')));
+  v_hoy  int;
+begin
+  t := pos_venta(p_venta);   -- mira el permiso del POS y que la venta sea de un local de la persona
+  if coalesce(t->'factura'->>'cae', '') = '' then
+    raise exception 'Esta venta no tiene factura electrónica: no hay nada para mandar.';
+  end if;
+  /* Sólo letras sin acento, números y . _ % + - : lo que entiende cualquier servidor de mails. */
+  if length(v_mail) > 120 or v_mail !~ '^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$' then
+    raise exception 'El mail no está bien escrito.';
+  end if;
+  /* Los dos clics seguidos: la misma factura a la misma dirección, una vez por minuto. */
+  if exists (select 1 from pos_venta_mails m
+              where m.venta_id = p_venta and m.canal = 'mail' and m.mail = v_mail and m.estado = 'enviado' and m.fecha > now() - interval '1 minute') then
+    raise exception 'Esa factura se le acaba de mandar a %. Si no le llegó, que mire en «Spam». En un minuto se puede mandar de nuevo.', v_mail;
+  end if;
+  /* El tope de la casilla: Gmail deja unos 500 por día. Se frena antes, en 400 (el día es el de Argentina). */
+  select count(*) into v_hoy from pos_venta_mails m
+   where m.canal = 'mail' and m.estado = 'enviado' and m.fecha >= (pos_hoy()::timestamp at time zone 'America/Argentina/Buenos_Aires');
+  if v_hoy >= 400 then
+    raise exception 'Hoy ya salieron % mails y la casilla tiene un tope por día. Mañana se puede de nuevo.', v_hoy;
+  end if;
+  return jsonb_build_object('venta', t, 'mail', v_mail, 'persona', orden_yo_id(),
+                            'persona_nombre', (select p.nombre from orden_personas p where p.id = orden_yo_id()));
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_mail_preparar(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_mail_preparar(uuid, text) TO authenticated;
+
+-- 3) ¿Se puede mandar por WhatsApp? Lo pregunta el servidor con la sesión de la persona. Devuelve la venta entera (con
+--    eso se arma el PDF), el celular como lo quiere WhatsApp y cómo se lee.
+CREATE OR REPLACE FUNCTION public.pos_venta_wa_preparar(p_venta uuid, p_tel text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t     jsonb;
+  v_n   text;
+  v_tel text;
+  v_hoy int;
+  v_no  boolean;
+begin
+  t := pos_venta(p_venta);   -- mira el permiso del POS y que la venta sea de un local de la persona
+  if coalesce(t->'factura'->>'cae', '') = '' then
+    raise exception 'Esta venta no tiene factura electrónica: no hay nada para mandar.';
+  end if;
+  /* El celular: la característica y el número, 10 cifras. club_tel (la regla del Club) saca el +54, el 9, el 0 de
+     adelante y el 15. Las características de acá empiezan con 1, 2 o 3. */
+  v_n := club_tel(p_tel);
+  if v_n is null or v_n !~ '^[1-3][0-9]{9}$' then
+    raise exception 'Ese número no parece un celular de Argentina. Va con la característica y el número, como 223 584-5942 (sin el 0 y sin el 15).';
+  end if;
+  v_tel := '549' || v_n;
+  /* Al que alguien le puso «No escribir» en el CRM no se le manda nada por WhatsApp. */
+  select bool_or(exists (select 1 from unnest(b.etiquetas) e where lower(trim(e)) = 'no escribir')) into v_no
+    from crm_contactos_base() b where b.clave = v_n;
+  if coalesce(v_no, false) then
+    raise exception 'Esa persona tiene la etiqueta «No escribir» en el CRM: no se le manda nada por WhatsApp. Mandásela por mail.';
+  end if;
+  /* Los dos clics seguidos: la misma factura al mismo número, una vez por minuto. */
+  if exists (select 1 from pos_venta_mails m
+              where m.venta_id = p_venta and m.canal = 'whatsapp' and m.mail = v_tel and m.estado = 'enviado' and m.fecha > now() - interval '1 minute') then
+    raise exception 'Esa factura se le acaba de mandar a ese número. En un minuto se puede mandar de nuevo.';
+  end if;
+  /* El tope: el número del sistema puede escribirle a 250 personas nuevas por día. Se frena antes, en 200. */
+  select count(*) into v_hoy from pos_venta_mails m
+   where m.canal = 'whatsapp' and m.estado = 'enviado' and m.fecha >= (pos_hoy()::timestamp at time zone 'America/Argentina/Buenos_Aires');
+  if v_hoy >= 200 then
+    raise exception 'Hoy ya salieron % facturas por WhatsApp y el número tiene un tope por día. Mandala por mail; mañana se puede de nuevo.', v_hoy;
+  end if;
+  return jsonb_build_object('venta', t, 'tel', v_tel,
+                            'tel_lindo', case when v_n like '11%' then '11 ' || substr(v_n, 3, 4) || '-' || substr(v_n, 7)
+                                              else substr(v_n, 1, 3) || ' ' || substr(v_n, 4, 3) || '-' || substr(v_n, 7) end,
+                            'persona', orden_yo_id(), 'persona_nombre', (select p.nombre from orden_personas p where p.id = orden_yo_id()));
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_wa_preparar(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_wa_preparar(uuid, text) TO authenticated;
+
+-- 4) Anotar un envío por cualquier canal (o que falló). Sólo el servidor. La del 281 (pos_venta_mail_anotar) sigue
+--    estando: la usa la versión de la función que anota sólo mails.
+CREATE OR REPLACE FUNCTION public.pos_venta_envio_anotar(p_venta uuid, p_canal text, p_destino text, p_persona uuid, p_estado text, p_error text,
+                                                         p_comprobante text, p_wamid text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare r pos_venta_mails;
+begin
+  if not exists (select 1 from pos_ventas v where v.id = p_venta) then raise exception 'No existe esa venta.'; end if;
+  if p_canal is null or p_canal not in ('mail', 'whatsapp') then raise exception 'El canal es «mail» o «whatsapp».'; end if;
+  if p_estado is null or p_estado not in ('enviado', 'fallo') then raise exception 'El estado es «enviado» o «fallo».'; end if;
+  if nullif(trim(coalesce(p_destino, '')), '') is null then raise exception 'Falta a dónde se mandó.'; end if;
+  insert into pos_venta_mails (venta_id, canal, mail, comprobante, persona, persona_nombre, estado, error, wamid)
+  values (p_venta, p_canal, lower(trim(p_destino)), nullif(trim(coalesce(p_comprobante, '')), ''), p_persona,
+          (select p.nombre from orden_personas p where p.id = p_persona), p_estado, nullif(left(trim(coalesce(p_error, '')), 500), ''),
+          nullif(trim(coalesce(p_wamid, '')), ''))
+  returning * into r;
+  return jsonb_build_object('id', r.id, 'fecha', r.fecha, 'canal', r.canal, 'destino', r.mail, 'persona', r.persona_nombre, 'estado', r.estado);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_envio_anotar(uuid, text, text, uuid, text, text, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.pos_venta_envio_anotar(uuid, text, text, uuid, text, text, text, text) TO service_role;
+
+-- 5) Lo que muestra el ticket, ahora con el canal. Por WhatsApp trae además cómo va el mensaje según WhatsApp
+--    (sent = salió, delivered = entregado, read = leído, failed = no llegó): lo deja en wa_mensajes la función «whatsapp».
+CREATE OR REPLACE FUNCTION public.pos_venta_mails_lista(p_venta uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v_local uuid;
+begin
+  perform pos_permiso();
+  select v.local_id into v_local from pos_ventas v where v.id = p_venta;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v_local);   -- SQL 190
+  return coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'mail', m.mail, 'persona', m.persona_nombre, 'canal', m.canal,
+                                                       'wa', case when m.wamid is not null then (select w.estado from wa_mensajes w where w.wamid = m.wamid) end)
+                                    order by m.fecha, m.id)
+                     from pos_venta_mails m where m.venta_id = p_venta and m.estado = 'enviado'), '[]'::jsonb);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_venta_mails_lista(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_venta_mails_lista(uuid) TO authenticated;
+
+-- 6) ¿La base ya sabe mandar por WhatsApp? Lo pregunta el servidor antes de ofrecer la opción (si esta función no está,
+--    falta este SQL y sólo se ofrece el mail).
+CREATE OR REPLACE FUNCTION public.pos_envio_canales()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso();
+  return jsonb_build_object('mail', true, 'whatsapp', true);
+end $function$;
+
+REVOKE ALL ON FUNCTION public.pos_envio_canales() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pos_envio_canales() TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
