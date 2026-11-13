@@ -222,6 +222,10 @@
   .vt-hoja .fijo.g { font-size: 14px; }
   /* Lo que llega de Google Analytics (visitas y carritos de la tienda): azul, como lo que se calcula solo; se puede pisar escribiendo. */
   .vt-hoja td.ga, .vt-hoja .sem .vend td.ga { color: var(--h-azul); }
+  /* SQL 288: lo que carga el POS solo (fijo, en azul como lo que llega de Google Analytics). */
+  .vt-hoja td.pos, .vt-hoja .sem .vend td.pos, .vt-hoja .sem tr td.pos { color: var(--h-azul); font-weight: 700; cursor: default; }
+  .vt-hoja .vb tr.r td.pos { background: var(--h-azulclaro); color: var(--h-azul); }
+  .vt-hoja .aviso-pos { color: var(--h-azul); }
   .vt-hoja td.mal-entrada { animation: vt-sacudir .3s; box-shadow: inset 0 0 0 2px var(--mal) !important; }
   /* Cargada sin internet y todavía sin mandar: la puntita arriba a la izquierda (a la derecha va la F del franco). */
   .vt-hoja td.sin-mandar { position: relative; }

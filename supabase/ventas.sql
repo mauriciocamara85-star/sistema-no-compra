@@ -883,3 +883,415 @@ grant execute on function ventas_locales(text), ventas_mes_leer(uuid, date, text
 --     ventas_mes_datos(uuid, date, jsonb), ventas_mes_de(date), ventas_hoy();
 --   drop table if exists ventas_cambios, ventas_temporada, ventas_reparto, ventas_semanal, ventas_trafico, ventas_diarias,
 --     ventas_vendedores, ventas_semanas, ventas_dias, ventas_mes;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SQL 288 (13/11/2026): Ventas se carga sola con el POS (corrido el 13/11). Es correr-en-supabase-288.sql
+-- de App Orden, tal cual; se deshace con deshacer-288.sql.
+-- ═══════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
+   SQL 288 (13/11/2026) — VENTAS SE CARGA SOLA CON EL POS
+   ══════════════════════════════════════════════════════════════════════════
+   Mauricio, 13/11: «Rivadavia ya usa el POS: que el objetivo de venta se
+   autocomplete solo con los datos del POS. Después tráfico real, conversión
+   real y ticket promedio real en la pestaña de Tráfico, y el informe por
+   vendedor que se actualice también todos los días.» Y: «empezá a cargar los
+   datos desde hoy… tienen que estar atentos a cargar todo y las ventas
+   fallidas».
+
+   Medido antes (5 al 12/11, Rivadavia): 28 de 32 cargas a mano eran
+   exactamente lo del POS; las otras 4 eran un ticket cargado a otro vendedor,
+   los cambios sumados como venta y dos ventas de $26.000 de la noche que no
+   se cargaron.
+
+   Qué hace:
+     - ventas_pos: los locales que se cargan solos y desde qué día. Rivadavia,
+       desde el 13/11/2026. Lo de antes de ese día queda como lo cargaron.
+     - ventas_pos_cargar(): cada 5 minutos (cron «ventas-pos») recalcula el
+       mes de esos locales (y el anterior hasta el 7, como el cierre del mes)
+       y escribe en las MISMAS tablas de Ventas, así el dashboard, el Ranking
+       y el Control de carga lo reciben sin tocarlos. No toca nada del POS:
+       sólo lee.
+         Ventas (venta real de cada vendedor y día) = sus tickets cobrados
+           + lo que se cobró de diferencia en sus cambios. Los anulados (y
+           las notas de crédito) no cuentan. Un vendedor del POS que no está
+           en la lista de Ventas del mes va a «Sin vendedor».
+         Tráfico del día: compras = tickets cobrados + cambios en los que se
+           cobró algo; tráfico = compras + ventas fallidas; conversión =
+           compras ÷ tráfico; ticket promedio = venta ÷ compras.
+         Informe Vendedor (cada semana que tenga algún día desde el arranque,
+           o sea desde la semana 3 de noviembre en Rivadavia): tráfico,
+           conversión y ticket igual que arriba pero de cada vendedor;
+           perfumes y boxers = las prendas vendidas de la familia «Perfumes»
+           y «Boxer» del catálogo; PxT = prendas ÷ tickets (como POS →
+           Ventas).
+         Configuración del mes (Efectivo y Descuento acumulados, Q líneas y
+           Q prendas): sólo en un mes entero con el POS (Rivadavia, desde
+           diciembre).
+       Las ventas fallidas de alguien que no está en la lista de Ventas (las
+       pruebas de la oficina) no cuentan.
+     - Lo que carga el POS ya no se escribe a mano (ventas_pos_traba): la
+       base lo rechaza con «eso lo carga el POS solo» y la pantalla lo
+       muestra fijo, en azul. Se corrige en el POS (el vendedor del ticket,
+       el cambio, la venta fallida).
+     - ventas_mes_datos devuelve además «pos» (desde qué día y la última
+       vez que se cargó) para la pantalla (no-compra-v492). Sin la pantalla
+       nueva, la vieja deja escribir las celdas pero la base no las guarda.
+     - Corre una vez al final: la semana 3 de Rivadavia (9 al 15/11) ya
+       queda cargada.
+
+   Cada cambio queda anotado en ventas_cambios con quien = 'POS'.
+   Se deshace con deshacer-288.sql (lo que ya cargó el POS queda, como si lo
+   hubieran escrito a mano, y las celdas vuelven a ser editables). */
+
+do $$ begin
+  if to_regclass('public.ventas_pos') is not null then
+    raise exception 'El SQL 288 ya está corrido (existe ventas_pos).';
+  end if;
+  if (select nombre from orden_locales where id = '7ce69820-6c1b-48a2-bdaa-4a546f448522') is distinct from 'Rivadavia' then
+    raise exception 'No encuentro el local Rivadavia: no corro nada.';
+  end if;
+end $$;
+
+-- ── Los locales que se cargan solos ───────────────────────────────────────
+create table ventas_pos (
+  local_id   uuid primary key references orden_locales(id) on delete cascade,
+  desde      date not null,                 -- el primer día que se carga solo
+  ultima     timestamptz,                   -- la última vez que se cargó
+  error      text,                          -- si la última vez falló, por qué
+  creado_en  timestamptz not null default now()
+);
+alter table ventas_pos enable row level security;
+revoke all on ventas_pos from anon, authenticated;
+
+insert into ventas_pos (local_id, desde) values ('7ce69820-6c1b-48a2-bdaa-4a546f448522', date '2026-11-13');
+
+-- ── El último día de la semana N de un mes (las semanas de la planilla) ──
+create function ventas_pos_semana_fin(p_mes date, p_sem int) returns date
+language sql immutable as $$
+  select least((p_mes + (7 * p_sem - extract(isodow from p_mes)::int))::date, (p_mes + interval '1 month - 1 day')::date)
+$$;
+
+/* ── Lo del POS de un local entre dos días (del mismo mes), una fila por hecho ──
+   vid: el vendedor de Ventas de ese mes (null si no está en la lista).
+   Cada venta cobrada es una compra y un ticket; cada cambio en el que se
+   cobró algo es una compra; cada venta fallida, una fallida. */
+create function ventas_pos_hechos(p_local uuid, p_desde date, p_hasta date)
+returns table (fecha date, vid bigint, venta numeric, compra int, ticket int, prendas int, perfumes int, boxer int,
+               fallida int, efectivo numeric, descuento numeric)
+language sql stable security definer set search_path = public as $$
+  with vend as (
+    select v.id, v.nombre, p.nombre as persona, e.vendedor as apodo
+      from ventas_vendedores v
+      left join orden_personas p on p.id = v.persona_id
+      left join equipo e on e.id = p.equipo_id
+     where v.local_id = p_local and v.mes = ventas_mes_de(p_desde) and v.nombre <> ''),
+  claves as (
+    -- El nombre del POS es el del equipo del local (el apodo de la Carga); si no, el de su usuario o el de Ventas.
+    select distinct on (k) k, id from (
+      select orden_nombre_comparable(apodo) as k, id, 1 as pri from vend
+      union all select orden_nombre_comparable(persona), id, 2 from vend
+      union all select orden_nombre_comparable(nombre), id, 3 from vend) q
+     where k <> '' order by k, pri, id),
+  h as (
+    select v.dia as fecha, v.vendedor, v.total as venta, 1 as compra, 1 as ticket, v.cantidad as prendas,
+           coalesce((select sum(i.cantidad) from pos_venta_items i join pos_articulos a on a.codigo = i.codigo
+                      where i.venta_id = v.id and lower(btrim(a.familia)) like 'perfume%'), 0)::int as perfumes,
+           coalesce((select sum(i.cantidad) from pos_venta_items i join pos_articulos a on a.codigo = i.codigo
+                      where i.venta_id = v.id and lower(btrim(a.familia)) like 'boxer%'), 0)::int as boxer,
+           0 as fallida,
+           coalesce((select sum(pg.monto) from pos_venta_pagos pg where pg.venta_id = v.id and pg.medio = 'efectivo'), 0) as efectivo,
+           v.descuentos as descuento
+      from pos_ventas v
+     where v.local_id = p_local and v.dia between p_desde and p_hasta and not v.prueba and v.estado = 'cobrada'
+    union all
+    select c.dia, c.vendedor, c.diferencia, (c.diferencia > 0)::int, 0, 0, 0, 0, 0,
+           coalesce((select sum(pg.monto) from pos_cambio_pagos pg where pg.cambio_id = c.id and pg.medio = 'efectivo'), 0),
+           c.descuentos
+      from pos_cambios c
+     where c.local_id = p_local and c.dia between p_desde and p_hasta and not c.prueba and c.estado = 'hecho'
+    union all
+    select f.dia, f.vendedor, 0, 0, 0, 0, 0, 0, 1, 0, 0
+      from pos_fallidas f
+     where f.local_id = p_local and f.dia between p_desde and p_hasta and not f.prueba)
+  select h.fecha, k.id, h.venta, h.compra, h.ticket, h.prendas, h.perfumes, h.boxer, h.fallida, h.efectivo, h.descuento
+    from h left join claves k on k.k = orden_nombre_comparable(h.vendedor)
+$$;
+revoke all on function ventas_pos_hechos(uuid, date, date) from public, anon, authenticated;
+
+/* ── Cargar Ventas con el POS ──────────────────────────────────────────────
+   p_local null: todos los de ventas_pos. Devuelve cuántas celdas cambió cada uno. */
+create function ventas_pos_cargar(p_local uuid default null) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_hoy  date := ventas_hoy();
+  v_ini  date := case when extract(day from ventas_hoy()) <= 7
+                      then (ventas_mes_de(ventas_hoy()) - interval '1 month')::date else ventas_mes_de(ventas_hoy()) end;
+  a      constant jsonb := jsonb_build_object('quien', 'POS');
+  l      record; x record;
+  m      date; v_d0 date; v_fin date; v_ini_s date; v_fin_s date; v_sin bigint; v_s int;
+  n      int; v_res jsonb := '[]'::jsonb;
+begin
+  /* Lo que escribe esta función pasa la traba de ventas_pos_traba (sólo dentro de esta transacción). */
+  perform set_config('ventas.pos', 'si', true);
+  for l in select vp.local_id, vp.desde from ventas_pos vp where p_local is null or vp.local_id = p_local order by vp.local_id loop
+    n := 0;
+    begin
+      for m in select g::date from generate_series(ventas_mes_de(greatest(l.desde, v_ini)), ventas_mes_de(v_hoy), interval '1 month') g loop
+        v_d0  := greatest(l.desde, m);
+        v_fin := least((m + interval '1 month - 1 day')::date, v_hoy);
+        continue when v_d0 > v_fin;
+
+        continue when not exists (select 1 from ventas_pos_hechos(l.local_id, m, v_fin))
+                 and not exists (select 1 from ventas_mes where local_id = l.local_id and mes = m);
+        perform ventas_mes_abrir(l.local_id, m);
+
+        /* «Sin vendedor»: lo vendido por alguien que no está en la lista del mes. */
+        v_sin := null;
+        if exists (select 1 from ventas_pos_hechos(l.local_id, v_d0, v_fin) where vid is null and compra > 0) then
+          select id into v_sin from ventas_vendedores where local_id = l.local_id and mes = m and nombre = '' order by id limit 1;
+          if v_sin is null then
+            insert into ventas_vendedores (local_id, mes, nombre, pct, orden) values (l.local_id, m, '', 0, 99) returning id into v_sin;
+          end if;
+        end if;
+
+        /* 1) La venta de cada vendedor, día por día. */
+        for x in
+          with des as (
+            select coalesce(vid, v_sin) as vid, fecha, sum(venta) as monto from ventas_pos_hechos(l.local_id, v_d0, v_fin)
+             where compra > 0 and coalesce(vid, v_sin) is not null group by 1, 2),
+          act as (
+            select d.vendedor_id as vid, d.fecha, d.monto from ventas_diarias d join ventas_vendedores v on v.id = d.vendedor_id
+             where v.local_id = l.local_id and v.mes = m and d.fecha between v_d0 and v_fin)
+          select coalesce(des.vid, act.vid) as vid, coalesce(des.fecha, act.fecha) as fecha, act.monto as antes, des.monto as despues
+            from des full join act on act.vid = des.vid and act.fecha = des.fecha
+           where act.monto is distinct from des.monto
+        loop
+          if x.despues is null then
+            delete from ventas_diarias where vendedor_id = x.vid and fecha = x.fecha;
+          else
+            insert into ventas_diarias (vendedor_id, fecha, monto, cargado_por) values (x.vid, x.fecha, x.despues, 'POS')
+            on conflict (vendedor_id, fecha) do update set monto = excluded.monto, cargado_en = now(), cargado_por = 'POS';
+          end if;
+          perform ventas_anotar(l.local_id, m, a, 'venta', x.vid || ':' || extract(day from x.fecha)::int, x.antes::text, x.despues::text);
+          n := n + 1;
+        end loop;
+
+        /* 2) Tráfico, conversión y ticket del día. */
+        for x in
+          with des as (
+            select fecha, t, case when t > 0 then round(c::numeric / t, 6) end as cv, case when c > 0 then round(v / c) end as tk
+              from (select fecha, sum(compra) + coalesce(sum(fallida) filter (where vid is not null), 0) as t, sum(compra) as c, sum(venta) as v
+                      from ventas_pos_hechos(l.local_id, v_d0, v_fin) group by fecha) q
+             where t > 0),
+          act as (select fecha, trafico as t, conversion as cv, ticket as tk from ventas_trafico
+                   where local_id = l.local_id and fecha between v_d0 and v_fin)
+          select coalesce(des.fecha, act.fecha) as fecha, act.t as t0, act.cv as cv0, act.tk as tk0, des.t, des.cv, des.tk
+            from des full join act on act.fecha = des.fecha
+           where (act.t, act.cv, act.tk) is distinct from (des.t, des.cv, des.tk)
+        loop
+          if x.t is null then
+            delete from ventas_trafico where local_id = l.local_id and fecha = x.fecha;
+          else
+            insert into ventas_trafico (local_id, fecha, trafico, conversion, ticket, cargado_por)
+            values (l.local_id, x.fecha, x.t, x.cv, x.tk, 'POS')
+            on conflict (local_id, fecha) do update set trafico = excluded.trafico, conversion = excluded.conversion,
+              ticket = excluded.ticket, cargado_en = now(), cargado_por = 'POS';
+          end if;
+          if x.t0 is distinct from x.t then
+            perform ventas_anotar(l.local_id, m, a, 'trafico', extract(day from x.fecha)::int || ':trafico', x.t0::text, x.t::text); end if;
+          if x.cv0 is distinct from x.cv then
+            perform ventas_anotar(l.local_id, m, a, 'trafico', extract(day from x.fecha)::int || ':conversion', x.cv0::text, x.cv::text); end if;
+          if x.tk0 is distinct from x.tk then
+            perform ventas_anotar(l.local_id, m, a, 'trafico', extract(day from x.fecha)::int || ':ticket', x.tk0::text, x.tk::text); end if;
+          n := n + 1;
+        end loop;
+
+        /* 3) El Informe Vendedor de cada semana que tenga algún día desde el arranque. */
+        for v_s in select s from generate_series(1, ventas_semana((m + interval '1 month - 1 day')::date)) s loop
+          v_fin_s := ventas_pos_semana_fin(m, v_s);
+          v_ini_s := greatest(m, v_fin_s - 6);
+          continue when v_fin_s < v_d0 or v_ini_s > v_fin;
+          for x in
+            with des as (
+              select vid, t, case when t > 0 then round(c::numeric / t, 6) end as cv, case when c > 0 then round(v / c) end as tk,
+                     pf, bx, case when tks > 0 then round(pr::numeric / tks, 6) end as pxt
+                from (select vid, sum(compra) + sum(fallida) as t, sum(compra) as c, sum(venta) as v, sum(ticket) as tks,
+                             sum(prendas) as pr, sum(perfumes) as pf, sum(boxer) as bx
+                        from ventas_pos_hechos(l.local_id, v_ini_s, least(v_fin_s, v_fin)) where vid is not null group by vid) q
+               where t > 0),
+            act as (
+              select s.vendedor_id as vid, s.trafico as t, s.conversion as cv, s.ticket as tk, s.perfumes as pf, s.boxer as bx, s.pxt
+                from ventas_semanal s join ventas_vendedores v on v.id = s.vendedor_id
+               where v.local_id = l.local_id and v.mes = m and v.nombre <> '' and s.semana = v_s)
+            select coalesce(des.vid, act.vid) as vid,
+                   act.t as t0, act.cv as cv0, act.tk as tk0, act.pf as pf0, act.bx as bx0, act.pxt as pxt0,
+                   des.t, des.cv, des.tk, des.pf, des.bx, des.pxt
+              from des full join act on act.vid = des.vid
+             where (act.t, act.cv, act.tk, act.pf, act.bx, act.pxt) is distinct from (des.t, des.cv, des.tk, des.pf, des.bx, des.pxt)
+          loop
+            insert into ventas_semanal (vendedor_id, semana, trafico, conversion, ticket, perfumes, boxer, pxt, cargado_por)
+            values (x.vid, v_s, x.t, x.cv, x.tk, x.pf, x.bx, x.pxt, 'POS')
+            on conflict (vendedor_id, semana) do update set trafico = excluded.trafico, conversion = excluded.conversion,
+              ticket = excluded.ticket, perfumes = excluded.perfumes, boxer = excluded.boxer, pxt = excluded.pxt,
+              cargado_en = now(), cargado_por = 'POS';
+            delete from ventas_semanal where vendedor_id = x.vid and semana = v_s and dias is null
+               and trafico is null and conversion is null and ticket is null and perfumes is null and boxer is null and pxt is null;
+            perform ventas_anotar(l.local_id, m, a, 'semanal', x.vid || ':' || v_s || ':pos',
+              concat_ws(' · ', x.t0, x.cv0, x.tk0, x.pf0, x.bx0, x.pxt0), concat_ws(' · ', x.t, x.cv, x.tk, x.pf, x.bx, x.pxt));
+            n := n + 1;
+          end loop;
+        end loop;
+
+        /* 4) La configuración del mes, sólo en un mes entero con el POS. */
+        if l.desde <= m then
+          for x in
+            select mm.efectivo as e0, mm.descuento as d0, mm.q_lineas as l0, mm.q_prendas as p0, q.e, q.d, q.l, q.p
+              from ventas_mes mm,
+                   lateral (select case when count(*) > 0 then sum(efectivo) end as e, case when count(*) > 0 then sum(descuento) end as d,
+                                   case when count(*) > 0 then sum(ticket)::int end as l, case when count(*) > 0 then sum(prendas)::int end as p
+                              from ventas_pos_hechos(l.local_id, m, v_fin) where compra > 0) q
+             where mm.local_id = l.local_id and mm.mes = m
+               and (mm.efectivo, mm.descuento, mm.q_lineas, mm.q_prendas) is distinct from (q.e, q.d, q.l, q.p)
+          loop
+            update ventas_mes set efectivo = x.e, descuento = x.d, q_lineas = x.l, q_prendas = x.p, actualizado_en = now()
+             where local_id = l.local_id and mes = m;
+            perform ventas_anotar(l.local_id, m, a, 'config', 'pos', concat_ws(' · ', x.e0, x.d0, x.l0, x.p0), concat_ws(' · ', x.e, x.d, x.l, x.p));
+            n := n + 1;
+          end loop;
+        end if;
+      end loop;
+      update ventas_pos set ultima = now(), error = null where local_id = l.local_id;
+      v_res := v_res || jsonb_build_object('local', l.local_id, 'cambios', n);
+    exception when others then
+      /* Si un local falla, los demás siguen; queda anotado por qué. */
+      update ventas_pos set error = left(sqlerrm, 500) where local_id = l.local_id;
+      v_res := v_res || jsonb_build_object('local', l.local_id, 'error', sqlerrm);
+    end;
+  end loop;
+  perform set_config('ventas.pos', '', true);
+  return v_res;
+end $$;
+revoke all on function ventas_pos_cargar(uuid) from public, anon, authenticated;
+
+/* ── La traba: lo que carga el POS no se escribe a mano ────────────────── */
+create function ventas_pos_traba() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_local uuid; v_mes date; v_fecha date; v_desde date;
+begin
+  if current_setting('ventas.pos', true) = 'si' then return new; end if;
+  if tg_table_name = 'ventas_diarias' then
+    select local_id into v_local from ventas_vendedores where id = new.vendedor_id;
+    v_fecha := new.fecha;
+  elsif tg_table_name = 'ventas_trafico' then
+    v_local := new.local_id;
+    v_fecha := new.fecha;
+  elsif tg_table_name = 'ventas_semanal' then
+    /* Los días trabajados se siguen cargando; lo demás de la semana, no. */
+    if tg_op = 'INSERT' and coalesce(new.trafico, new.conversion, new.ticket, new.perfumes, new.boxer, new.pxt) is null then return new; end if;
+    if tg_op = 'UPDATE' and (new.trafico, new.conversion, new.ticket, new.perfumes, new.boxer, new.pxt)
+                            is not distinct from (old.trafico, old.conversion, old.ticket, old.perfumes, old.boxer, old.pxt) then return new; end if;
+    select local_id, mes into v_local, v_mes from ventas_vendedores where id = new.vendedor_id;
+    v_fecha := ventas_pos_semana_fin(v_mes, new.semana);
+  elsif tg_table_name = 'ventas_mes' then
+    if (new.efectivo, new.descuento, new.q_lineas, new.q_prendas) is not distinct from (old.efectivo, old.descuento, old.q_lineas, old.q_prendas) then
+      return new;
+    end if;
+    v_local := new.local_id;
+  end if;
+  select desde into v_desde from ventas_pos where local_id = v_local;
+  if v_desde is null then return new; end if;
+  if tg_table_name = 'ventas_mes' then
+    if v_desde > new.mes then return new; end if;
+  elsif v_fecha < v_desde then
+    return new;
+  end if;
+  raise exception 'ventas: eso lo carga el POS solo (desde el %): se corrige en el POS', to_char(v_desde, 'DD/MM')
+    using hint = 'Si está mal, corregí el ticket, el cambio o la venta fallida en el POS: en 5 minutos se actualiza solo.';
+end $$;
+
+create trigger ventas_pos_traba before insert or update on ventas_diarias for each row execute function ventas_pos_traba();
+create trigger ventas_pos_traba before insert or update on ventas_trafico for each row execute function ventas_pos_traba();
+create trigger ventas_pos_traba before insert or update on ventas_semanal for each row execute function ventas_pos_traba();
+create trigger ventas_pos_traba before update on ventas_mes for each row execute function ventas_pos_traba();
+
+/* ── La pantalla: desde qué día se carga solo (ventas_mes_datos + «pos») ── */
+create or replace function public.ventas_mes_datos(p_local uuid, p_mes date, a jsonb)
+ returns jsonb
+ language plpgsql
+ stable security definer
+ set search_path to 'public'
+as $function$
+declare
+  v_mes  date  := ventas_mes_de(p_mes);
+  v_fin  date  := (ventas_mes_de(p_mes) + interval '1 month')::date;
+  m      ventas_mes%rowtype;
+  r      jsonb;
+begin
+  select * into m from ventas_mes where local_id = p_local and mes = v_mes;
+
+  select jsonb_build_object(
+    'hoy', ventas_hoy(),
+    'mes', v_mes,
+    'existe', m.local_id is not null,
+    'puede', a->>'puede',
+    'supervisa', coalesce((a->>'supervisa')::boolean, false),
+    'cerrado', coalesce((a->>'cerrado')::boolean, false),
+    'carga_hasta', a->'carga_hasta',
+    'quien', a->>'quien',
+    'local', (select jsonb_build_object('id', l.id, 'nombre', l.nombre, 'codigo', l.codigo, 'dias_abiertos', l.dias_abiertos)
+                from orden_locales l where l.id = p_local),
+    'cfg', case when m.local_id is null then null else jsonb_build_object(
+             'objetivo', m.objetivo, 'conversion', m.conversion, 'ticket', m.ticket, 'dias_habiles', m.dias_habiles,
+             'efectivo', m.efectivo, 'descuento', m.descuento, 'q_lineas', m.q_lineas, 'q_prendas', m.q_prendas,
+             'pxt_obj', m.pxt_obj, 'factor', m.factor, 'precio_perfume', m.precio_perfume, 'precio_boxer', m.precio_boxer,
+             'premios', to_jsonb(m.premios), 'con_dias', m.con_dias) end,
+    'vendedores', coalesce((
+      select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', v.nombre, 'pct', v.pct, 'persona', v.persona_id,
+                                          'francos', coalesce(to_jsonb(p.dias_libres), '[]'::jsonb),
+                                          /* SQL 181: sus vacaciones de este mes (Config → Usuarios): [primer día, último día, motivo]. */
+                                          'vacaciones', coalesce((
+                                            select jsonb_agg(jsonb_build_array(extract(day from greatest(au.desde, v_mes))::int,
+                                                                               extract(day from least(au.hasta, v_fin - 1))::int, au.motivo) order by au.desde)
+                                              from orden_ausencias au
+                                             where au.persona_id = v.persona_id and au.desde < v_fin and au.hasta >= v_mes), '[]'::jsonb))
+                       order by (v.nombre = ''), v.orden, v.id)
+        from ventas_vendedores v left join orden_personas p on p.id = v.persona_id
+       where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
+    /* El reparto a mano de alguna semana: [vendedor, semana, %, motivo]. */
+    'reparto', coalesce((
+      select jsonb_agg(jsonb_build_array(r.vendedor_id, r.semana, r.pct, r.motivo) order by r.vendedor_id, r.semana)
+        from ventas_reparto r join ventas_vendedores v on v.id = r.vendedor_id
+       where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
+    'ventas', coalesce((
+      select jsonb_agg(jsonb_build_array(d.vendedor_id, extract(day from d.fecha)::int, d.monto))
+        from ventas_diarias d join ventas_vendedores v on v.id = d.vendedor_id
+       where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
+    'trafico', coalesce((
+      select jsonb_agg(jsonb_build_array(extract(day from t.fecha)::int, t.trafico, t.conversion, t.ticket) order by t.fecha)
+        from ventas_trafico t where t.local_id = p_local and t.fecha >= v_mes and t.fecha < v_fin), '[]'::jsonb),
+    'semanal', coalesce((
+      select jsonb_agg(jsonb_build_object('v', s.vendedor_id, 's', s.semana, 'd', s.dias, 't', s.trafico, 'c', s.conversion,
+                                          'tp', s.ticket, 'pf', s.perfumes, 'bx', s.boxer, 'pxt', s.pxt))
+        from ventas_semanal s join ventas_vendedores v on v.id = s.vendedor_id
+       where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
+    'dias', coalesce((
+      select jsonb_agg(jsonb_build_array(extract(day from d.fecha)::int, d.peso) order by d.fecha)
+        from ventas_dias d where d.local_id = p_local and d.fecha >= v_mes and d.fecha < v_fin), '[]'::jsonb),
+    'semanas', coalesce((
+      select jsonb_agg(jsonb_build_array(s.semana, s.peso) order by s.semana)
+        from ventas_semanas s where s.local_id = p_local and s.mes = v_mes), '[]'::jsonb),
+    'venta_anterior', (select t.venta_anterior from ventas_temporada t where t.local_id = p_local and t.mes = v_mes),
+    'equipo', coalesce((
+      select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'francos', to_jsonb(p.dias_libres)) order by p.nombre)
+        from orden_personas p
+       where p.local_id = p_local and p.activo and p.rol in ('vendedor', 'supervisor')), '[]'::jsonb),
+    /* SQL 288: el local se carga solo con el POS desde ese día (null: se carga a mano). */
+    'pos', (select jsonb_build_object('desde', vp.desde, 'ultima', vp.ultima) from ventas_pos vp where vp.local_id = p_local)
+  ) into r;
+  return r;
+end $function$;
+
+-- ── Cada 5 minutos, y una vez ahora ───────────────────────────────────────
+select cron.schedule('ventas-pos', '*/5 * * * *', 'select ventas_pos_cargar()');
+select ventas_pos_cargar();

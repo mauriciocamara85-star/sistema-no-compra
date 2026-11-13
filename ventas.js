@@ -351,6 +351,28 @@
   function editaAdmin() { return edita() && esAdmin(); }
   function ambAdmin(cl) { return editaAdmin() ? 'amb' + (cl ? ' ' + cl : '') : 'fijo' + (cl ? ' ' + cl : ''); }
 
+  /* SQL 288 (Mauricio, 13/11): el local que usa el POS se carga solo desde ese día, cada 5 minutos: la venta de cada
+     vendedor, el tráfico del día (compras + ventas fallidas), el Informe Vendedor de cada semana que tenga algún día
+     desde ahí y, en un mes entero con el POS, el efectivo, el descuento y Q líneas · Q prendas. Esas celdas van fijas
+     y en azul ("se calcula solo"); la base tampoco las acepta a mano. Sin el SQL 288, D.pos no viene: todo a mano. */
+  function posDesde() { return ST.D && ST.D.pos && ST.D.pos.desde ? String(ST.D.pos.desde).slice(0, 10) : null; }
+  function fechaDelDia(d) { return mesDeDatos(ST.D).slice(0, 8) + (d < 10 ? '0' : '') + d; }
+  function delPos(d) { var p = posDesde(); return !!p && fechaDelDia(d) >= p; }
+  function mesDelPos() { var p = posDesde(); return !!p && mesDeDatos(ST.D) >= p; }
+  /* La semana n es del POS si su último día ya es del POS. */
+  function semanaDelPos(C, n) {
+    var w = C.sem.filter(function (y) { return y.n === n; })[0];
+    return !!w && w.dias.length > 0 && delPos(w.dias[w.dias.length - 1].d);
+  }
+  var TIT_POS = ' title="Lo carga el POS solo. Si está mal, se corrige en el POS."';
+  function celdaPos(v, tipo, cl) { return '<td class="pos' + (cl ? ' ' + cl : '') + '"' + TIT_POS + '>' + esc(texto(v, tipo)) + '</td>'; }
+  function avisoPos(que) {
+    var p = posDesde(), u = ST.D.pos && ST.D.pos.ultima;
+    return '<p class="aviso-carga aviso-pos">🔄  ' + esc(ST.D.local.nombre) + ' se carga sola con el POS desde el ' + p.slice(8, 10) + '/' + p.slice(5, 7) +
+      ' (' + que + '), cada 5 minutos' + (u ? ': la última vez, el ' + esc(fechaHora(u)) : '') +
+      '. Lo azul no se escribe: si algo está mal, se corrige en el POS (el ticket, el cambio o la venta fallida).</p>';
+  }
+
   function dibujar(arriba) {
     var D = ST.D, ec = !!D.ecom;
     /* El e-commerce tiene su hoja; al volver a un local, vuelve a la pestaña que tenía. */
@@ -513,15 +535,16 @@
       (edita() ? '<td class="suma ' + (sumaOk ? 'ok' : 'mal') + '">' + (sumaOk ? 'Suman 100%' : 'Suman ' + pcIn(C.pctSuma) + ': ' + (C.pctSuma < 1 ? 'falta repartir ' + pcIn(1 - C.pctSuma) : 'sobra ' + pcIn(C.pctSuma - 1))) + '</td>' : '') + '</tr>' +
       '</table></div>' +
       '<table class="cfg-caja"><colgroup><col style="width:148px"><col></colgroup>' +
-      '<tr><th class="izq">Efectivo (acum.)</th>' + entrada('config', 'efectivo', c.efectivo || null, 'money', 'amb', 'aria-label="Efectivo acumulado"') + '</tr>' +
-      '<tr><th class="izq">Descuento (acum.)</th>' + entrada('config', 'descuento', c.descuento || null, 'money', 'amb', 'aria-label="Descuento acumulado"') + '</tr>' +
-      '<tr><td colspan="2" class="nota">Efectivo y Descuento se actualiza diariamente</td></tr></table></div>' +
+      '<tr><th class="izq">Efectivo (acum.)</th>' + (mesDelPos() ? celdaPos(c.efectivo || null, 'money') : entrada('config', 'efectivo', c.efectivo || null, 'money', 'amb', 'aria-label="Efectivo acumulado"')) + '</tr>' +
+      '<tr><th class="izq">Descuento (acum.)</th>' + (mesDelPos() ? celdaPos(c.descuento || null, 'money') : entrada('config', 'descuento', c.descuento || null, 'money', 'amb', 'aria-label="Descuento acumulado"')) + '</tr>' +
+      '<tr><td colspan="2" class="nota">' + (mesDelPos() ? 'Efectivo y Descuento llegan solos del POS' : 'Efectivo y Descuento se actualiza diariamente') + '</td></tr></table></div>' +
       /* Sin "Días hábiles" (28/10, Mauricio): los días se cuentan solos con los días que el local abre. Los dos
          se calculan, así que van en azul (la planilla tenía los transcurridos en ámbar, como si se cargaran). */
       '<table><colgroup><col style="width:150px"><col style="width:90px"><col style="width:130px"><col style="width:90px"><col></colgroup><tr>' +
       '<th class="izq">Días transcurridos</th><td class="azul">' + C.C22 + '</td><th>Días restantes</th><td class="azul">' + C.L18 + '</td>' +
       '<td style="border:0"></td></tr></table></div>' +
-      '<p class="aviso-carga">⚠️ Cargá la venta de cada uno en la columna del día que pasó.</p>';
+      (posDesde() ? avisoPos('la venta de cada uno: sus tickets más lo cobrado en sus cambios')
+                  : '<p class="aviso-carga">⚠️ Cargá la venta de cada uno en la columna del día que pasó.</p>');
     if (editaAdmin()) {
       var sSem = suma(C.sem.map(function (w) { return w.peso; }));
       h += '<p class="aviso-carga" style="padding-top:0">El reparto del objetivo (los % grises arriba de cada semana) lo pone Administración: los demás lo ven fijo.' +
@@ -637,6 +660,7 @@
        incompleto (en octubre lo marcaba en 311 celdas, casi todas de francos sin anotar y de los que cubren). */
     var cl = (franco ? 'franco' : '') + na + hoyCl(C, x);
     var tit = na ? TIT_NO_ABRE : franco ? ' title="Franco de ' + esc(String(v.nombre).split(' ')[0]) + '"' : '';
+    if (delPos(x.d)) return celdaPos(val, 'money', cl);
     if (!edita()) return '<td class="' + cl + '"' + tit + '>' + (def(val) ? pesos(val) : '') + '</td>';
     return entrada('venta', v.id + ':' + x.d, val, 'money', cl, 'data-g="s' + w.n + '" data-r="' + r + '" data-c="' + k + '" aria-label="' + esc(v.nombre) + ', ' + DIAS[k] + ' ' + x.d + '"' + tit)
       .replace('<td class="ed', '<td' + tit + ' class="ed');
@@ -667,8 +691,12 @@
       '<table><colgroup><col style="width:170px"><col><col style="width:190px"><col><col style="width:110px"><col><col style="width:130px"><col></colgroup>' +
       '<tr><th class="izq">Local</th><td class="azul">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td><th>Objetivo Mensual del Local</th><td class="verde">' + pesos(c.obj) + '</td><th>Conversión</th><td class="verde">' + pc(c.conv) + '</td><th>Ticket Promedio</th><td class="verde">' + pesos(c.tp) + '</td></tr>' +
       '<tr><th colspan="5" class="nota" style="text-align:center">Prendas por Ticket: actualizar diariamente</th><th colspan="2">Q Líneas · Q Prendas</th>' +
-      '<td style="padding:0"><table style="height:100%"><tr>' + entrada('config', 'q_lineas', c.qLineas || null, 'int', 'amb', 'aria-label="Q líneas (tickets)"') + entrada('config', 'q_prendas', c.qPrendas || null, 'int', 'amb', 'aria-label="Q prendas"') + '</tr></table></td></tr>' +
-      '<tr><td colspan="8" class="nota izq">  Ingresá tráfico real y conversión real día a día en cada semana</td></tr></table></div>';
+      '<td style="padding:0"><table style="height:100%"><tr>' + (mesDelPos() ? celdaPos(c.qLineas || null, 'int') + celdaPos(c.qPrendas || null, 'int')
+        : entrada('config', 'q_lineas', c.qLineas || null, 'int', 'amb', 'aria-label="Q líneas (tickets)"') + entrada('config', 'q_prendas', c.qPrendas || null, 'int', 'amb', 'aria-label="Q prendas"')) + '</tr></table></td></tr>' +
+      '<tr><td colspan="8" class="nota izq">' + (posDesde()
+        ? '  Del POS: tráfico = compras (tickets y cambios en los que se cobró algo) + ventas fallidas · conversión = compras ÷ tráfico · ticket = venta ÷ compras'
+        : '  Ingresá tráfico real y conversión real día a día en cada semana') + '</td></tr></table></div>';
+    if (posDesde()) h += avisoPos('el tráfico, la conversión y el ticket de cada día');
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaTrafico(C, w); }).join('') + '</div>';
     return h;
   }
@@ -679,6 +707,7 @@
     function campo(x, k, i, tipo) {
       var v = [x.t, x.cv, x.tk][i], na = noAbre(w, x);
       if (x.futuro) return '<td class="futuro' + (na ? ' no-abre"' + TIT_NO_ABRE : '" title="Todavía no llegó: se carga el día que pasó"') + '></td>';
+      if (delPos(x.d)) return celdaPos(v, tipo, (hoyCl(C, x) + (na ? ' no-abre' : '')).trim());
       return entrada('trafico', x.d + ':' + ['trafico', 'conversion', 'ticket'][i], v, tipo, (hoyCl(C, x) + (na ? ' no-abre' : '')).trim(),
         'data-g="t' + w.n + '" data-r="' + i + '" data-c="' + k + '" aria-label="' + NOM[i] + ', ' + DIAS[k] + ' ' + x.d + '"')
         .replace('<td class="', '<td' + (na ? TIT_NO_ABRE : '') + ' class="');
@@ -733,7 +762,10 @@
 
     /* La tabla de días trabajados por semana (la que probaba Rivadavia) salió el 15/10: más adelante va una
        sección de vacaciones. Septiembre de Rivadavia sigue contando los días que tenía (con_dias), como la planilla. */
-    h += '<p class="aviso-carga">  Ámbar = editás vos  ·  Azul = se calcula solo (viene de Ventas)  ·  Cargá el real de tráfico, conv, TP, perfumes, boxer y PxT por vendedor</p>';
+    h += '<p class="aviso-carga">  Ámbar = editás vos  ·  Azul = se calcula solo (viene de Ventas' + (posDesde() ? ' y del POS' : '') + ')  ·  ' +
+      (posDesde() ? 'Del POS: tráfico = compras + ventas fallidas, perfumes y boxers por la familia del producto, PxT = prendas ÷ tickets'
+                  : 'Cargá el real de tráfico, conv, TP, perfumes, boxer y PxT por vendedor') + '</p>';
+    if (posDesde()) h += avisoPos('el Informe Vendedor de cada semana que tenga algún día desde ahí');
 
     var METR = [['venta', 'Venta', pesos, null], ['t', 'Tráfico', nf, 'int'], ['c', 'Conversión', function (x) { return pc(x); }, 'pct'], ['tp', 'TP', pesos, 'money'],
       ['pf', 'Perfumes', nf, 'int'], ['bx', 'Boxer', nf, 'int'], ['pxt', 'PxT', function (x) { return dec(x); }, 'dec']];
@@ -751,6 +783,7 @@
           var cl = s.empezo && def(s.r[k]) ? sem(s.r[k], s.o[k]) : '';
           if (k === 'venta') return '<td class="blue ' + cl + '">' + (def(s.r.venta) ? pesos(s.r.venta) : '') + '</td>';
           if (!s.empezo) return '<td class="futuro" title="Esta semana todavía no empezó"></td>';
+          if (semanaDelPos(C, s.n)) return celdaPos(s.r[k], tipo, cl);
           return entrada('semanal', x.v.id + ':' + s.n + ':' + CAMPO_IV[k], s.r[k], tipo, cl,
             'data-g="iv' + vi + '" data-r="' + mi + '" data-c="' + j + '" aria-label="' + esc(nom) + ', ' + m[1] + ', semana ' + s.n + '"');
         }).join('') + '<td>' + (def(tot) ? f(tot) : '') + '</td><td class="' + (def(d) ? sem(1 + d, 1) : '') + '">' + sp(d) + '</td></tr>';
