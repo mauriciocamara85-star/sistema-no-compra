@@ -13094,11 +13094,15 @@
      dan". Nadie la carga: cada producto que un local recibe con diferencias
      deja acá un renglón por talle y color, con quién lo recibió y qué pasó.
      Por ahora la resuelve la oficina; cuando la fábrica tenga su usuario,
-     ella. Arriba, lo que falta resolver; abajo, las estadísticas del período.
+     ella. En la pantalla, lo que falta resolver. Las estadísticas del período
+     (13/11, Mauricio: «las agregaría como una pildorita… en la parte superior
+     derecha. No me gusta que esté todo mezclado entre la diferencia y abajo
+     estadísticas») se abren aparte, con «Estadísticas», arriba a la derecha.
      ════════════════════════════════════════════════════════════════════ */
   function verDiferencias() {
     var c = $('cuerpo'), est = S.dfEstado == null ? 'pendiente' : S.dfEstado;
     c.innerHTML = cabeza('Diferencias', 'Lo que llegó distinto de lo que decía el remito. Se anota solo cuando un local recibe con diferencias; acá se resuelve.',
+        '<button type="button" class="btn btn-sec btn-chico" id="dfEst" disabled title="Del período elegido: por sucursal, los productos con más diferencias y qué pasó">Estadísticas</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="dfBajar" disabled>Bajar para Excel</button>') +
       '<div class="pos-filtros"><div id="dfPer"></div>' +
         campo('', 'Sucursal', '<select id="dfLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(S.dfLocal || '') + '</select>') +
@@ -13111,15 +13115,18 @@
     $('dfEstado').onchange = function () { S.dfEstado = this.value; cargar(); };
     var pedido = 0, D = null, elegidas = {};
     $('dfBajar').onclick = function () { if (D) bajarDiferencias(D, per.rango(), $('dfEstado').value); };
+    $('dfEst').onclick = function () { if (D) abrirEstadisticasDif(D, per.rango(), $('dfLocal').value ? $('dfLocal').selectedOptions[0].textContent : ''); };
 
     function cargar() {
       var r = per.rango(), n = ++pedido;
       elegidas = {};
+      $('dfEst').disabled = true;
       $('dfLista').innerHTML = '<p class="cargando">Cargando…</p>';
       llamar('pos_diferencias', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('dfLocal').value || null, p_estado: $('dfEstado').value || null }).then(function (d) {
         if (n !== pedido || !$('dfLista')) return;
         D = d;
         $('dfBajar').disabled = !(d.filas || []).length;
+        $('dfEst').disabled = false;
         if (!$('dfLocal').value) ponerCuentaDif(Number(d.totales.pendientes) || 0);
         pintar();
       }).catch(function (e) { if ($('dfLista')) $('dfLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
@@ -13147,7 +13154,7 @@
           '<th class="n">Decía</th><th class="n">Llegaron</th><th class="n">Diferencia</th><th>Lo recibió</th><th>Qué pasó</th><th>Estado</th></tr></thead><tbody>' +
           filas.map(fila).join('') + '</tbody></table></div>' +
         (D.mas ? '<p class="pos-mas">Se ven las últimas 1000. Achicá el período para ver el resto.</p>' : '');
-      z.innerHTML = kpis + tabla + estadisticasDif(D, per.rango());
+      z.innerHTML = kpis + tabla;
       var todas = $('dfTodas');
       if (todas) todas.onchange = function () {
         elegidas = {};
@@ -13231,11 +13238,17 @@
     return Math.round(h / 24) + ' días';
   }
 
+  /** «Estadísticas» (13/11): las del período, aparte de la lista, en su ventana. local: el nombre de la sucursal elegida (vacío = todas). */
+  function abrirEstadisticasDif(d, r, local) {
+    ventana('<h3 id="posVentTit">Estadísticas de las diferencias · ' + esc(r.texto) + '</h3>' +
+      '<p class="pos-bajada">De los remitos recibidos en el período, ' + (local ? 'en ' + esc(local) : 'en todas las sucursales') + '.</p>' +
+      estadisticasDif(d) + '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>', true).classList.add('df-vent');
+  }
   /** Las estadísticas del período: por sucursal, los productos con más diferencias y qué pasó. */
-  function estadisticasDif(d, r) {
+  function estadisticasDif(d) {
     var pl = d.por_local || [], pp = d.por_producto || [], pm = d.por_motivo || [];
     var maxM = pm.reduce(function (m, x) { return Math.max(m, x.productos); }, 0);
-    return '<h3 class="st-tit">Las estadísticas · ' + esc(r.texto) + '</h3><div class="df-stats">' +
+    return '<div class="df-stats">' +
       '<section class="df-st"><h4>Por sucursal</h4>' + (!pl.length ? '<p class="pos-ayuda">En el período no se recibieron remitos.</p>' :
         '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Sucursal</th><th class="n">Recibidos</th><th class="n">Con diferencias</th>' +
           '<th class="n">Faltaron</th><th class="n">Sobraron</th>' +
