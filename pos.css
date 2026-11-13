@@ -2073,3 +2073,114 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .gc-datos dd { margin: 0; color: var(--txt); font-size: 14px; }
 .gc-extender { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 8px; }
 .gc-extender .pos-f { flex: 0 1 180px; }
+
+/* ═════════ REPARTIR UN PRODUCTO (Fábrica → Remitos, 12/11) ═════════
+   El molde de la venta (.tk): a la izquierda el producto y cómo se reparte, con los totales abajo; a la derecha la grilla
+   (un renglón por local, una columna por talle y color). Todo con el prefijo rp-. */
+.rp-tope { grid-column: span 12; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--txt-2); cursor: pointer; }
+.rp-tope input { flex: none; width: 17px; height: 17px; margin: 0; accent-color: var(--acc); cursor: pointer; }
+.rp-mult input { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rp-mult input.rp-mult-mal { border-color: var(--warn-txt); background: var(--warn-soft); }
+.rp-mult input:disabled { opacity: .5; }
+.rp-como { grid-column: span 12; margin: 0; font-size: 12px; line-height: 1.4; color: var(--txt-2); }
+.rp-como b, .rp-cuenta-pasos b { color: var(--txt); }
+.rp-como p { margin: 0 0 4px; }
+.rp-pasos { margin: 0; padding-left: 17px; display: grid; gap: 3px; }
+.rp-pasos li::marker { font-weight: 700; color: var(--txt); }
+.rp-pasos a { color: var(--txt); font-weight: 700; white-space: nowrap; }
+.rp-prod { grid-column: span 12; }
+.tk-datos .rp-fam { margin: -4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--txt-2); }
+.tk-datos .rp-fam:empty { display: none; }
+.rp-fam b { color: var(--txt); }
+.rp-fam b.rp-elegido { font-size: 14px; }
+.rp-fam span { color: var(--txt-3); font-size: 11.5px; }
+.rp .tk-caja.fuerte { background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
+.rp .tk-caja.fuerte span { color: rgba(255, 255, 255, .78); }
+.rp .tk-caja.rp-mal { background: var(--bad-soft); border-color: var(--bad-txt); }
+.rp .tk-caja.rp-mal b { color: var(--bad-txt); }
+.rp-tabla { font-size: 13px; }
+.rp-tabla th { padding: 5px 6px; }
+.rp-tabla tr.rp-t th { top: 27px; }
+.rp-tabla td { padding: 1px 6px; height: 27px; }
+.rp-tabla .rp-col { border-left: 1px solid var(--line); }
+.rp-tabla .rp-totc { border-left: 1px solid var(--line); }
+.rp-tabla tbody th[scope=row], .rp-tabla tfoot th { text-align: left; white-space: nowrap; padding: 2px 6px; font: 700 12.5px var(--sans); color: var(--txt); background: none; position: static; border-bottom: 1px solid var(--line); }
+.rp-tabla input.rp-n { width: 40px; height: 24px; min-height: 0; padding: 0 2px; border: 1px solid var(--line-alta); border-radius: 7px; text-align: center; font-size: 13.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rp-tabla input.rp-n.rp-cero { color: var(--txt-3); font-weight: 400; }
+.rp-tabla input.rp-n.rp-mano { border-color: var(--acc); background: var(--acc-soft); color: var(--txt); font-weight: 700; }
+.rp-tabla input.rp-n:disabled { opacity: .5; }
+.rp-tabla input.rp-n.rp-nec { width: 46px; font-weight: 700; }
+.rp-tabla input.rp-n.rp-nec.rp-neg { color: var(--txt-3); font-weight: 500; }
+.rp-tabla td.rp-toca { color: var(--txt-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-tabla td.rp-toca s, .rp-cuenta s { color: var(--txt-3); }
+.rp-tabla td.rp-pct { color: var(--txt-2); white-space: nowrap; }
+.rp-tabla tr.rp-fab td, .rp-tabla tr.rp-fab th { background: var(--surface-2); }
+.rp-tabla tr.rp-fab input.rp-n { background: var(--surface); font-weight: 700; }
+.rp-tabla tr.rp-fab small { font-weight: 500; color: var(--txt-3); }
+.rp-tabla tfoot td, .rp-tabla tfoot th { background: var(--surface); font-weight: 700; }
+.rp-tabla tfoot tr.rp-rep td, .rp-tabla tfoot tr.rp-rep th { border-top: 2px solid var(--line-alta); }
+.rp-tabla tfoot tr.rp-queda td, .rp-tabla tfoot tr.rp-queda th { color: var(--txt-2); border-bottom: 0; }
+/* Los totales, pegados al fondo de la grilla (como en todas las listas): «Repartido» y «Queda en la fábrica» se ven siempre. */
+.rp-grilla .rp-tabla tfoot { position: sticky; bottom: 0; z-index: 2; }
+.rp-grilla .rp-tabla tfoot tr.rp-rep > * { box-shadow: inset 0 2px 0 var(--line-alta); }
+.rp-tabla td.rp-mal, .rp-tabla th.rp-mal { color: var(--bad-txt) !important; background: var(--bad-soft); }
+.rp-tabla tr.rp-no td:not(.rp-va) { opacity: .45; }
+.rp-tabla td.rp-vacio { height: auto; padding: 28px 18px; text-align: center; font-size: 14px; color: var(--txt-3); border: 0; }
+.rp-sin { color: var(--txt-3); }
+.rp-aviso { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 2px; border-radius: 50%; background: var(--warn-soft); color: var(--warn-txt); font: 800 11px var(--sans); cursor: help; vertical-align: 1px; }
+.rp-hecho { display: inline-block; margin-left: 4px; padding: 0 7px; border-radius: 999px; background: var(--ok-soft); color: var(--ok-txt); font: 700 11px/18px var(--sans); vertical-align: 1px; }
+.rp-loc { white-space: nowrap; font-weight: 600; }
+.rp-va input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); vertical-align: middle; cursor: pointer; }
+.rp-nota { margin: 0; font-size: 12px; color: var(--txt-3); line-height: 1.4; }
+.rp-nota a { color: var(--txt-2); font-weight: 600; }
+.rp-mal-txt { color: var(--bad-txt) !important; }
+#rpArmar:disabled, #rpComparar:disabled, #rpVolver:disabled { opacity: .5; cursor: default; }
+/* Los mayoristas con pedido, arriba de los locales, y lo que queda para los locales. */
+.rp-tabla tr.rp-may td, .rp-tabla tr.rp-may th { background: var(--surface-2); }
+.rp-tabla tr.rp-may input.rp-n { background: var(--surface); }
+.rp-tabla input.rp-may-n { width: 100%; min-width: 128px; height: 28px; padding: 0 8px; border: 1px solid var(--line-alta); border-radius: 8px; background: var(--surface); font: inherit; font-weight: 600; color: var(--txt); }
+.rp-tabla td.rp-may-txt { color: var(--txt-3); font-size: 12px; white-space: nowrap; }
+.rp-may-x { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--txt-3); font-size: 17px; line-height: 1; cursor: pointer; }
+.rp-may-x:hover { background: var(--surface); color: var(--txt); }
+.rp-tabla tr.rp-may-mas td { padding-top: 5px; padding-bottom: 5px; }
+.rp-link { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--acc); cursor: pointer; }
+.rp-link:hover { text-decoration: underline; }
+.rp-may-ayuda { color: var(--txt-3); font-size: 12px; margin-left: 10px; }
+.rp-tabla tr.rp-para td, .rp-tabla tr.rp-para th { border-bottom: 2px solid var(--line-alta); font-weight: 600; }
+/* Las ventanas: la cuenta de cada local, las formas lado a lado, la planilla y los remitos por armar. */
+.rp-cuenta-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 18px; align-items: start; }
+.pos-caja .rp-grilla-c { flex: none; height: auto; max-height: calc(100vh - 230px); min-height: 0; box-shadow: none; }
+.pos-caja .rp-cuenta td, .pos-caja .rp-cuenta th { padding: 3px 8px; }
+.rp-cuenta-pasos { font-size: 13px; line-height: 1.45; color: var(--txt-2); }
+.rp-cuenta-pasos .rp-pasos { gap: 7px; }
+.rp-cuenta-pasos .rp-nota { margin-top: 8px; }
+@media (max-width: 760px) { .rp-cuenta-cuerpo { grid-template-columns: 1fr; } }
+.rp-cuenta td.n, .rp-cuenta th.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-cuenta tfoot tr.rp-tot td, .rp-cuenta tfoot tr.rp-tot th { border-top: 2px solid var(--line-alta); font-weight: 700; }
+.rp-a-mano { color: var(--txt-2); font-weight: 700; }
+.rp-cuenta-nota { margin-top: 10px; }
+.rp-comp th.n { text-align: right; }
+.rp-comp th .rp-link { font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.rp-comp td.n small { display: inline-block; min-width: 54px; text-align: left; margin-left: 6px; font-weight: 500; color: var(--txt-3); }
+.pos-caja .rp-comp td.rp-elegida, .pos-caja .rp-comp th.rp-elegida { background: var(--acc-soft); }
+.rp-comp th.rp-elegida .rp-link { color: var(--txt); }
+.rp-comp-nota { margin: 10px 0 0; }
+.pos-caja .rp-grilla-v { flex: none; height: auto; max-height: 46vh; min-height: 0; box-shadow: none; }
+.pos-caja .rp-tabla td { padding: 4px 8px; }
+.rp-nota-v { margin: 10px 0 0; }
+.rp-ojo { margin: 10px 0 0; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-txt); font-size: 13px; line-height: 1.4; font-weight: 600; }
+.rp-tabla td.rp-est { white-space: nowrap; font-size: 12.5px; font-weight: 700; color: var(--txt-3); }
+.rp-tabla td.rp-est.ok { color: var(--ok-txt); }
+.rp-tabla td.rp-est.mal { color: var(--bad-txt); }
+.rp-lista-loc { margin: 0 0 12px; padding: 0; list-style: none; columns: 3; column-gap: 16px; font-size: 13px; line-height: 1.6; }
+.rp-lista-loc small { color: var(--txt-3); }
+.rp-av-tit { margin: 0 0 6px; font-weight: 700; }
+.rp-avisos { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 34vh; overflow-y: auto; }
+.rp-avisos li { padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-txt); font-size: 13.5px; line-height: 1.4; font-weight: 600; }
+/* La columna de la izquierda no estira la página: si no entra, se desliza adentro. */
+@media (min-width: 1000px) and (min-height: 560px) {
+  #cuerpo.pos-cuerpo.lleno.rp-cuerpo { height: calc(100vh - 22px); }
+  .pos-cuerpo.lleno > .tk.rp { min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  .rp .tk-izq { min-height: 0; }
+  .rp .tk-datos { min-height: 0; overflow-y: auto; }
+}

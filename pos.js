@@ -168,7 +168,8 @@
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista']]],
       ['Depósito', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
       /* SQL 259: los transportes (los expresos) y adónde se le manda a cada local. */
-      ['Remitos', [['remitos', 'Remitos', 'envio'], ['transportes', 'Transportes', 'ruta'], ['diferencias', 'Diferencias', 'dif']]],
+      /* 12/11: «Repartir un producto» (lo que entra, repartido entre los locales; de ahí salen los remitos). */
+      ['Remitos', [['remitos', 'Remitos', 'envio'], ['repartir', 'Repartir un producto', 'repartir'], ['transportes', 'Transportes', 'ruta'], ['diferencias', 'Diferencias', 'dif']]],
       /* SQL 285 (Mauricio, 12/11: "en la parte de fábrica necesito que haya una sección que diga «disponibilidad»… para que el
          contador de la empresa pueda ver la disponibilidad de cada local… y también la parte de movimientos… También tienen
          que tener una parte de IVA ventas de cada local"): las mismas tres pantallas de Gestión, para mirar (no se carga, no se
@@ -199,7 +200,7 @@
   /* SQL 285: en la Fábrica, cada pantalla pide lo suyo: lo de siempre (productos, depósito y remitos), «Entra a Fábrica»; lo
      contable, «Ve lo contable». Así el que tiene una sola de las dos casillas ve sólo su parte del menú. */
   if (MODO === 'fabrica') {
-    ['productos', 'listas', 'stock', 'depositos', 'inventario', 'remitos', 'remito_nuevo', 'transportes', 'diferencias'].forEach(function (k) { REQUIERE[k] = 'fabrica'; });
+    ['productos', 'listas', 'stock', 'depositos', 'inventario', 'remitos', 'remito_nuevo', 'repartir', 'transportes', 'diferencias'].forEach(function (k) { REQUIERE[k] = 'fabrica'; });
     ['disponibilidad', 'movimientos', 'iva'].forEach(function (k) { REQUIERE[k] = 'contable'; });
   }
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
@@ -208,7 +209,7 @@
                       fabrica: 'No tenés los productos, el depósito ni los remitos de la Fábrica («Entra a Fábrica»).',
                       contable: 'No tenés lo contable de la Fábrica: la disponibilidad, los movimientos y el IVA Ventas de los locales («Ve lo contable»).' };
   var HECHAS = { venta: 1, tickets: 1, cambio: 1, notas: 1, fallida: 1, giftcards: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
+                 stock: 1, remitos: 1, repartir: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -275,6 +276,7 @@
     stock: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     deposito: '<path d="M3 21V8l9-5 9 5v13"/><path d="M7 21v-9h10v9"/><path d="M7 15h10M7 18h10"/>',
     ruta: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',   // SQL 259: Transportes
+    repartir: '<path d="M12 3v6"/><path d="M12 9 5 15M12 9l7 6M12 9v6"/><circle cx="5" cy="18" r="2.2"/><circle cx="12" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/>',   // Repartir un producto
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
     devolucion: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
@@ -887,7 +889,7 @@
     var ver = { venta: verVenta, tickets: verTickets, cambio: verCambio, notas: verNotas, fallida: verFallidas, giftcards: verGiftcards, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
-                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, transportes: verTransportes, diferencias: verDiferencias, inventario: verInventario,
+                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, repartir: verRepartir, transportes: verTransportes, diferencias: verDiferencias, inventario: verInventario,
                 devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos, tiempos: verTiempos,
                 general: verStockGeneral, general_modulo: verModuloSg }[v];
     if (ver) ver(); else verPronto(v);
@@ -909,7 +911,7 @@
   /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. Tickets también
      (SQL 171): con el panel de la derecha, la lista entra entera en la PC del local. */
   function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets' || S.vista === 'remito_nuevo' || (S.vista === 'remitos' && OFICINA) ||
-                                 S.vista === 'devolucion_nueva'; }   // el remito nuevo, la lista de la Fábrica y la devolución nueva (7/11): como la venta y Tickets
+                                 S.vista === 'devolucion_nueva' || S.vista === 'repartir'; }   // el remito nuevo, la lista de la Fábrica y la devolución nueva (7/11): como la venta y Tickets
   function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : leer(K_FIJO) !== '1'; }
   function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else guardar(K_FIJO, ch ? '0' : '1'); }
 
@@ -13825,6 +13827,10 @@
       «Sin temporada» elegido a mano queda vacío. */
   function tempRn(temps) {
     if (RN.temp || RN.sin_temp) return RN.temp || '';
+    return tempDeTurno(temps);
+  }
+  /** La temporada de turno entre las del catálogo (también para «Repartir un producto»). */
+  function tempDeTurno(temps) {
     var t = temporadaNueva(), o = t[1] * 2 + (t[0] === 'Invierno' ? 1 : 0);
     var vi = (temps || valoresDe(8)).filter(function (x) { return /(verano|invierno)\s*\d{4}/i.test(x); });   // ya vienen de la más nueva a la más vieja
     return vi.filter(function (x) { return ordenTemporada(x) === o; })[0] || vi.filter(function (x) { return ordenTemporada(x) < o; })[0] || '';
@@ -13873,6 +13879,946 @@
     $('rnBultos').oninput = function () { RN.bultos = this.value; guardarBorradorRn(); };
     $('rnAseg').oninput = function () { RN.aseg = this.value; guardarBorradorRn(); };
   }
+
+  /* ════════════════════════════════════════════════════════════════════
+     REPARTIR UN PRODUCTO (Fábrica → Remitos; 12/11/2026)
+     Lo que entra de un producto, repartido entre los locales; de acá salen
+     los remitos, uno por local, «Pendiente de envío» como el Nuevo remito.
+     La reunión del 12/11 con la fábrica: el criterio es la parte de cada
+     local en la venta, como SUGERENCIA que se termina a mano. Mauricio
+     (12/11): «con las dos variantes: una por necesidad y otra por el
+     porcentaje de rubro, familia o el general… vemos qué funciona mejor».
+     Las formas están en «Repartir según» y «Comparar» las pone lado a lado.
+     Lo vendido y lo que tiene cada local salen de la planilla de la fábrica
+     (el Excel con una hoja por local: Rubro, Familia, Unidades Vendidas,
+     el stock y la Reposición). Son ventas de la empresa: NO van en el código
+     (el repositorio es público). Se cargan con «Cargar la planilla…» y
+     quedan guardadas en esa compu (K_RP_PLANILLA).
+     Los talles: en la proporción de lo que entró («si entran 100 S, 200 M y
+     200 L, a cada local le va en esa proporción») o parejos (curvas).
+     Lo de los mayoristas con pedido se aparta primero; todavía no se les
+     hace el remito desde acá (falta la sección de Pedidos).
+     ════════════════════════════════════════════════════════════════════ */
+  var K_RP_PLANILLA = 'pos_rp_planilla', K_RP_PREFS = 'pos_rp_prefs';
+  function verRepartir() { RP.ver(); }
+  var RP = (function () {
+    /* [la clave, como se elige, como se titula en «Comparar»] */
+    var FORMAS = [['fam', '% de la venta de la familia', '% familia'], ['rub', '% de la venta del rubro', '% rubro'], ['gen', '% de la venta general', '% general'],
+                  ['nec', 'Lo que necesita', 'Necesidad'], ['par', 'Parejo', 'Parejo']];
+    var PL = null, PL_DE = '';   // la planilla guardada en esta compu, y de cuándo es
+    /* P: el producto. CEL: los casilleros (talle × color). HAY: lo de la fábrica en cada casillero (STOCK: lo que dice el depósito).
+       LOC: los locales. A: lo que le va a cada local en cada casillero; MANO: lo corregido a mano. MAY: los mayoristas con pedido.
+       LOTE: los remitos de este reparto que ya se guardaron (si se cortó en la mitad, no se repiten). */
+    var P = null, TALLES = [], COLORES = [], CEL = [], PREFS = [], HAY = [], HAY_MANO = false, STOCK = null, LOC = [], A = [], MANO = {}, NEC_MANO = {}, REP = null, MAY = [];
+    var MULT = 1.2, MULT_MANO = false, TEMP = null, DEP = '', LOTE = null, nStock = 0, guardandoRp = false;
+
+    function suma(a) { return a.reduce(function (s, x) { return s + x; }, 0); }
+    function fmt(x) { if (x == null) return '—'; x = Math.round(x); return x < 0 ? '−' + (-x) : String(x); }
+    function entero(x) { var n = parseInt(String(x).replace(/\D/g, ''), 10); return isNaN(n) ? 0 : Math.min(n, 9999); }
+    function coma(x) { return String(Math.round(x * 100) / 100).replace('.', ','); }
+    function coma1(x) { return (Math.round(x * 10) / 10).toFixed(1).replace('.', ','); }
+    function coma2(x) { return x.toFixed(2).replace('.', ','); }
+    function juntar(a) { return a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1]; }
+    function segun() { return $('rpSegun').value; }
+    /* De dónde se mira lo vendido y lo que tiene: la familia del producto, todo su rubro o todo lo del local. */
+    function nivelDe(s) { return s === 'rub' ? 'rub' : s === 'gen' ? 'gen' : 'fam'; }
+    function tipoDe(s) { return s === 'nec' ? 'nec' : s === 'par' ? 'par' : 'ven'; }
+    function familia() { return P ? [P[2], P[7]].filter(Boolean).join(' · ') : ''; }
+    function queTxt(nv) { return nv === 'rub' ? 'todo el rubro ' + (P[2] || '') : nv === 'gen' ? 'todos los productos' : (familia() || 'la familia'); }
+    function etiqueta() { return P ? P[0] + ' · ' + P[1] : ''; }
+    function periodo() { return (PL && PL.periodo) || 'la temporada pasada'; }
+    function tallesTxt() { var ts = TALLES.map(nombreTalle); return ts.length <= 4 ? juntar(ts) : ts[0] + ' a ' + ts[ts.length - 1]; }
+    function hecho(i) { return LOTE && LOTE.hechos[LOC[i].id]; }
+    /* Los mayoristas con pedido (reunión del 12/11: «si no, no la entregamos»): lo suyo se aparta primero y el resto se
+       reparte entre los locales. MAY = [{ n: nombre, c: [cantidad por casillero] }]. */
+    function mayCel(j) { var s = 0; MAY.forEach(function (m) { s += m.c[j] || 0; }); return s; }
+    function totMay(m) { return suma(m.c); }
+    /* Lo que ya salió en los remitos guardados de este reparto (si se cortó en la mitad): no se vuelve a repartir. */
+    function yaSalio(j) { var s = 0; LOC.forEach(function (l, i) { if (hecho(i) && A[i]) s += val(i, j); }); return s; }
+    function paraLocales() { return HAY.map(function (x, j) { return Math.max(x - mayCel(j) - yaSalio(j), 0); }); }
+    /* «Necesita» (lo vendido × 1,2 − lo que tiene) se ve sólo cuando se usa: repartiendo según lo que necesita, o con el tope. */
+    function conNec() { return segun() === 'nec' || $('rpTope').checked; }
+    function vacios() { return conNec() ? '<td></td><td></td><td></td><td></td><td></td>' : '<td></td><td></td><td></td><td></td>'; }
+    /* La parte de la venta de un local, entre los que tienen el tilde: 0,25 (o null si no vendió o no va). */
+    function ventaTotal() { return suma(LOC.map(function (l) { return l.va ? Math.max(l.v || 0, 0) : 0; })); }
+    function parte(l) { var V = ventaTotal(); return l.va && l.v > 0 && V > 0 ? l.v / V : null; }
+    function pctTxt(l) { var p = parte(l); return p == null ? '<span class="rp-sin">—</span>' : '<span title="' + coma1(p * 100) + ' %">' + Math.round(p * 100) + ' %</span>'; }
+    /* Lo que necesita: lo que vendió × MULT, menos lo que tiene hoy (sin decimales). Si se corrigió a mano, lo de a mano. */
+    function necesita(v, t) { return v == null && t == null ? null : Math.round((v || 0) * MULT - (t || 0)) || 0; }
+    function necDe(l) { return l.necMano != null ? l.necMano : l.nec; }
+    function cuantoMas() {
+      var p = Math.round((MULT - 1) * 100);
+      return p > 0 ? 'un ' + p + ' % más' : p < 0 ? 'un ' + (-p) + ' % menos' : 'lo mismo';
+    }
+    /* 0,33 → «un tercio»; 0,26 → «el 26 %». */
+    function fraccion(f) {
+      var F = [[1 / 2, 'la mitad'], [1 / 3, 'un tercio'], [2 / 3, 'dos tercios'], [1 / 4, 'un cuarto'], [3 / 4, 'tres cuartos']];
+      for (var i = 0; i < F.length; i++) if (Math.abs(f - F[i][0]) < 0.01) return { n: F[i][1], p: true };
+      return { n: 'el ' + Math.round(f * 100) + ' %', p: false };
+    }
+
+    /* ── La planilla: un .xlsx es un zip con XML adentro; se leen TODAS las hojas con su nombre, sin librerías ── */
+    function leerLibro(ab) {
+      if (typeof DecompressionStream !== 'function') return Promise.reject(new Error('Este navegador no puede abrir el Excel. Probá con Chrome o Edge al día.'));
+      var u = new Uint8Array(ab), dv = new DataView(ab), fin = -1, td = new TextDecoder('utf-8'), i;
+      for (i = u.length - 22; i >= Math.max(0, u.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { fin = i; break; }
+      if (fin < 0) return Promise.reject(new Error('El archivo no es un Excel (.xlsx). Si la planilla está en Google: Archivo → Descargar → Microsoft Excel (.xlsx).'));
+      var total = dv.getUint16(fin + 10, true), p = dv.getUint32(fin + 16, true), arch = {};
+      for (var k = 0; k < total && p + 46 <= u.length && dv.getUint32(p, true) === 0x02014b50; k++) {
+        var ln = dv.getUint16(p + 28, true), le = dv.getUint16(p + 30, true), lc = dv.getUint16(p + 32, true);
+        arch[td.decode(u.subarray(p + 46, p + 46 + ln))] = { metodo: dv.getUint16(p + 10, true), comp: dv.getUint32(p + 20, true), local: dv.getUint32(p + 42, true) };
+        p += 46 + ln + le + lc;
+      }
+      function abrir(n) {
+        var a = arch[n];
+        if (!a) return Promise.resolve(null);
+        var ini = a.local + 30 + dv.getUint16(a.local + 26, true) + dv.getUint16(a.local + 28, true), datos = u.subarray(ini, ini + a.comp);
+        if (a.metodo !== 8) return Promise.resolve(td.decode(datos));
+        return new Response(new Blob([datos]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+      }
+      function des(s) { return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, function (m, n) { return String.fromCharCode(+n); }).replace(/&amp;/g, '&'); }
+      function soloTexto(xml) { var t = ''; String(xml).replace(/<t\b[^>]*>([\s\S]*?)<\/t>/g, function (m, v) { t += v; return m; }); return des(t); }
+      function col(ref) { var c = 0, l = ref.replace(/\d+/g, ''); for (var x = 0; x < l.length; x++) c = c * 26 + (l.charCodeAt(x) - 64); return c - 1; }
+      function filasDe(xml, ss) {
+        var r = [];
+        String(xml || '').replace(/<row\b([^>]*)>([\s\S]*?)<\/row>|<row\b[^>]*\/>/g, function (m, a, cuerpo) {
+          var n = +((a || '').match(/\br="(\d+)"/) || [0, r.length + 1])[1], fila = [];
+          String(cuerpo || '').replace(/<c\b([^>]*?)(\/>|>([\s\S]*?)<\/c>)/g, function (mm, ca, cierre, dentro) {
+            var ref = (ca.match(/\br="([A-Z]+\d+)"/) || [])[1], t = (ca.match(/\bt="([^"]*)"/) || [])[1] || '';
+            var v = dentro ? (dentro.match(/<v>([\s\S]*?)<\/v>/) || [])[1] : undefined, s;
+            if (t === 's') s = v != null ? ss[+v] : '';
+            else if (t === 'inlineStr') s = soloTexto(dentro || '');
+            else s = v != null ? des(v) : '';
+            if (ref) fila[col(ref)] = s;
+            return mm;
+          });
+          for (var x = 0; x < fila.length; x++) if (fila[x] == null) fila[x] = '';
+          r[n - 1] = fila;
+          return m;
+        });
+        for (var y = 0; y < r.length; y++) if (!r[y]) r[y] = [];
+        return r;
+      }
+      return Promise.all([abrir('xl/workbook.xml'), abrir('xl/_rels/workbook.xml.rels'), abrir('xl/sharedStrings.xml')]).then(function (x) {
+        if (!x[0]) throw new Error('El Excel no tiene hojas.');
+        var rels = {}, hojas = [], ss = [];
+        String(x[1] || '').replace(/<Relationship\b([^>]*)\/?>/g, function (m, a) {
+          var id = (a.match(/\bId="([^"]*)"/) || [])[1], t = (a.match(/\bTarget="([^"]*)"/) || [])[1];
+          if (id && t) rels[id] = t.replace(/^\/?(xl\/)?/, 'xl/');
+          return m;
+        });
+        x[0].replace(/<sheet\b([^>]*)\/?>/g, function (m, a) {
+          var nombre = des((a.match(/\bname="([^"]*)"/) || [])[1] || ''), rid = (a.match(/\br:id="([^"]*)"/) || [])[1];
+          if (rid && rels[rid]) hojas.push({ nombre: nombre, ruta: rels[rid] });
+          return m;
+        });
+        String(x[2] || '').replace(/<si>([\s\S]*?)<\/si>/g, function (m, v) { ss.push(soloTexto(v)); return m; });
+        return Promise.all(hojas.map(function (h) { return abrir(h.ruta).then(function (xml) { return { nombre: h.nombre, filas: filasDe(xml, ss) }; }); }));
+      });
+    }
+    /* Cómo le dice la fábrica a cada local en la planilla (el prefijo de «SucursalRubroFamilia»), y cómo se llama acá. */
+    var CODIGOS = { SUN: 'Unicenter', SPB: 'Parque Brown', DOT: 'DOT', SJB: 'San Justo Shopping', SJU: 'San Justo', MD2: 'Rivadavia', FLO: 'Flores',
+                    VPA: 'Villa del Parque', PCH: 'Pacheco', MOR: 'Morón', ITB: 'Ituzaingó', CAB: 'Caseros', LZB: 'Lomas de Zamora', GBO: 'Grand Bourg' };
+    var POR_NOMBRE = [[/unicenter/, 'SUN'], [/parque brown/, 'SPB'], [/\bdot\b/, 'DOT'], [/san justo shopping/, 'SJB'], [/san justo/, 'SJU'], [/rivadavia|mdq|mar del plata/, 'MD2'],
+                      [/flores/, 'FLO'], [/villa del parque/, 'VPA'], [/pacheco/, 'PCH'], [/moron/, 'MOR'], [/ituzaingo/, 'ITB'], [/caseros/, 'CAB'], [/lomas/, 'LZB'], [/grand bourg/, 'GBO']];
+    function clavePl(r, f) { return normal(r) + '|' + normal(f); }
+    function numPl(x) { var s = String(x == null ? '' : x).trim(); if (!s || /^[-–]$/.test(s) || /^#/.test(s)) return null; var n = parseFloat(s.replace(',', '.')); return isNaN(n) ? null : n; }
+    function codDeNombre(n) { var s = normal(n).replace(/^\d+\s*-?\s*/, ''); for (var i = 0; i < POR_NOMBRE.length; i++) if (POR_NOMBRE[i][0].test(s)) return POR_NOMBRE[i][1]; return null; }
+    /** De la hoja de cada local, la tabla de más abajo (la nueva): lo vendido, el stock y la reposición por rubro y familia.
+        Y lo raro que se ve (una hoja vacía, un local que falta, ventas copiadas de otro, la Reposición que no es la cuenta).
+        → { archivo, locales: [{ cod, nombre, hoja, filas: { clave: { r, f, v, t, nx } } }], familias, avisos, mult, periodo } */
+    function interpretar(hojas, archivo) {
+      var locales = [], avisos = [], abast = null, ratios = [], per = '';
+      hojas.forEach(function (h) {
+        var F = h.filas, hi = -1;
+        /* El período de lo vendido, del encabezado del «Historial de Ventas»: «Unidades Vendidas Verano 2026 (desde … hasta …)». */
+        if (!per && /historial/.test(normal(h.nombre))) F.slice(0, 8).forEach(function (f) {
+          var tit = '', fechas = '';
+          (f || []).forEach(function (x) {
+            var m = String(x).match(/desde\s+(.+?)\s+hasta\s+([^)]+)/i);
+            if (m) fechas = 'del ' + m[1].trim() + ' al ' + m[2].trim();
+            var t = String(x).match(/vendidas\s+((verano|invierno)\s+\d{4})/i);
+            if (t) tit = titulo(t[1]);
+          });
+          if (tit || fechas) per = [tit, fechas].filter(Boolean).join(', ');
+        });
+        for (var i = 0; i < F.length; i++) {
+          var f = (F[i] || []).map(normal);
+          if (f.indexOf('rubro') >= 0 && f.some(function (x) { return /^reposici/.test(x); }) && f.some(function (x) { return /vendid/.test(x); })) hi = i;   // la de más abajo: la nueva
+          if (!abast && /abastecim/.test(normal(h.nombre)) && f.indexOf('rubro') >= 0 && f.indexOf('familia') >= 0 && f.filter(function (x) { return CODIGOS[x.toUpperCase()]; }).length >= 5) abast = { hoja: h, i: i };
+        }
+        if (hi < 0) return;
+        var enc = F[hi].map(normal), c = {};
+        enc.forEach(function (x, j) {
+          if (x === 'rubro' && c.r == null) c.r = j;
+          else if (x === 'familia' && c.f == null) c.f = j;
+          else if (/sucursalrubrofamilia/.test(x)) c.k = j;
+          else if (/vendid/.test(x)) c.v = j;
+          else if (/anteriores/.test(x)) c.a = j;
+          else if (/^temporadas/.test(x)) c.t = j;
+          else if (/total cantidad/.test(x)) c.tot = j;
+          else if (/^reposici/.test(x)) c.n = j;
+          else if (/stock objetivo/.test(x)) c.o = j;
+        });
+        var filas = {}, pref = {}, conDatos = 0;
+        for (var i2 = hi + 1; i2 < F.length; i2++) {
+          var row = F[i2] || [], r = String(row[c.r] || '').trim(), fa = String(row[c.f] || '').trim();
+          if (!r) break;
+          var v = numPl(row[c.v]), a = c.a != null ? numPl(row[c.a]) : null, t = c.t != null ? numPl(row[c.t]) : null, tot = c.tot != null ? numPl(row[c.tot]) : null, n = numPl(row[c.n]);
+          var o = c.o != null ? numPl(row[c.o]) : null;
+          if (v > 0 && o != null) ratios.push(o / v);
+          var tiene = tot != null ? tot : (a != null || t != null ? (a || 0) + (t || 0) : null);
+          filas[clavePl(r, fa)] = { r: r, f: fa, v: v, t: tiene, nx: n };
+          if (v != null || tiene != null) conDatos++;
+          var k = String(row[c.k] || ''), rf = r + fa;
+          if (k.length > rf.length && k.slice(-rf.length) === rf) { var p = k.slice(0, k.length - rf.length).toUpperCase(); pref[p] = (pref[p] || 0) + 1; }
+        }
+        var cod = Object.keys(pref).sort(function (x, y) { return pref[y] - pref[x]; })[0] || codDeNombre(h.nombre);
+        if (!CODIGOS[cod]) cod = codDeNombre(h.nombre) || cod;
+        locales.push({ cod: cod, nombre: CODIGOS[cod] || h.nombre, hoja: h.nombre, orden: parseInt(h.nombre, 10) || 90, filas: filas, conDatos: conDatos });
+      });
+      locales.sort(function (x, y) { return x.orden - y.orden; });
+      if (!locales.length) throw new Error('No encontré las hojas de los locales: cada una tiene que tener las columnas Rubro, Familia, Unidades Vendidas y Reposición.');
+
+      locales.forEach(function (l) { if (!l.conDatos) avisos.push({ cod: l.cod, txt: 'La hoja «' + l.hoja + '» está vacía (ni ventas ni stock): no hay datos de ' + l.nombre + '.' }); });
+      ((S.ini && S.ini.locales) || []).map(nombreLocal).forEach(function (n) {
+        if (!locales.some(function (l) { return normal(l.nombre) === normal(n); })) avisos.push({ cod: codDeNombre(n), txt: n + ' no está en la planilla.' });
+      });
+      for (var x = 0; x < locales.length; x++) for (var y = x + 1; y < locales.length; y++) {
+        var La = locales[x], Lb = locales[y], comunes = 0, iguales = 0;
+        Object.keys(La.filas).forEach(function (k) {
+          var a = La.filas[k].v, b = Lb.filas[k] && Lb.filas[k].v;
+          if (a != null && b != null && (a || b)) { comunes++; if (a === b) iguales++; }
+        });
+        if (comunes >= 8 && iguales / comunes >= 0.9) avisos.push({ cod: Lb.cod, txt: 'Las ventas de ' + Lb.nombre + ' son iguales a las de ' + La.nombre + ' en ' + iguales + ' de ' + comunes + ' familias: parece copiado. Su parte de la venta no es real.' });
+      }
+      if (abast) {
+        var Fa = abast.hoja.filas, ea = Fa[abast.i].map(normal), cr = ea.indexOf('rubro'), cf = ea.indexOf('familia');
+        ea.forEach(function (x, j) {
+          var cod = x.toUpperCase(), l = locales.filter(function (z) { return z.cod === cod; })[0];
+          if (!CODIGOS[cod] || !l || !l.conDatos) return;
+          var mal = 0, sumaA = 0, sumaL = 0;
+          for (var i3 = abast.i + 1; i3 < Fa.length; i3++) {
+            var row = Fa[i3] || [], r = String(row[cr] || '').trim();
+            if (!r) break;
+            var fl = l.filas[clavePl(r, row[cf])], va = numPl(row[j]) || 0;
+            if (!fl || fl.nx == null) continue;
+            if (Math.abs(va - fl.nx) > 1) mal++;
+            sumaA += Math.max(va, 0); sumaL += Math.max(fl.nx, 0);
+          }
+          if (mal >= 3) avisos.push({ cod: cod, general: true, txt: 'En «' + abast.hoja.nombre + '», la columna de ' + l.nombre + ' no coincide con su hoja en ' + mal + ' familias: ahí pide ' + miles(Math.round(sumaA)) + ' prendas y su hoja pide ' + miles(Math.round(sumaL)) + (sumaA === 0 ? ' (toma la tabla vieja de arriba).' : '.') });
+        });
+      }
+      var mult = 1.2;
+      if (ratios.length) { ratios.sort(function (a, b) { return a - b; }); mult = Math.round(ratios[Math.floor(ratios.length / 2)] * 100) / 100; }
+      var distintas = [];
+      locales.forEach(function (l) { Object.keys(l.filas).forEach(function (k) {
+        var f = l.filas[k]; if (f.v == null || f.nx == null) return;
+        var cta = f.v * mult - (f.t || 0);
+        if (Math.abs(cta - f.nx) > 0.5) distintas.push(l.nombre + ' · ' + f.f + ' (la planilla dice ' + fmt(f.nx) + ', la cuenta da ' + fmt(cta) + ')');
+      }); });
+      if (distintas.length) avisos.push({ general: true, txt: 'En ' + distintas.length + (distintas.length === 1 ? ' renglón' : ' renglones') + ' la Reposición no es lo vendido × ' + coma(mult) + ' menos el stock: ' + distintas.slice(0, 4).join('; ') + (distintas.length > 4 ? '…' : '') + '. Acá se usa la cuenta.' });
+      var fams = {}; locales.forEach(function (l) { Object.keys(l.filas).forEach(function (k) { fams[k] = 1; }); });
+      return { archivo: archivo, locales: locales.map(function (l) { return { cod: l.cod, nombre: l.nombre, hoja: l.hoja, filas: l.filas }; }), familias: Object.keys(fams).length, avisos: avisos, mult: mult, periodo: per };
+    }
+    function leerGuardada() {
+      var g = leerJSON(K_RP_PLANILLA, null);
+      if (g && g.v === 1 && g.pl && Array.isArray(g.pl.locales)) { PL = g.pl; PL_DE = g.de || ''; } else { PL = null; PL_DE = ''; }
+    }
+
+    /* ── El producto ── */
+    function elegir(p) {
+      P = p;
+      TALLES = tallesDe(p); if (!TALLES.length) TALLES = [''];
+      COLORES = coloresDe(p); if (!COLORES.length) COLORES = [{ cod: '', nom: '' }];
+      CEL = []; COLORES.forEach(function (c) { TALLES.forEach(function (t) { CEL.push({ t: t, c: c.cod, n: (c.nom ? c.nom + ' ' : '') + nombreTalle(t) }); }); });
+      var nT = TALLES.length, nC = COLORES.length, medio = (nT - 1) / 2;
+      var ot = TALLES.map(function (t, i) { return i; }).sort(function (a, b) { return Math.abs(a - medio) - Math.abs(b - medio) || b - a; });   // primero los del medio
+      /* Un orden por color: el primer local que recibe arranca por el primer color, el segundo por el segundo… */
+      PREFS = [];
+      for (var o = 0; o < nC; o++) { var pr = []; for (var x = 0; x < ot.length; x++) for (var cc = 0; cc < nC; cc++) pr.push(((cc + o) % nC) * nT + ot[x]); PREFS.push(pr); }
+      HAY = CEL.map(function () { return 0; }); HAY_MANO = false; STOCK = null;
+      MAY = []; NEC_MANO = {}; LOTE = null;
+      armarLocales(); repartir(); pintar();
+      traerStock();
+    }
+    function sumaFilas(filas, rub) {
+      var v = null, t = null;
+      if (rub !== '') Object.keys(filas).forEach(function (k) {
+        var f = filas[k];
+        if (rub != null && normal(f.r) !== rub) return;
+        if (f.v != null) v = (v || 0) + f.v;
+        if (f.t != null) t = (t || 0) + f.t;
+      });
+      return { v: v, t: t };
+    }
+    /* Los locales: los de la planilla en su orden y después los del sistema que no están. De cada uno, lo de la familia del
+       producto, lo de todo su rubro y lo de todo el local. */
+    function armarLocales() {
+      var va = {}, k = P ? clavePl(P[2], P[7]) : '', rub = P ? normal(P[2]) : '', porNombre = {}, usados = {}, lista = [];
+      LOC.forEach(function (l) { va[l.id] = l.va; });
+      var sis = ((S.ini && S.ini.locales) || []).map(function (l) { return { id: l.id, n: nombreLocal(l) }; });
+      sis.forEach(function (l) { porNombre[normal(l.n)] = l; });
+      var avisos = ((PL && PL.avisos) || []).filter(function (a) { return !a.general; });
+      ((PL && PL.locales) || []).forEach(function (pl) {
+        var l = porNombre[normal(pl.nombre)];
+        if (!l || usados[l.id]) return;
+        usados[l.id] = 1;
+        var f = pl.filas[k], av = avisos.filter(function (a) { return a.cod === pl.cod; }).map(function (a) { return a.txt; });
+        if (!f && !av.length && P) av.push('Su hoja no tiene ' + (familia() || 'esta familia') + ': de la familia no hay datos suyos.');
+        /* Si la Reposición de la planilla no es su propia cuenta (vendido × lo de la planilla − stock), se avisa: acá va la cuenta. */
+        if (f && f.nx != null && f.v != null && Math.abs(f.v * (PL.mult || 1.2) - (f.t || 0) - f.nx) > 0.5)
+          av.push('En la planilla, su Reposición de ' + f.f + ' dice ' + fmt(f.nx) + ' y no es la cuenta (vendió ' + f.v + ' × ' + coma(PL.mult || 1.2) + ' − tiene ' + (f.t || 0) + '). Acá se usa la cuenta.');
+        lista.push({ id: l.id, n: l.n, d: { fam: { v: f ? f.v : null, t: f ? f.t : null }, rub: sumaFilas(pl.filas, rub), gen: sumaFilas(pl.filas, null) }, aviso: av.join(' ') });
+      });
+      sis.slice().sort(function (a, b) { return a.n.localeCompare(b.n, 'es'); }).forEach(function (l) {
+        if (usados[l.id]) return;
+        var nada = { v: null, t: null };
+        lista.push({ id: l.id, n: l.n, d: { fam: nada, rub: nada, gen: nada }, aviso: PL ? l.n + ' no está en la planilla: no hay datos suyos. Escribí a mano lo que le va en cada talle.' : '' });
+      });
+      lista.forEach(function (l) { l.va = l.id in va ? va[l.id] : true; l.necMano = l.id in NEC_MANO ? NEC_MANO[l.id] : null; });
+      LOC = lista;
+      nivelar();
+    }
+    /** Lo vendido, lo que tiene y lo que necesita cada local, según de dónde mira la forma elegida. */
+    function nivelar() {
+      var nv = nivelDe(segun());
+      LOC.forEach(function (l) { l.v = l.d[nv].v; l.t = l.d[nv].t; l.nec = necesita(l.v, l.t); });
+    }
+
+    /* ── El reparto ──
+       partes(): la parte de cada uno (lo que hay × su peso ÷ el de todos); el que llega a su tope queda ahí y lo suyo se reparte
+       entre los demás. Redondeado: a cada uno su parte sin decimales y las que sobran, a los de decimales más altos (si empatan,
+       al que vendió más). */
+    function partes(H, w, cap, vs) {
+      var n = w.length, q = w.map(function () { return 0; }), fijo = w.map(function (x, i) { return x <= 0 || cap[i] <= 0; }), i;
+      for (var vuelta = 0; vuelta < n + 1; vuelta++) {
+        var R = H, W = 0;
+        for (i = 0; i < n; i++) { if (fijo[i]) R -= q[i]; else W += w[i]; }
+        if (W <= 0) break;
+        var paso = false;
+        for (i = 0; i < n; i++) if (!fijo[i]) { q[i] = R * w[i] / W; if (q[i] > cap[i]) { q[i] = cap[i]; fijo[i] = true; paso = true; } }
+        if (!paso) break;
+      }
+      var t = q.map(function (x) { return Math.floor(x + 1e-9); }), tope = 0;
+      for (i = 0; i < n; i++) if (w[i] > 0) tope += cap[i];
+      var sobran = Math.min(H, tope) - suma(t);
+      q.map(function (x, j) { return j; }).filter(function (j) { return w[j] > 0; })
+        .sort(function (a, b) { var d = (q[b] - t[b]) - (q[a] - t[a]); return Math.abs(d) > 1e-9 ? d : (vs[b] || 0) - (vs[a] || 0) || a - b; })
+        .forEach(function (j) { if (sobran > 0 && t[j] < cap[j]) { t[j]++; sobran--; } });
+      return { q: q, t: t };
+    }
+    /* Los talles en la proporción del stock (12/11: «si entran 100 S, 200 M y 200 L, a cada local le va en esa proporción»):
+       a cada casillero, el total del local × lo que hay ahí ÷ lo que hay en total, sin decimales; las que faltan para llegar a su
+       total, a los casilleros que quedaron más cerca de una más (si empatan, al que más le queda). Nunca más de lo que hay. */
+    function porStock(t, D) {
+      var St = suma(D), rem = D.slice(), m = D.length;
+      var M = t.map(function () { return D.map(function () { return 0; }); });
+      if (St <= 0) return M;
+      var fr = t.map(function (ti, i) {
+        return D.map(function (d, j) { var x = ti * d / St, f = Math.floor(x + 1e-9); M[i][j] = f; rem[j] -= f; return x - f; });
+      });
+      t.map(function (x, i) { return i; }).sort(function (a, b) { return t[b] - t[a] || a - b; }).forEach(function (i) {
+        var faltan = t[i] - suma(M[i]);
+        if (faltan <= 0) return;
+        var orden = D.map(function (d, j) { return j; }).sort(function (a, b) { var d = fr[i][b] - fr[i][a]; return Math.abs(d) > 1e-9 ? d : rem[b] - rem[a] || a - b; });
+        for (var v = 0; v < 2 && faltan > 0; v++) {   // la segunda vuelta, por si algún casillero se quedó sin nada
+          for (var k = 0; k < m && faltan > 0; k++) { var j = orden[k]; if (rem[j] > 0 && (v || fr[i][j] > 1e-9)) { M[i][j]++; rem[j]--; faltan--; } }
+        }
+      });
+      return M;
+    }
+    /** Cuánto le toca a cada local con una forma de repartir (sin tocar nada de la pantalla: «Comparar» las calcula todas).
+        «Si le toca menos de una curva»: «toca» = se le manda lo que le toca; «curva» = primero una curva a cada uno y lo que
+        queda, según lo que le falta; «nada» = no se le manda nada y lo suyo va a los demás (se saca de a uno, el más chico). */
+    function calcular(sg) {
+      var nv = nivelDe(sg), tipo = tipoDe(sg), actual = nv === nivelDe(segun());
+      var vs = LOC.map(function (l) { return l.d[nv].v; });
+      var nec = LOC.map(function (l) { return actual && l.necMano != null ? l.necMano : necesita(l.d[nv].v, l.d[nv].t); });
+      var tope = $('rpTope').checked, chico = $('rpChico').value, D = paraLocales(), H = suma(D), nT = TALLES.length;
+      var n = LOC.length, idx = LOC.map(function (l, i) { return i; });
+      var w = LOC.map(function (l, i) {
+        if (!l.va || hecho(i)) return 0;
+        if (tipo === 'nec') return Math.max(nec[i] || 0, 0);
+        if (tipo === 'ven') return Math.max(vs[i] || 0, 0);
+        return 1;
+      });
+      var cap = LOC.map(function (l, i) { return w[i] <= 0 ? 0 : tope ? Math.max(nec[i] || 0, 0) : Infinity; });
+      var entran = idx.filter(function (i) { return w[i] > 0 && cap[i] > 0; });
+      var Pc = chico === 'curva' ? nT : 0;
+      var p = idx.map(function (i) { return entran.indexOf(i) >= 0 ? Math.min(Pc, cap[i]) : 0; });
+      var sumP = suma(p), q, t, w2 = w.slice(), cap2 = cap.slice(), afuera = [], sinCurva = [], resto = H;
+      if (Pc && sumP > H) {   // no alcanza una curva para cada uno: primero a los que más necesitan
+        var r = H; t = idx.map(function () { return 0; });
+        entran.slice().sort(function (a, b) { return w[b] - w[a] || (vs[b] || 0) - (vs[a] || 0) || a - b; })
+          .forEach(function (i) { var x = Math.min(p[i], r); t[i] = x; r -= x; if (!x) sinCurva.push(i); });
+        q = t.slice(); resto = 0; w2 = idx.map(function () { return 0; });
+      } else {
+        w2 = w.map(function (x, i) { return tipo === 'nec' ? Math.max(x - p[i], 0) : x; });
+        cap2 = cap.map(function (c, i) { return c - p[i]; });
+        resto = H - sumP;
+        var pr = partes(resto, w2, cap2, vs);
+        if (chico === 'nada') for (var vuelta = 0; vuelta < n; vuelta++) {
+          var chicos = idx.filter(function (i) { return w2[i] > 0 && cap2[i] > 0 && pr.t[i] < nT; });
+          if (!chicos.length) break;
+          chicos.sort(function (a, b) { return pr.q[a] - pr.q[b] || (vs[a] || 0) - (vs[b] || 0) || b - a; });
+          afuera.push({ i: chicos[0], tocaba: pr.t[chicos[0]], q: pr.q[chicos[0]] }); w2[chicos[0]] = 0;
+          pr = partes(resto, w2, cap2, vs);
+        }
+        q = pr.q.map(function (x, i) { return x + p[i]; });
+        t = pr.t.map(function (x, i) { return x + p[i]; });
+      }
+      var act = idx.map(function (i) { return w2[i] > 0 && cap2[i] > 0; });
+      var falta = suma(idx.map(function (i) { return act[i] ? w2[i] : 0; }));
+      return { segun: sg, tipo: tipo, nivel: nv, tope: tope, chico: chico, H: H, nT: nT, P: Pc, p: p, sumP: sumP, w: w, w2: w2, act: act, q: q, t: t, resto: resto, falta: falta,
+               f: tipo === 'nec' && falta > 0 ? resto / falta : null, entran: entran, afuera: afuera, sinCurva: sinCurva, ins: !!Pc && sumP > H, nec: nec, vs: vs,
+               may: suma(MAY.map(totMay)), V: suma(LOC.map(function (l, i) { return l.va ? Math.max(vs[i] || 0, 0) : 0; })) };
+    }
+    function repartir() {
+      var guardados = {};   // lo de los locales que ya tienen su remito de este reparto no se toca
+      LOC.forEach(function (l, i) { if (hecho(i) && A[i]) guardados[i] = CEL.map(function (c, j) { return val(i, j); }); });
+      REP = calcular(segun());
+      REP.talles = $('rpTalles').value;
+      var t = REP.t, D = paraLocales(), nT = TALLES.length, idx = LOC.map(function (l, i) { return i; });
+      MANO = {};
+      if (REP.talles === 'stock') A = porStock(t, D);
+      else {
+        /* De a una prenda, primero el talle que el local todavía no tiene (así lo primero es una curva entera) y entre esos, el
+           casillero con más stock en la fábrica para lo que ya le dimos. */
+        var rem = D.slice(), k = 0;
+        A = LOC.map(function () { return CEL.map(function () { return 0; }); });
+        idx.slice().sort(function (a, b) { return t[b] - t[a] || a - b; }).forEach(function (i) {
+          if (!t[i]) return;
+          var pref = PREFS[k++ % PREFS.length], porTalle = TALLES.map(function () { return 0; });
+          for (var u = 0; u < t[i]; u++) {
+            var c = -1, b1 = 0, b2 = 0;
+            pref.forEach(function (j) {
+              if (rem[j] <= 0) return;
+              var s1 = porTalle[j % nT], s2 = rem[j] / (A[i][j] + 1);
+              if (c < 0 || s1 < b1 || (s1 === b1 && s2 > b2)) { c = j; b1 = s1; b2 = s2; }
+            });
+            if (c < 0) break;
+            rem[c]--; A[i][c]++; porTalle[c % nT]++;
+          }
+        });
+      }
+      Object.keys(guardados).forEach(function (i) { A[i] = guardados[i]; });
+    }
+    function val(i, j) { var k = i + '-' + j; return k in MANO ? MANO[k] : A[i][j]; }
+    function totLocal(i) { var s = 0; for (var j = 0; j < CEL.length; j++) s += val(i, j); return s; }
+    function repLocales(j) { var s = 0; for (var i = 0; i < LOC.length; i++) s += val(i, j); return s; }
+    function repCel(j) { return mayCel(j) + repLocales(j); }   // con lo de los mayoristas
+    function colCls(j) { return j % TALLES.length === 0 ? ' rp-col' : ''; }
+    function afueraDe(i) { return REP.afuera.filter(function (a) { return a.i === i; })[0]; }
+
+    /* ── La grilla ── */
+    function cabeceraHtml(extraIzq, extraDer) {
+      return '<tr class="rp-g">' + extraIzq + COLORES.map(function (c) { return '<th colspan="' + TALLES.length + '" class="c rp-col">' + esc(c.nom || 'Talles') + '</th>'; }).join('') +
+        '<th rowspan="2" class="n rp-totc">Total</th>' + extraDer + '</tr><tr class="rp-t">' +
+        COLORES.map(function () { return TALLES.map(function (t, i) { return '<th class="c' + (i === 0 ? ' rp-col' : '') + '">' + esc(nombreTalle(t)) + '</th>'; }).join(''); }).join('') + '</tr>';
+    }
+    /* «Vendió» con la temporada corta: «Ver. 2026». */
+    function vendioCorto() { var m = String((PL && PL.periodo) || '').match(/^(verano|invierno)\s+(\d{4})/i); return m ? m[1].slice(0, 3) + '. ' + m[2] : 'antes'; }
+    function cabecera() {
+      var que = esc(queTxt(REP.nivel));
+      $('rpCab').innerHTML = cabeceraHtml('<th rowspan="2" class="c rp-va" title="Sacale el tilde al local que no tiene que recibir">Va</th><th rowspan="2">Cliente</th>' +
+        '<th rowspan="2" class="n" title="Unidades de ' + que + ' vendidas en ' + esc(periodo()) + ' (de la planilla)">Vendió<br>' + esc(vendioCorto()) + '</th>' +
+        '<th rowspan="2" class="n" title="Su parte de lo que vendieron de ' + que + ' todos los locales con tilde">% de la<br>venta</th>' +
+        '<th rowspan="2" class="n" title="El stock que tiene hoy de ' + que + ' (de la planilla)">Tiene<br>hoy</th>' +
+        (conNec() ? '<th rowspan="2" class="n" id="rpNecTit">Necesita</th>' : '') + '<th rowspan="2" class="n" id="rpTocaTit">Le<br>toca</th>', '');
+    }
+    function pintarVacio() {
+      $('rpCab').innerHTML = ''; $('rpPie').innerHTML = ''; $('rpFam').innerHTML = ''; $('rpComo').innerHTML = '';
+      $('rpProd').placeholder = 'Buscá por código o nombre…';
+      $('rpFilas').innerHTML = '<tr><td class="rp-vacio">Buscá a la izquierda el producto que entró. Se reparte solo entre los locales y de acá salen los remitos, uno por local.</td></tr>';
+      $('rpHay').textContent = $('rpRep').textContent = $('rpQueda').textContent = '0';
+      $('rpQueda').parentNode.classList.remove('rp-mal');
+      $('rpArmar').textContent = 'Armar los remitos';
+      $('rpArmar').disabled = $('rpComparar').disabled = $('rpVolver').disabled = true;
+      $('rpMult').disabled = !conNec();
+      notaPlanilla();
+    }
+    function pintar() {
+      if (!$('rpFilas')) return;
+      if (!P) { pintarVacio(); return; }
+      var R = REP, nv = conNec() ? 5 : 4, D = paraLocales();
+      $('rpComparar').disabled = $('rpVolver').disabled = false;
+      $('rpFam').innerHTML = '<b class="rp-elegido">' + esc(etiqueta()) + '</b><br>Rubro <b>' + esc(P[2] || '—') + '</b> · Familia <b>' + esc(P[7] || '—') + '</b>' + (P[8] ? ' <span>· ' + esc(P[8]) + '</span>' : '');
+      $('rpProd').placeholder = 'Buscá otro producto…';
+      cabecera();
+      var conStock = STOCK && STOCK.some(function (x) { return x > 0; });
+      var origen = HAY_MANO ? 'a mano' : !STOCK ? '…' : conStock ? 'del depósito' : 'escribí lo que entró';
+      var titHay = HAY_MANO ? 'Lo que escribiste. Con el botón de actualizar no se pisa.' : !STOCK ? 'Buscando el stock del depósito…' :
+        conStock ? 'Lo que tiene el depósito según el sistema. Se puede corregir a mano.' : 'Según el sistema, el depósito no tiene stock de este producto: escribí lo que entró en cada talle y color.';
+      var h = '<tr class="rp-fab"><td></td><th scope="row" title="' + esc(titHay) + '">En la fábrica <small>(' + origen + ')</small></th>' + vacios() +
+        HAY.map(function (x, j) { return '<td class="c' + colCls(j) + '"><input class="rp-n' + (x ? '' : ' rp-cero') + '" inputmode="numeric" data-fab="' + j + '" value="' + (x || '') + '" placeholder="0" aria-label="En la fábrica, ' + esc(CEL[j].n) + '"></td>'; }).join('') +
+        '<td class="n rp-totc"><b>' + suma(HAY) + '</b></td></tr>';
+      /* Los mayoristas con pedido: lo que pidió cada uno, por talle y color. Se aparta primero. */
+      h += MAY.map(function (m, k) {
+        return '<tr class="rp-may"><td class="c rp-va"><button type="button" class="rp-may-x" data-mayx="' + k + '" title="Sacar este mayorista" aria-label="Sacar a ' + esc(m.n || 'este mayorista') + '">×</button></td>' +
+          '<th scope="row"><input class="rp-may-n" data-mayn="' + k + '" value="' + esc(m.n) + '" placeholder="Nombre del cliente" aria-label="Nombre del mayorista"></th>' +
+          '<td colspan="' + nv + '" class="rp-may-txt">Mayorista · lo que pidió</td>' +
+          CEL.map(function (x, j) {
+            return '<td class="c' + colCls(j) + '"><input class="rp-n' + (m.c[j] ? '' : ' rp-cero') + '" inputmode="numeric" data-may="' + k + '-' + j + '" value="' + (m.c[j] || '') + '" placeholder="0" aria-label="' + esc(m.n || 'Mayorista') + ', ' + esc(x.n) + '"></td>';
+          }).join('') + '<td class="n rp-totc"><b>' + totMay(m) + '</b></td></tr>';
+      }).join('');
+      h += '<tr class="rp-may-mas"><td></td><td colspan="' + (nv + 2 + CEL.length) + '"><button type="button" class="rp-link" id="rpMayMas">+ Agregar un mayorista con pedido</button>' +
+        '<span class="rp-may-ayuda">Lo que pidieron los mayoristas se aparta primero; el resto se reparte entre los locales.</span></td></tr>';
+      if (R.may) h += '<tr class="rp-para"><td></td><th scope="row">Para los locales</th>' + vacios() +
+        D.map(function (x, j) { return '<td class="c' + colCls(j) + '">' + x + '</td>'; }).join('') + '<td class="n rp-totc">' + suma(D) + '</td></tr>';
+      h += LOC.map(function (l, i) {
+        var n = necDe(l), m = l.necMano != null, he = hecho(i), fijo = !l.va || he;
+        var tit = m ? 'Cambiado a mano (la cuenta da ' + fmt(l.nec) + '). Borralo para volver a la cuenta.' : n == null ? 'Sin datos: escribí lo que necesita' : n < 0 ? 'Le sobran ' + (-n) + '. Se puede corregir a mano.' : 'Se puede corregir a mano: se reparte de nuevo';
+        var necIn = '<input class="rp-n rp-nec' + (m ? ' rp-mano' : '') + (n != null && n < 0 ? ' rp-neg' : '') + '" inputmode="numeric" data-nec="' + i + '" value="' + (n == null ? '' : fmt(n)) + '" placeholder="—"' +
+          (fijo ? ' disabled' : '') + ' title="' + esc(tit) + '" aria-label="Lo que necesita ' + esc(l.n) + '">';
+        var af = afueraDe(i), toca;
+        if (he) toca = '<td class="n rp-toca"><span class="rp-sin">—</span></td>';
+        else if (af) toca = '<td class="n rp-toca" title="Le tocaba ' + af.tocaba + ': no llega a una curva y no se le manda"><s>' + coma1(af.q) + '</s></td>';
+        else if (R.sinCurva.indexOf(i) >= 0) toca = '<td class="n rp-toca" title="No alcanzó una curva para todos: va primero a los que más necesitan"><s>0,0</s></td>';
+        else if (R.entran.indexOf(i) >= 0) toca = '<td class="n rp-toca"' + (R.p[i] && !R.ins ? ' title="' + R.p[i] + ' de la curva + ' + coma1(R.q[i] - R.p[i]) + ' de lo que queda"' : '') + '>' + coma1(R.q[i]) + '</td>';
+        else toca = '<td class="n rp-toca"><span class="rp-sin">—</span></td>';
+        return '<tr class="' + (l.va ? '' : 'rp-no') + '"><td class="c rp-va"><input type="checkbox" data-va="' + i + '"' + (l.va ? ' checked' : '') + (he ? ' disabled' : '') + ' aria-label="Que ' + esc(l.n) + ' reciba"></td>' +
+          '<td class="rp-loc">' + esc(l.n) + (he ? ' <span class="rp-hecho" title="Ya tiene su remito de este reparto, «Pendiente de envío»">R-' + he + '</span>' : '') +
+            (l.aviso ? ' <span class="rp-aviso" title="' + esc(l.aviso) + '">!</span>' : '') + '</td>' +
+          '<td class="n">' + fmt(l.v) + '</td><td class="n rp-pct">' + pctTxt(l) + '</td><td class="n">' + fmt(l.t) + '</td>' + (conNec() ? '<td class="n rp-nec-td">' + necIn + '</td>' : '') + toca +
+          CEL.map(function (x, j) {
+            var v = val(i, j), mm = (i + '-' + j) in MANO;
+            return '<td class="c' + colCls(j) + '"><input class="rp-n' + (mm ? ' rp-mano' : '') + (v ? '' : ' rp-cero') + '" inputmode="numeric" data-c="' + i + '-' + j + '" value="' + (v || '') + '" placeholder="0"' +
+              (fijo ? ' disabled' : '') + ' aria-label="' + esc(l.n) + ', ' + esc(x.n) + '"' + (mm ? ' title="Cambiado a mano"' : '') + '></td>';
+          }).join('') +
+          '<td class="n rp-totc"><b>' + (totLocal(i) || '<span class="rp-sin">0</span>') + '</b></td></tr>';
+      }).join('');
+      $('rpFilas').innerHTML = h;
+      pintarPie();
+      explicar();
+    }
+    function pintarPie() {
+      var rep = CEL.map(function (x, j) { return repCel(j); }), R = suma(rep), H = suma(HAY);
+      $('rpPie').innerHTML =
+        '<tr class="rp-rep"><td></td><th scope="row">Repartido</th>' + vacios() + rep.map(function (x, j) { return '<td class="c' + colCls(j) + '">' + x + '</td>'; }).join('') + '<td class="n rp-totc">' + R + '</td></tr>' +
+        '<tr class="rp-queda"><td></td><th scope="row">Queda en la fábrica</th>' + vacios() + rep.map(function (x, j) {
+          var q = HAY[j] - x;
+          return '<td class="c' + colCls(j) + (q < 0 ? ' rp-mal" title="Mandás ' + (-q) + ' más de lo que hay' : '') + '">' + fmt(q) + '</td>';
+        }).join('') + '<td class="n rp-totc' + (H - R < 0 ? ' rp-mal' : '') + '">' + fmt(H - R) + '</td></tr>';
+      $('rpHay').textContent = H; $('rpRep').textContent = R; $('rpQueda').textContent = fmt(H - R);
+      $('rpQueda').parentNode.classList.toggle('rp-mal', H - R < 0);
+      var n = LOC.filter(function (l, i) { return l.va && !hecho(i) && totLocal(i) > 0; }).length;
+      $('rpArmar').textContent = n ? 'Armar los remitos (' + n + ')' : 'Armar los remitos';
+      $('rpArmar').disabled = !n || guardandoRp;
+    }
+
+    /* ── Cómo se repartió, paso a paso, con los números de ahora (para ver qué forma funciona mejor) ── */
+    function pasos(conLink) {
+      var R = REP, que = esc(queTxt(R.nivel)), it = [], pm = (PL && PL.mult) || 1.2;
+      var hay = R.tipo === 'par' || LOC.some(function (l) { return R.tipo === 'ven' ? l.v != null : necDe(l) != null; });
+      var queda = R.may ? 'para los locales quedan' : 'en la fábrica hay';
+      if (R.may) it.push('Primero, lo de los mayoristas: <b>' + R.may + '</b>. Quedan <b>' + R.H + '</b> para los locales.');
+      var curva = 'una curva (' + esc(tallesTxt()) + ')', verL = conLink ? ' <a href="#" id="rpVer">Ver la cuenta de cada local</a>' : '';
+      var manos = LOC.filter(function (l) { return l.necMano != null; }).map(function (l) { return l.n; });
+      var nec = '<b>Necesita</b> = lo que vendió de ' + que + ' en ' + esc(periodo()) + ' × ' + coma(MULT) + ' (' + cuantoMas() + '), menos lo que tiene hoy.' +
+        (Math.abs(MULT - pm) > 0.001 ? ' La planilla usa × ' + coma(pm) + '.' : '') + (manos.length ? ' A mano: ' + esc(juntar(manos)) + '.' : '');
+      var sinPasar = R.tope ? ' Sin pasarse de lo que necesita (lo que vendió × ' + coma(MULT) + ', menos lo que tiene).' : '';
+      if (R.tipo === 'nec') it.push(nec);
+      else if (R.tipo === 'ven') {
+        var top = LOC.filter(function (l) { return parte(l) != null; }).sort(function (a, b) { return b.v - a.v; })[0];
+        it.push('<b>La parte de cada local</b> = lo que vendió de ' + que + ' en ' + esc(periodo()) + ' ÷ lo que vendieron todos (<b>' + fmt(R.V) + '</b>).' +
+          (top ? ' ' + esc(top.n) + ' vendió ' + fmt(top.v) + ': el <b>' + Math.round(parte(top) * 100) + ' %</b>.' : '') + sinPasar);
+      } else it.push('Lo mismo a cada local que tenga el tilde.' + sinPasar);
+      if (R.ins) {
+        it.push('No alcanza ' + curva + ' para cada uno: hacen falta <b>' + R.sumP + '</b> y hay <b>' + R.H + '</b>. Va primero a los que más necesitan' +
+          (R.sinCurva.length ? '; ' + (R.sinCurva.length === 1 ? 'se queda' : 'se quedan') + ' sin nada: ' + esc(juntar(R.sinCurva.map(function (i) { return LOC[i].n; }))) : '') + '.' + verL);
+      } else {
+        if (R.P) it.push('Primero ' + curva + ' a cada uno de los ' + R.entran.length + ' que ' + (R.tipo === 'par' ? 'tienen el tilde' : R.tipo === 'ven' ? 'vendieron' : 'necesitan') + ': <b>' + R.sumP + '</b> prendas.');
+        if (R.afuera.length) it.push('Al que le toca menos de una curva no se le manda nada: ' + esc(juntar(R.afuera.map(function (a) { return LOC[a.i].n + ' (le tocaba ' + a.tocaba + ')'; }))) + '; lo suyo va a los demás.');
+        if (R.tipo === 'nec') {
+          if (R.f == null) it.push('Nadie necesita ' + que + ': no se reparte nada.');
+          else {
+            var quien = R.P ? 'Quedan <b>' + R.resto + '</b> y a todos juntos les falta <b>' + R.falta + '</b>' : (R.afuera.length ? 'Entre los demás piden <b>' : 'Entre todos piden <b>') + R.falta + '</b> y ' + queda + ' <b>' + R.H + '</b>';
+            var cuanto = R.P ? 'le falta' : 'necesita', fr = fraccion(R.f);
+            if (R.f < 1) {
+              it.push(quien + ': alcanza para <b>' + fr.n + '</b> (' + R.resto + ' ÷ ' + R.falta + ' = ' + coma2(R.f) + (fr.p ? ', el ' + Math.round(R.f * 100) + ' %' : '') + ').');
+              it.push('A cada uno, lo que ' + cuanto + ' × ' + coma2(R.f) + ' (la columna «Le toca»), sin decimales.' + verL);
+            } else if (R.tope) it.push(quien + ': <b>alcanza para todos</b>. Cada uno recibe lo que necesita y quedan <b>' + (R.H - suma(R.t)) + '</b> en la fábrica.' + verL);
+            else it.push(quien + ': alcanza para todos y, como no hay tope, se reparten todas: lo que ' + cuanto + ' × ' + coma2(R.f) + '.' + verL);
+          }
+        } else if (R.tipo === 'ven') it.push('A cada uno, su parte de las <b>' + R.H + '</b> que ' + (R.may ? 'quedan' : 'hay en la fábrica') + ': la columna «Le toca», antes de redondear.' + verL);
+        else it.push(queda.charAt(0).toUpperCase() + queda.slice(1) + ' <b>' + R.H + '</b>: «Le toca» es la parte de cada uno antes de redondear.' + verL);
+      }
+      it.push(R.talles === 'stock' ? 'Los talles, en la proporción del stock: del que entró el doble, recibe el doble.' : 'Los talles, parejos: primero ' + curva + '.');
+      var falta = hay ? '' : PL ? '<p class="rp-mal-txt"><b>La planilla no tiene ' + que + ':</b> elegí otra forma de repartir o escribí a mano lo que le va a cada uno.</p>'
+                                 : '<p class="rp-mal-txt"><b>Falta la planilla en esta compu:</b> tocá «Cargar la planilla…». Mientras tanto se puede repartir «Parejo» o a mano.</p>';
+      return falta + '<ol class="rp-pasos">' + it.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>';
+    }
+    function notaPlanilla() {
+      var gen = ((PL && PL.avisos) || []).length;
+      $('rpNota').innerHTML = PL ? 'Lo que vendió y lo que tiene cada local sale de la planilla ' + esc(PL_DE) + ' · ' + PL.locales.length + ' locales, ' + PL.familias + ' familias · ' +
+          '<a href="#" id="rpRevisar">' + (gen ? 'lo que revisó el sistema (' + gen + (gen === 1 ? ' aviso' : ' avisos') + ')' : 'lo que revisó el sistema') + '</a>. Queda guardada en esta compu. Cada número se puede corregir a mano.'
+        : 'Todavía no hay planilla en esta compu. Tocá «Cargar la planilla…» y elegí el Excel de la fábrica (una hoja por local, con lo vendido y el stock por rubro y familia). Queda guardada acá.';
+      var r = $('rpRevisar'); if (r) r.onclick = function (e) { e.preventDefault(); resumen(false); };
+    }
+    function explicar() {
+      $('rpComo').innerHTML = pasos(true);
+      var v = $('rpVer'); if (v) v.onclick = function (e) { e.preventDefault(); cuenta(); };
+      var R = REP, a = $('rpNecTit'), b = $('rpTocaTit');
+      if (a) a.title = 'Lo que vendió × ' + coma(MULT) + ' (' + cuantoMas() + '), menos lo que tiene hoy. Se puede corregir a mano.';
+      if (b) b.title = 'Lo que le toca, antes de redondear' + (R.tipo === 'nec' && R.f != null && !R.ins ? ': ' + (R.P ? 'la curva + lo que le falta' : 'lo que necesita') + ' × ' + coma2(Math.min(R.f, R.tope ? 1 : R.f)) : '');
+      $('rpChico').title = 'Una curva = una de cada talle (' + tallesTxt() + ')';
+      $('rpMult').disabled = !conNec();
+      $('rpMult').title = conNec() ? 'El stock objetivo de cada local: lo que vendió por este número (1,2 = un 20 % más; 1,5 = un 50 % más)' : 'Se usa al repartir según lo que necesita, o con el tope de abajo';
+      notaPlanilla();
+    }
+
+    /* ── Las ventanas ── */
+    function resumen(recien) {
+      var av = PL.avisos || [];
+      ventana('<h3 id="posVentTit">' + (recien ? 'Planilla cargada' : 'Lo que revisó el sistema') + '</h3><p class="pos-bajada">' + esc(PL.archivo || 'La planilla') + ' · ' + PL.locales.length + ' locales y ' + PL.familias + ' familias. ' +
+        'De la hoja de cada local toma la tabla de abajo (lo vendido, el stock y la reposición), por rubro y familia. Lo vendido es de ' + esc(periodo()) + '; la planilla usa lo vendido × ' + coma(PL.mult || 1.2) + '.</p>' +
+        '<ul class="rp-lista-loc">' + PL.locales.map(function (l) { return '<li><b>' + esc(l.nombre) + '</b> <small>«' + esc(l.hoja) + '»</small></li>'; }).join('') + '</ul>' +
+        (av.length ? '<p class="rp-av-tit">Lo raro (' + av.length + '):</p><ul class="rp-avisos">' + av.map(function (a) { return '<li>' + esc(a.txt) + '</li>'; }).join('') + '</ul>'
+                   : '<p class="rp-av-tit">No encontré nada raro.</p>') +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+    }
+    /* «Ver la cuenta de cada local»: el cuadro, con los mismos pasos al lado. */
+    function cuenta() {
+      var R = REP, nec = R.tipo === 'nec', conF = nec && R.f != null && !R.ins;
+      var col = [{ t: 'Local', izq: 1, v: function (i) { return '<b>' + esc(LOC[i].n) + '</b>' + (LOC[i].va ? '' : ' <small>(sin tilde)</small>'); }, tot: 'Total' }];
+      if (R.tipo !== 'par') col.push({ t: 'Vendió', v: function (i) { return fmt(LOC[i].v); }, tot: R.tipo === 'ven' ? fmt(R.V) : null });
+      if (R.tipo === 'ven') col.push({ t: '% de la venta', v: function (i) { return pctTxt(LOC[i]); }, tot: R.V ? '100 %' : '' });
+      if (nec) col.push({ t: '× ' + coma(MULT), v: function (i) { return LOC[i].v == null ? '—' : coma1(LOC[i].v * MULT); } }, { t: 'Tiene', v: function (i) { return fmt(LOC[i].t); } });
+      if (nec || R.tope) col.push({ t: 'Necesita', v: function (i) { return fmt(necDe(LOC[i])) + (LOC[i].necMano != null ? ' <small class="rp-a-mano">a mano</small>' : ''); },
+                 tot: suma(LOC.map(function (l) { return l.va ? Math.max(necDe(l) || 0, 0) : 0; })) });
+      if (R.P) col.push({ t: 'Curva', v: function (i) { var x = R.ins ? R.t[i] : R.p[i]; return x || '—'; }, tot: R.ins ? suma(R.t) : R.sumP });
+      if (!R.ins) {
+        if (nec && R.P) col.push({ t: 'Le falta', v: function (i) { return R.act[i] ? R.w2[i] : '—'; }, tot: R.falta });
+        col.push({ t: conF ? '× ' + coma2(R.tope ? Math.min(R.f, 1) : R.f) : R.tipo === 'ven' ? 'Su parte de ' + R.resto : 'Su parte', v: function (i) {
+          var af = afueraDe(i); if (af) return '<s>' + coma1(af.q) + '</s>';
+          return R.act[i] ? coma1(R.q[i] - R.p[i]) : '—';
+        }, tot: coma1(suma(R.q.map(function (x, i) { return R.act[i] ? x - R.p[i] : 0; }))) });
+      }
+      col.push({ t: 'Recibe', v: function (i) { return '<b>' + R.t[i] + '</b>'; }, tot: '<b>' + suma(R.t) + '</b>' });
+      var cel = function (c, x) { return c.izq ? '<td class="rp-loc">' + x + '</td>' : '<td class="n">' + x + '</td>'; };
+      ventana('<h3 id="posVentTit">La cuenta de ' + esc(P[0] + ' ' + P[1]) + ', local por local</h3>' +
+        '<div class="rp-cuenta-cuerpo"><div class="tk-grilla rp-grilla-c"><table class="tk-tabla rp-tabla rp-cuenta"><thead><tr>' + col.map(function (c) { return '<th' + (c.izq ? '' : ' class="n"') + '>' + c.t + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        LOC.map(function (l, i) { return '<tr class="' + (l.va ? '' : 'rp-no') + '">' + col.map(function (c) { return cel(c, c.v(i)); }).join('') + '</tr>'; }).join('') +
+        '</tbody><tfoot><tr class="rp-tot">' + col.map(function (c) { return c.izq ? '<th scope="row">' + c.tot + '</th>' : '<td class="n">' + (c.tot == null ? '' : c.tot) + '</td>'; }).join('') + '</tr></tfoot></table></div>' +
+        '<div class="rp-cuenta-pasos">' + pasos(false) +
+        '<p class="rp-nota rp-cuenta-nota">Como no se manda media prenda, se redondea: a cada uno lo suyo sin decimales, y las que sobran van a los que quedaron más cerca de una más (si empatan, al que vendió más).</p></div></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+    }
+    /* «Comparar» (12/11: «vemos qué funciona mejor»): cuántas recibiría cada local con cada forma, lado a lado. Con el tope y
+       «Si le toca menos de una curva» como están. Tocar el título de una forma la deja elegida. */
+    function comparar() {
+      if (!P) return;
+      var sg = segun(), Rs = FORMAS.map(function (f) { return calcular(f[0]); });
+      var pct = function (R, i) { return R.V > 0 && LOC[i].va && R.vs[i] > 0 ? Math.round(R.vs[i] / R.V * 100) + ' %' : '—'; };
+      var caja = ventana('<h3 id="posVentTit">Las formas de repartir, lado a lado</h3>' +
+        '<p class="pos-bajada">' + esc(P[0] + ' ' + P[1]) + ' · ' + REP.H + ' prendas para los locales. Cuántas recibiría cada local con cada forma' +
+          (REP.tope ? ', sin pasarse de lo que necesita' : '') + '. La elegida está resaltada; tocá el título de otra para usarla.</p>' +
+        '<div class="tk-grilla rp-grilla-c"><table class="tk-tabla rp-tabla rp-cuenta rp-comp"><thead><tr><th>Local</th>' +
+          FORMAS.map(function (f) { return '<th class="n' + (f[0] === sg ? ' rp-elegida' : '') + '"><button type="button" class="rp-link" data-usar="' + f[0] + '" title="Repartir así">' + esc(f[2]) + '</button></th>'; }).join('') + '</tr></thead><tbody>' +
+        LOC.map(function (l, i) {
+          return '<tr class="' + (l.va ? '' : 'rp-no') + '"><td class="rp-loc"><b>' + esc(l.n) + '</b>' + (hecho(i) ? ' <small>ya tiene su remito</small>' : l.va ? '' : ' <small>(sin tilde)</small>') + '</td>' +
+            Rs.map(function (R) {
+              var chico = R.tipo === 'ven' ? pct(R, i) : R.tipo === 'nec' ? (R.nec[i] == null ? '—' : 'pide ' + fmt(R.nec[i])) : '';
+              return '<td class="n' + (R.segun === sg ? ' rp-elegida' : '') + '"><b>' + R.t[i] + '</b>' + (chico ? ' <small>' + chico + '</small>' : '') + '</td>';
+            }).join('') + '</tr>';
+        }).join('') +
+        '</tbody><tfoot><tr class="rp-tot"><th scope="row">Total</th>' + Rs.map(function (R) {
+          var s = suma(R.t);
+          return '<td class="n' + (R.segun === sg ? ' rp-elegida' : '') + '"><b>' + s + '</b>' + (s < R.H ? ' <small>quedan ' + (R.H - s) + '</small>' : '') + '</td>';
+        }).join('') + '</tr></tfoot></table></div>' +
+        '<p class="rp-nota rp-comp-nota">Al lado de cada número: en las de la venta, la parte del local (de la familia ' + esc(familia() || '—') + ', de todo el rubro ' + esc(P[2] || '—') +
+          ' o de todo lo que vendió); en «Necesidad», lo que pide (lo vendido × ' + coma(MULT) + ' menos lo que tiene). Lo que cambiaste a mano en la grilla no cuenta acá.</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+      caja.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-usar]');
+        if (!b) return;
+        cerrarVentana();
+        $('rpSegun').value = b.getAttribute('data-usar');
+        cambioForma();
+      });
+    }
+    function depActual() { var ds = (S.dep[FAB] || []).filter(function (d) { return d.activo; }); return depDe(ds, DEP) || depPredeterminado(ds) || ds[0] || null; }
+    /* «Armar los remitos»: uno por local, como el Nuevo remito de la fábrica (salen del depósito al guardarlos y quedan
+       «Pendiente de envío»). Se guardan de a uno; si se corta en la mitad, los que ya están no se repiten (LOTE). */
+    function armar() {
+      if (guardandoRp || !P) return;
+      var dep = depActual(), temp = $('rpTemp').value, cod = P[0].toUpperCase();
+      if (S.sin259) { avisar('err', 'Todavía falta correr el SQL 259 (los transportes) en Supabase.'); return; }
+      if (!S.envios || !dep) { avisar('err', 'Todavía no llegaron el depósito y los transportes de la fábrica. Tocá el botón de actualizar y probá de nuevo.'); return; }
+      var van = LOC.map(function (l, i) { return i; }).filter(function (i) { return LOC[i].va && !hecho(i) && totLocal(i) > 0; });
+      if (!van.length) return;
+      var mal = CEL.some(function (x, j) { return repCel(j) > HAY[j]; });
+      if (!LOTE) LOTE = { claves: {}, hechos: {} };
+      var lista = van.map(function (i) {
+        var l = LOC[i], items = [];
+        if (!LOTE.claves[l.id]) LOTE.claves[l.id] = nuevaClave();
+        CEL.forEach(function (c, j) { var v = val(i, j); if (v > 0) items.push({ codigo: cod, descripcion: '', talle: c.t, color: c.c, cantidad: v }); });
+        var tr = transporteDe(transpDe(l.id));
+        return { i: i, l: l, tot: totLocal(i), transp: tr ? nombreTransp(tr) : '',
+                 pl: { clave: LOTE.claves[l.id], origen_local_id: null, destino_local_id: l.id, a_fabrica: false, referencia: '', observaciones: P[0] + ' ' + P[1], items: items,
+                       origen_deposito_id: dep.id, transporte_id: tr ? tr.id : null, bultos: '', asegurado: '', temporada: temp } };
+      });
+      var tot = suma(lista.map(function (x) { return x.tot; })), nR = lista.length;
+      var mays = MAY.filter(function (m) { return totMay(m) > 0; });
+      /* Si el depósito no tiene todo según el sistema, que lo sepa (no frena, como en el Nuevo remito). */
+      var faltan = !STOCK ? [] : CEL.map(function (c, j) { return { n: c.n, hay: STOCK[j], van: suma(van.map(function (i) { return val(i, j); })) }; }).filter(function (x) { return x.van > x.hay; });
+      var caja = ventana('<h3 id="posVentTit">Armar ' + nR + (nR === 1 ? ' remito' : ' remitos') + '</h3>' +
+        '<p class="pos-bajada">Uno por local con ' + esc(P[0] + ' ' + P[1]) + ', del depósito «' + esc(dep.nombre) + '»' + (temp ? ', temporada ' + esc(temp) : '') + ': ' + tot + (tot === 1 ? ' prenda' : ' prendas') +
+          ' en total. Salen del depósito ahora y quedan «Pendiente de envío» en Fábrica → Remitos; cada local los ve cuando toques «Enviar».</p>' +
+        '<div class="tk-grilla rp-grilla-v"><table class="tk-tabla rp-tabla"><thead>' + cabeceraHtml('<th rowspan="2">Cliente</th>', '<th rowspan="2">Transporte</th><th rowspan="2"><span class="sr">Cómo quedó</span></th>') + '</thead><tbody>' +
+        lista.map(function (x) {
+          return '<tr data-fila="' + esc(x.l.id) + '"><td class="rp-loc">' + esc(x.l.n) + '</td>' + CEL.map(function (c, j) { var v = val(x.i, j); return '<td class="c' + colCls(j) + '">' + (v || '<span class="rp-sin">·</span>') + '</td>'; }).join('') +
+            '<td class="n rp-totc"><b>' + x.tot + '</b></td><td>' + (x.transp ? esc(x.transp) : '<span class="rp-sin">Sin transporte</span>') + '</td><td class="rp-est"></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (mays.length ? '<p class="rp-nota rp-nota-v">Lo de ' + esc(juntar(mays.map(function (m) { return m.n || 'el mayorista'; }))) + ' (' + suma(mays.map(totMay)) + ' prendas) queda apartado en la fábrica: a un mayorista todavía no se le hace el remito desde acá.</p>' : '') +
+        (faltan.length ? '<p class="rp-ojo">Ojo: según el sistema, el depósito «' + esc(dep.nombre) + '» no tiene todo (' + esc(faltan.slice(0, 4).map(function (x) { return x.n + ': hay ' + fmt(x.hay) + ', mandás ' + x.van; }).join('; ')) +
+          (faltan.length > 4 ? '…' : '') + '). Si los guardás igual, queda en negativo.</p>' : '') +
+        '<p class="pos-error" id="rpError">' + (mal ? 'Repartiste más de lo que hay en la fábrica: corregí lo que está en rojo en «Queda en la fábrica».' : '') + '</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="rpGuardar"' + (mal ? ' disabled' : '') + '>Guardar ' +
+          (nR === 1 ? 'el remito' : 'los ' + nR + ' remitos') + '</button></div>', true);
+      caja.querySelector('#rpGuardar').onclick = function () { guardarLote(caja, lista); };
+    }
+    function guardarLote(caja, lista) {
+      if (guardandoRp) return;
+      guardandoRp = true;
+      var g = caja.querySelector('#rpGuardar'), err = caja.querySelector('#rpError'), k = 0;
+      g.disabled = true; g.textContent = 'Guardando…'; err.textContent = '';
+      $('rpArmar').disabled = true;
+      function est(x, txt, cls) { var td = caja.querySelector('tr[data-fila="' + x.l.id + '"] .rp-est'); if (td) { td.textContent = txt; td.className = 'rp-est' + (cls ? ' ' + cls : ''); } }
+      function cuantos() { return lista.filter(function (x) { return LOTE.hechos[x.l.id]; }).length; }
+      function cortar(txt) {
+        guardandoRp = false;
+        if (g.isConnected) { g.disabled = false; g.textContent = 'Guardar los que faltan'; err.textContent = txt; } else avisar('err', txt);
+        if (S.vista === 'repartir') pintar();
+      }
+      function sigue() {
+        while (k < lista.length && LOTE.hechos[lista[k].l.id]) k++;
+        if (k >= lista.length) { listo(); return; }
+        /* Cerraron la ventana en la mitad: se para acá. Los que faltan siguen en la grilla, para armarlos después. */
+        if (!caja.isConnected) {
+          guardandoRp = false;
+          avisar('info', 'Se guardaron ' + cuantos() + ' de ' + lista.length + ' remitos. Tocá «Armar los remitos» para seguir con los que faltan.');
+          if (S.vista === 'repartir') pintar();
+          return;
+        }
+        var x = lista[k];
+        est(x, 'Guardando…');
+        llamar('pos_remito_guardar', { p: x.pl }).then(function (r) {
+          LOTE.hechos[x.l.id] = r.numero;
+          est(x, 'R-' + r.numero + ' ✓', 'ok');
+          sigue();
+        }, function (e) {
+          est(x, 'No se guardó', 'mal');
+          cortar((cuantos() ? 'Se guardaron ' + cuantos() + ' de ' + lista.length + '. ' : '') + (esDeRed(e) ? 'Sin conexión: probá de nuevo; no se duplican.' : mensajeDe(e)));
+        });
+      }
+      function listo() {
+        guardandoRp = false;
+        var todos = LOC.map(function (l, i) { return i; }).filter(hecho);
+        var nums = todos.map(function (i) { return 'R-' + LOTE.hechos[LOC[i].id] + ' ' + LOC[i].n; }), tot = suma(todos.map(totLocal)), que = P[0] + ' ' + P[1];
+        /* Lo que sigue es otro producto: la pantalla queda vacía. */
+        P = null; LOTE = null; MAY = []; MANO = {}; NEC_MANO = {}; REP = null; HAY = []; STOCK = null; HAY_MANO = false; A = [];
+        LOC.forEach(function (l) { l.necMano = null; });
+        if (S.vista === 'repartir') pintar();
+        if (!caja.isConnected) { avisar('ok', 'Listo: ' + nums.length + (nums.length === 1 ? ' remito' : ' remitos') + ' «Pendiente de envío».'); return; }
+        caja.querySelector('.pos-caja-in').innerHTML = '<div class="vg-cab">' + icono('ok') + '<div><h3 id="posVentTit">Listo: ' + nums.length + (nums.length === 1 ? ' remito' : ' remitos') + ' «Pendiente de envío»</h3>' +
+          '<p class="vg-datos">' + esc(que) + ' · ' + tot + (tot === 1 ? ' prenda' : ' prendas') + '</p></div></div>' +
+          '<p class="pos-bajada">' + esc(nums.join(' · ')) + '</p>' +
+          '<p class="pos-bajada">Están en Fábrica → Remitos: marcalos y salen con «Enviar» (también Imprimir, Expreso y Rótulos). Cada local los cuenta y los recibe como siempre.</p>' +
+          '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Repartir otro producto</button><button type="button" class="btn btn-pri btn-chico" id="rpIrRemitos">Ver los remitos</button></div>';
+        caja.querySelector('#rpIrRemitos').onclick = function () { cerrarVentana(); ir('remitos'); };
+      }
+      sigue();
+    }
+
+    /* ── Cargar la planilla: queda guardada en esta compu ── */
+    function cargar(archivo) {
+      var b = $('rpCargar'); b.disabled = true; b.textContent = 'Leyendo…';
+      archivo.arrayBuffer().then(leerLibro).then(function (hojas) {
+        var pl = interpretar(hojas, archivo.name), d = new Date();
+        PL = pl;
+        PL_DE = '«' + archivo.name + '» (cargada el ' + d.getDate() + '/' + (d.getMonth() + 1) + ' a las ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + ')';
+        guardarJSON(K_RP_PLANILLA, { v: 1, de: PL_DE, pl: PL });
+        var quedo = (leerJSON(K_RP_PLANILLA, {}) || {}).de === PL_DE;
+        if (!MULT_MANO) { MULT = PL.mult || 1.2; if ($('rpMult')) $('rpMult').value = coma(MULT); }   // si lo cambió a mano, queda el suyo
+        if (S.vista !== 'repartir' || !$('rpFilas')) return;
+        /* Con un reparto a medio guardar, la planilla nueva vale desde el próximo: lo que ya salió no se mueve. */
+        if (!(LOTE && Object.keys(LOTE.hechos).length)) { NEC_MANO = {}; armarLocales(); if (P) repartir(); }
+        pintar();
+        resumen(true);
+        if (!quedo) avisar('info', 'La planilla se leyó, pero no se pudo guardar en esta compu: vale hasta que cierres la ventana.');
+      }).catch(function (e) {
+        ventana('<h3 id="posVentTit">No pude leer la planilla</h3><p class="pos-bajada">' + esc((e && e.message) || e) + '</p><div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>');
+      }).then(function () { if (b.isConnected) { b.disabled = false; b.textContent = 'Cargar la planilla…'; } var a = $('rpArchivo'); if (a) a.value = ''; });
+    }
+    /** Lo que tiene el depósito de la fábrica de este producto. Si en «En la fábrica» no escribieron nada a mano, va eso. */
+    function traerStock() {
+      var d = depActual(), cod = P && P[0].toUpperCase(), n = ++nStock;
+      if (!d || !cod) return Promise.resolve();
+      return llamar('pos_stock_consulta', { p_local: null, p_deposito: d.id, p_ocultar_sin: false, p_codigos: [cod] }).then(function (x) {
+        if (n !== nStock || !P || P[0].toUpperCase() !== cod) return;
+        var m = {};
+        ((x && x.filas) || []).forEach(function (f) { var k = claveVar(f[1], f[2], f[3]); m[k] = (m[k] || 0) + (Number(f[4]) || 0); });
+        STOCK = CEL.map(function (c) { return m[claveVar(cod, c.t, c.c)] || 0; });
+        if (S.vista !== 'repartir' || !$('rpFilas')) return;
+        var nuevo = STOCK.map(function (s) { return Math.max(s, 0); });
+        if (!HAY_MANO && !(LOTE && Object.keys(LOTE.hechos).length) && nuevo.join() !== HAY.join()) { HAY = nuevo; repartir(); }
+        pintar();
+      }, function () { if (n === nStock && S.vista === 'repartir' && $('rpFilas')) pintar(); });
+    }
+    function pintarDatos() {
+      var st = $('rpTemp'), sd = $('rpDep');
+      if (!st) return;
+      var temps = valoresDe(8), tp = TEMP != null ? TEMP : tempDeTurno(temps);
+      st.innerHTML = '<option value="">Sin temporada</option>' + opciones((tp && temps.indexOf(tp) < 0 ? [tp] : []).concat(temps).map(function (x) { return [x, x]; }), tp);
+      var ds = (S.dep[FAB] || []).filter(function (d) { return d.activo; }), d = depActual();
+      sd.innerHTML = ds.length ? opciones(ds.map(function (x) { return [x.id, nombreDep(x)]; }), d ? d.id : '') : '<option value="">El predeterminado</option>';
+    }
+    function guardarPrefs() {
+      guardarJSON(K_RP_PREFS, { segun: segun(), talles: $('rpTalles').value, chico: $('rpChico').value, tope: $('rpTope').checked, mult: MULT_MANO ? MULT : null });
+    }
+    /** Cambió «Repartir según»: si ahora se mira otra cosa (la familia, el rubro, todo), lo corregido a mano en «Necesita» era de la otra. */
+    var nivelAntes = 'fam';
+    function cambioForma() {
+      var nv = nivelDe(segun());
+      if (nv !== nivelAntes) { NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); nivelAntes = nv; }
+      nivelar();
+      guardarPrefs();
+      if (P) { repartir(); pintar(); }
+    }
+    /* «Lo vendido ×»: 1,2 = un 20 % más; 1,5 = un 50 % más. Con coma o con punto; lo que no es un número no cambia nada. */
+    function leerMult(s) { var t = String(s).trim().replace(',', '.'); if (!/^\d+(\.\d+)?$|^\.\d+$/.test(t)) return null; var n = parseFloat(t); return n > 0 && n <= 5 ? n : null; }
+
+    function ver() {
+      var c = $('cuerpo'), pf = leerJSON(K_RP_PREFS, {}) || {};
+      leerGuardada();
+      if (pf.mult > 0 && pf.mult <= 5) { MULT = pf.mult; MULT_MANO = true; } else if (!MULT_MANO) MULT = (PL && PL.mult) || 1.2;
+      var sg = FORMAS.some(function (f) { return f[0] === pf.segun; }) ? pf.segun : 'fam';
+      nivelAntes = nivelDe(sg);
+      c.classList.add('lleno', 'rp-cuerpo');
+      c.innerHTML = cabeza('Repartir un producto', 'Lo que entra de un producto, repartido entre los locales. De acá salen los remitos.',
+          '<button type="button" class="btn btn-sec btn-chico" id="rpCargar" title="El Excel de la fábrica con lo vendido y el stock de cada local, una hoja por local (si está en Google: Archivo → Descargar → Microsoft Excel). Queda guardado en esta compu.">Cargar la planilla…</button>' +
+          '<input type="file" id="rpArchivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="rpComparar" title="Cuántas recibiría cada local con cada forma de repartir, lado a lado">Comparar</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="rpVolver" title="Borra lo que cambiaste a mano y reparte de nuevo">Volver a repartir</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="rpArmar" disabled>Armar los remitos</button>') +
+        '<div class="tk rp">' +
+          '<section class="tk-izq" aria-label="El producto y cómo se reparte"><div class="tk-datos">' +
+            '<div class="tk-prod rp-prod">' + campo('', 'Producto', '<input type="search" id="rpProd" autocomplete="off" spellcheck="false" placeholder="Buscá por código o nombre…" aria-controls="rpSug">') +
+              '<div class="tk-sug" id="rpSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+            '<p class="rp-fam" id="rpFam"></p>' +
+            campo('c6', 'Temporada', '<select id="rpTemp" class="desplegable" title="La temporada que llevan los remitos"></select>') +
+            campo('c6', 'Sale del depósito', '<select id="rpDep" class="desplegable" title="De dónde sale la mercadería"></select>') +
+            campo('', 'Repartir según', '<select id="rpSegun" class="desplegable" title="La parte de la venta: lo que vendió cada local (de la familia del producto, de todo su rubro o de todo), sobre lo que vendieron todos. Lo que necesita: lo vendido × 1,2, menos lo que tiene. Parejo: lo mismo a cada uno.">' +
+              opciones(FORMAS, sg) + '</select>') +
+            campo('c6', 'Los talles', '<select id="rpTalles" class="desplegable" title="Según el stock: cada local recibe los talles en la proporción en que entraron. Parejos: primero una curva entera (uno de cada talle).">' +
+              opciones([['stock', 'Según el stock'], ['curva', 'Parejos (curva)']], pf.talles === 'curva' ? 'curva' : 'stock') + '</select>') +
+            campo('c6 rp-mult', 'Lo vendido ×', '<input type="text" id="rpMult" inputmode="decimal" autocomplete="off" spellcheck="false">') +
+            campo('', 'Si le toca menos de una curva', '<select id="rpChico" class="desplegable">' +
+              opciones([['toca', 'Mandarle lo que le toca'], ['curva', 'Mandarle la curva igual'], ['nada', 'No mandarle nada']], ['curva', 'nada'].indexOf(pf.chico) >= 0 ? pf.chico : 'toca') + '</select>') +
+            '<label class="rp-tope"><input type="checkbox" id="rpTope"' + (pf.tope ? ' checked' : '') + '> No mandarle a nadie más de lo que necesita</label>' +
+            '<div class="rp-como" id="rpComo"></div>' +
+          '</div>' +
+          '<div class="tk-tot">' +
+            '<div class="tk-caja"><span>En la fábrica</span><b id="rpHay">0</b></div>' +
+            '<div class="tk-caja fuerte"><span>Repartido</span><b id="rpRep">0</b></div>' +
+            '<div class="tk-caja"><span>Queda</span><b id="rpQueda">0</b></div>' +
+          '</div></section>' +
+          '<section class="tk-der" aria-label="El reparto por local">' +
+            '<div class="tk-grilla rp-grilla"><table class="tk-tabla rp-tabla"><thead id="rpCab"></thead><tbody id="rpFilas"></tbody><tfoot id="rpPie"></tfoot></table></div>' +
+            '<p class="rp-nota" id="rpNota"></p>' +
+          '</section>' +
+        '</div>';
+      c.querySelector('.pos-cab').classList.add('pos-cab-act');
+      $('rpMult').value = coma(MULT);
+      var z = c.querySelector('.tk.rp'), campoP = $('rpProd');
+      var oRp = { campo: 'rpProd', sug: 'rpSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true,
+                  elegir: function (p) { campoP.limpiar(); elegir(p); campoP.blur(); }, agregar: function (p) { campoP.limpiar(); elegir(p); campoP.blur(); } };
+      engancharProducto(oRp);
+
+      $('rpCargar').onclick = function () { $('rpArchivo').click(); };
+      $('rpArchivo').onchange = function () { if (this.files && this.files[0]) cargar(this.files[0]); };
+      $('rpComparar').onclick = comparar;
+      $('rpVolver').onclick = function () { if (!P) return; NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); repartir(); pintar(); };
+      $('rpArmar').onclick = armar;
+      $('rpSegun').onchange = cambioForma;
+      $('rpTemp').onchange = function () { TEMP = this.value; };
+      $('rpDep').onchange = function () { DEP = this.value; HAY_MANO = false; traerStock(); };
+      $('rpMult').oninput = function () {
+        var n = leerMult(this.value);
+        this.classList.toggle('rp-mult-mal', n == null && this.value.trim() !== '');
+        if (n == null || n === MULT) return;
+        MULT = n; MULT_MANO = Math.abs(n - ((PL && PL.mult) || 1.2)) > 0.001;
+        nivelar(); guardarPrefs();
+        if (P) { repartir(); pintar(); }
+      };
+      $('rpMult').onchange = function () { this.value = coma(MULT); this.classList.remove('rp-mult-mal'); };
+      $('rpMult').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); this.blur(); } };
+
+      function volverAlCampo(sel) { var y = z.querySelector(sel); if (y) { y.focus(); try { y.setSelectionRange(9, 9); } catch (e) {} } }
+      z.addEventListener('input', function (e) {
+        var x = e.target;
+        if (!P || !x.dataset) return;
+        if (x.dataset.fab != null) { HAY[+x.dataset.fab] = entero(x.value); HAY_MANO = true; repartir(); pintar(); volverAlCampo('[data-fab="' + x.dataset.fab + '"]'); return; }
+        /* Lo que pidió un mayorista: se aparta y lo demás se reparte de nuevo. El nombre no cambia ninguna cuenta. */
+        if (x.dataset.may != null) { var pm = x.dataset.may.split('-'); MAY[+pm[0]].c[+pm[1]] = entero(x.value); repartir(); pintar(); volverAlCampo('[data-may="' + x.dataset.may + '"]'); return; }
+        if (x.dataset.mayn != null) { MAY[+x.dataset.mayn].n = x.value; return; }
+        /* «Necesita» a mano: se reparte de nuevo con lo que escribió (vacío = espera; al salir, vuelve a la cuenta). */
+        if (x.dataset.nec != null) {
+          if (x.value.trim() === '') return;
+          var l = LOC[+x.dataset.nec], n = entero(x.value);
+          if (n === l.nec) delete NEC_MANO[l.id]; else NEC_MANO[l.id] = n;
+          l.necMano = l.id in NEC_MANO ? NEC_MANO[l.id] : null;
+          repartir(); pintar(); volverAlCampo('[data-nec="' + x.dataset.nec + '"]'); return;
+        }
+        if (x.dataset.c) {
+          MANO[x.dataset.c] = entero(x.value);
+          if (x.value !== '' && String(entero(x.value)) !== x.value) x.value = entero(x.value) || '';
+          x.classList.add('rp-mano'); x.classList.toggle('rp-cero', !MANO[x.dataset.c]); x.title = 'Cambiado a mano';
+          var i = +x.dataset.c.split('-')[0];
+          x.closest('tr').querySelector('.rp-totc b').innerHTML = totLocal(i) || '<span class="rp-sin">0</span>';
+          pintarPie();
+        }
+      });
+      z.addEventListener('change', function (e) {
+        var x = e.target;
+        if (!x.dataset) return;
+        if (x.dataset.va != null && P) { LOC[+x.dataset.va].va = x.checked; repartir(); pintar(); return; }
+        if (x.dataset.nec != null && P && x.value.trim() === '') { var l = LOC[+x.dataset.nec]; delete NEC_MANO[l.id]; l.necMano = null; repartir(); pintar(); return; }
+        if (x.id === 'rpTope' || x.id === 'rpChico' || x.id === 'rpTalles') { guardarPrefs(); if (P) { repartir(); pintar(); } }
+      });
+      z.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.dataset && e.target.dataset.nec != null) { e.preventDefault(); e.target.blur(); } });
+      z.addEventListener('focusin', function (e) { if (e.target.classList && e.target.classList.contains('rp-n')) e.target.select(); });
+      z.addEventListener('click', function (e) {
+        if (!P) return;
+        var b = e.target.closest('[data-mayx]');
+        if (b) { MAY.splice(+b.dataset.mayx, 1); repartir(); pintar(); return; }
+        if (e.target.id === 'rpMayMas') {
+          MAY.push({ n: '', c: CEL.map(function () { return 0; }) }); repartir(); pintar();
+          var ns = z.querySelectorAll('.rp-may-n'); if (ns.length) ns[ns.length - 1].focus();
+        }
+      });
+
+      pintarDatos();
+      /* Volvió a la pantalla con un reparto a medio hacer: sigue como lo dejó (lo corregido a mano también). */
+      if (P) { nivelar(); if (!REP) repartir(); }
+      pintar();
+      var traer = function (forzar) {
+        return Promise.all([traerEnvios(forzar), traerDepositos(FAB, forzar)]).then(function () {
+          if (S.vista !== 'repartir' || !$('rpFilas')) return;
+          pintarDatos();
+          return traerStock();
+        });
+      };
+      traer(false);
+      actualizable(function () { return traer(true); });
+      /* La primera vez en una compu el catálogo llega después: recién ahí están las temporadas (y la de turno). */
+      (S.artPromesa || Promise.resolve(false)).then(function (vino) { if (vino && S.vista === 'repartir') pintarDatos(); }, function () {});
+      if (window.matchMedia && matchMedia('(min-width: 1000px)').matches && !P) setTimeout(function () { if (campoP.isConnected) campoP.focus(); }, 0);
+    }
+    return { ver: ver };
+  })();
 
   /* ════════════════════════════════════════════════════════════════════
      NUEVA DEVOLUCIÓN A FÁBRICA (el mostrador, SQL 189)
