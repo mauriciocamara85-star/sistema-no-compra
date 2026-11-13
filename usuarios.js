@@ -96,7 +96,7 @@ var usuarios = (function () {
   /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas (SQL 229: siete, con «Entra a Gestión»); cada rol arranca con las suyas
      (pos_permisos_lista trae las de cada rol y las de cada persona). null = no es Administración o falta el SQL. */
   var posLista = null;
-  var POS_K = ['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica'];
+  var POS_K = ['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica', 'contable'];
   var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
                       ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
                       ['caja', 'Caja: gastos, movimientos de salida, retiros y cierre de caja', ''],
@@ -131,6 +131,12 @@ var usuarios = (function () {
      no la trae y la casilla no sale. */
   function conFabrica() { return !!posLista && !!posLista.roles && !!posLista.roles.vendedor && 'fabrica' in posLista.roles.vendedor; }
   function entraFabrica(p) { return conFabrica() && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).fabrica; }
+  /* SQL 285 (Mauricio, 12/11: "para que el contador de la empresa pueda ver la disponibilidad de cada local"): «Ve lo contable»,
+     aparte de «Usa el POS» y de «Entra a Fábrica»: en Fábrica → Contable, la disponibilidad de las cajas, los movimientos y el
+     IVA Ventas de todos los locales, sólo para mirar. Al administrador le viene con el POS. Sin el SQL 285 la lista no la trae y
+     la casilla no sale. */
+  function conContable() { return !!posLista && !!posLista.roles && !!posLista.roles.vendedor && 'contable' in posLista.roles.vendedor; }
+  function veContable(p) { return conContable() && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).contable; }
   /** El bloque del editor. Al administrador, sólo «Usa el POS y la Gestión» (SQL 236). */
   function posBloque(p, r) {
     if (!posLista) return '';
@@ -148,6 +154,8 @@ var usuarios = (function () {
         }).join('') + '</div>' +
       (conFabrica() ? '<label class="us-pos-fab"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="fabrica"' + (e.fabrica && !adm ? ' checked' : '') + '> ' +
         '<span>Entra a Fábrica <small>(los productos y sus precios, el stock de la fábrica, los remitos a los locales y sus diferencias; sin el POS no ve ventas ni cajas)</small></span></label>' : '') +
+      (conContable() ? '<label class="us-pos-fab"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="contable"' + (e.contable && !adm ? ' checked' : '') + '> ' +
+        '<span>Ve lo contable <small>(en Fábrica: la disponibilidad de las cajas, los movimientos y el IVA Ventas de todos los locales; sólo mira, no carga ni cambia nada)</small></span></label>' : '') +
       '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>' + esc(textoAdmin()) + '</p>' +
     '</div>';
   }
@@ -160,8 +168,7 @@ var usuarios = (function () {
     pb.querySelector('.us-pos-admin').hidden = !adm;
     pb.querySelector('.us-pos-casillas').hidden = adm || !pb.querySelector('[data-pos="usa"]').checked;
     /* SQL 256: «Entra a Fábrica» queda como está (como «Usa el POS»); al administrador le viene con el POS. */
-    var fab = pb.querySelector('.us-pos-fab');
-    if (fab) fab.hidden = adm;
+    pb.querySelectorAll('.us-pos-fab').forEach(function (fab) { fab.hidden = adm; });   // SQL 285: «Ve lo contable», igual
   }
   /** Lo que quedó marcado (null: sin el bloque, o es administrador sin el SQL 236). Al administrador, sólo «usa». */
   function posDelEditor(f, rol) {
@@ -366,9 +373,9 @@ var usuarios = (function () {
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
       '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') +
-        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + (entraFabrica(p) && !esFabrica(p) ? ' · Entra a Fábrica' : '') +
+        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + (entraFabrica(p) && !esFabrica(p) ? ' · Entra a Fábrica' : '') + (veContable(p) ? ' · Ve lo contable' : '') +
         /* SQL 257: a la de la Fábrica la sección le viene con el local; si se la apagaron, que se vea. */
-        (esFabrica(p) && conFabrica() && !entraFabrica(p) ? ' · sin la sección Fábrica (sólo el Asistente)' : '') + '</span></div>' +
+        (esFabrica(p) && conFabrica() && !entraFabrica(p) ? (veContable(p) ? ' · de la Fábrica, sólo lo contable' : ' · sin la sección Fábrica (sólo el Asistente)') : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -638,7 +645,7 @@ var usuarios = (function () {
               /* SQL 236: al administrador, el POS y la Gestión juntos. */
               var yG = rol === 'admin' ? (posVa.usa ? ' y la Gestión' : ' ni la Gestión') : '';
               /* SQL 256 */
-              var yF = rol !== 'admin' && posVa.fabrica ? ' y entra a Fábrica' : '';
+              var yF = (rol !== 'admin' && posVa.fabrica ? ' y entra a Fábrica' : '') + (rol !== 'admin' && posVa.contable ? ' y ve lo contable' : '');   // SQL 285
               return hacer('pos_permisos_guardar', { p_persona: p.id, p: posVa },
                 'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS' : ' no usa el POS') + yG + yF + '.');
             })

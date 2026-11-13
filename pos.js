@@ -168,7 +168,13 @@
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista']]],
       ['Depósito', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['inventario', 'Inventario', 'inventario']]],
       /* SQL 259: los transportes (los expresos) y adónde se le manda a cada local. */
-      ['Remitos', [['remitos', 'Remitos', 'envio'], ['transportes', 'Transportes', 'ruta'], ['diferencias', 'Diferencias', 'dif']]]
+      ['Remitos', [['remitos', 'Remitos', 'envio'], ['transportes', 'Transportes', 'ruta'], ['diferencias', 'Diferencias', 'dif']]],
+      /* SQL 285 (Mauricio, 12/11: "en la parte de fábrica necesito que haya una sección que diga «disponibilidad»… para que el
+         contador de la empresa pueda ver la disponibilidad de cada local… y también la parte de movimientos… También tienen
+         que tener una parte de IVA ventas de cada local"): las mismas tres pantallas de Gestión, para mirar (no se carga, no se
+         anula ni se ajusta nada). Con su casilla, «Ve lo contable», aparte de «Entra a Fábrica»: el que arma remitos no ve la
+         plata de los locales, y el contador no ve el depósito. Sin el SQL 285 la base no trae la casilla y el grupo no sale. */
+      ['Contable', [['disponibilidad', 'Disponibilidad', 'disp'], ['movimientos', 'Movimientos', 'movs'], ['iva', 'IVA Ventas', 'iva']]]
     ]
   };
   var MENU = MENUS[MODO];
@@ -190,9 +196,17 @@
   if (MODO === 'mostrador') REQUIERE.cierres = 'caja';
   /* SQL 258: los depósitos de la Fábrica son de quien entra a Fábrica (no piden el permiso de los envíos del POS). */
   if (MODO === 'fabrica') delete REQUIERE.depositos;
+  /* SQL 285: en la Fábrica, cada pantalla pide lo suyo: lo de siempre (productos, depósito y remitos), «Entra a Fábrica»; lo
+     contable, «Ve lo contable». Así el que tiene una sola de las dos casillas ve sólo su parte del menú. */
+  if (MODO === 'fabrica') {
+    ['productos', 'listas', 'stock', 'depositos', 'inventario', 'remitos', 'remito_nuevo', 'transportes', 'diferencias'].forEach(function (k) { REQUIERE[k] = 'fabrica'; });
+    ['disponibilidad', 'movimientos', 'iva'].forEach(function (k) { REQUIERE[k] = 'contable'; });
+  }
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).',
-                      retiros: 'No tenés permiso para los retiros de fondos.' };
+                      retiros: 'No tenés permiso para los retiros de fondos.',
+                      fabrica: 'No tenés los productos, el depósito ni los remitos de la Fábrica («Entra a Fábrica»).',
+                      contable: 'No tenés lo contable de la Fábrica: la disponibilidad, los movimientos y el IVA Ventas de los locales («Ve lo contable»).' };
   var HECHAS = { venta: 1, tickets: 1, cambio: 1, notas: 1, fallida: 1, giftcards: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, transportes: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
@@ -778,21 +792,24 @@
   }
   function entra(y) {
     if (!y) return false;
-    if (MODO === 'fabrica') return y.fabrica === true || (y.fabrica === undefined && y.gestion === true && y.rol === 'admin');
+    /* SQL 285: también quien tiene sólo «Ve lo contable» (el contador): entra y ve sólo ese grupo. */
+    if (MODO === 'fabrica') return y.fabrica === true || y.contable === true || (y.fabrica === undefined && y.gestion === true && y.rol === 'admin');
     return MODO === 'gestion' ? y.gestion === true : y.pos === true;
   }
   /* SQL 256: en la Fábrica se ven todos los locales y todos los días (la base hace lo mismo con quien la tiene), aunque la
      persona no tenga «Ver otros locales» ni «Ver otros días» del POS (la gente de la fábrica no usa el POS). También cada vez
      que se vuelve a traer pos_inicio (las listas de precios: si no, a Lucas le quedaban sólo su local y hoy; el árbitro, 7/11). */
   function arreglarFabrica(ini) {
-    if (MODO === 'fabrica' && ini && ini.puede && ini.puede.fabrica === true) { ini.puede.locales = true; ini.puede.dias = true; }
+    if (MODO === 'fabrica' && ini && ini.puede && (ini.puede.fabrica === true || ini.puede.contable === true)) { ini.puede.locales = true; ini.puede.dias = true; }   // SQL 285: lo contable, igual
     return ini;
   }
+  /* SQL 285: quien entra a la Fábrica sólo por lo contable no tiene los productos (la base no se los da) ni las diferencias. */
+  function soloContable() { return MODO === 'fabrica' && !puede('fabrica'); }
   function empezar(ini, sinRed) {
     S.ini = arreglarFabrica(ini);
     if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
     if (sinRed) ini.hoy = hoyAR();   // la copia puede ser de otro día
-    S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
+    S.artPromesa = soloContable() ? Promise.resolve(false) : traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
     ir(vistaDelHash());
     cuentaDif();
     if (sinRed) avisar('info', 'Sin internet: el POS abrió con lo de la última vez. Podés vender igual: las ventas se mandan solas cuando vuelva.');
@@ -816,7 +833,7 @@
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
         ({ gestion: 'Todavía no tenés la Gestión: la prende la oficina en Config → Usuarios («Entra a Gestión»).',
-           fabrica: 'Todavía no tenés la Fábrica: la prende la oficina en Config → Usuarios («Entra a Fábrica»).' }[MODO] ||
+           fabrica: 'Todavía no tenés la Fábrica: la prende la oficina en Config → Usuarios («Entra a Fábrica» o «Ve lo contable»).' }[MODO] ||
          'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
       return;
     }
@@ -824,7 +841,14 @@
                         fabrica: 'Entrá con tu usuario: la usa quien tiene la Fábrica prendida.' }[MODO] || 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
   }
 
-  function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
+  /* SQL 285: quien no tiene la pantalla de arranque (el contador en la Fábrica: sin los remitos) arranca en la primera suya. */
+  function inicio() {
+    var v = INICIO[MODO];
+    if (!S.ini || !REQUIERE[v] || puede(REQUIERE[v])) return v;
+    var m = menuVisible();
+    return m.length ? m[0][1][0][0] : v;
+  }
+  function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || inicio(); }
   function enMenu(menu, v) { return menu.some(function (g) { return g[1].some(function (it) { return it[0] === v && !it[3]; }); }); }
 
   function esDe(modo, v) { return enMenu(MENUS[modo], v) || !!DENTRO[modo][v]; }
@@ -841,7 +865,7 @@
       if (yaAbrio && !desdeHash) location.assign(PAGINA[otro] + '#' + v); else location.replace(PAGINA[otro] + '#' + v);
       return;
     }
-    if (!esDe(MODO, v)) v = INICIO[MODO];
+    if (!esDe(MODO, v)) v = inicio();
     S.vista = v;
     yaAbrio = true;
     S.recargar = null;   // la vista que se abre pone el suyo (Tickets, el cierre): lo llama la fila al mandar ventas (SQL 212)
@@ -905,7 +929,7 @@
     return '<em class="pos-cuenta" title="' + n + (n === 1 ? ' diferencia sin resolver' : ' diferencias sin resolver') + '">' + (n > 99 ? '99+' : n) + '</em>';
   }
   function cuentaDif() {
-    if (MODO !== 'fabrica') return;
+    if (MODO !== 'fabrica' || soloContable()) return;   // SQL 285: las diferencias son de quien tiene los remitos
     llamar('pos_diferencias_aviso').then(function (a) { ponerCuentaDif(Number(a && a.pendientes) || 0); }, function () {});
   }
   function ponerCuentaDif(n) {
@@ -1268,9 +1292,22 @@
     guardarJSON(K_RECUERDO, r);
   }
   /* SQL 190: lo que puede la persona que entró. Sin el SQL 190 la base no lo manda: entonces es Administración y puede todo. */
-  function puede(k) { var p = S.ini && S.ini.puede; return !p || (p[k] === undefined && SIGUE[k] ? puede(SIGUE[k]) : p[k] !== false); }
+  function puede(k) {
+    var p = S.ini && S.ini.puede;
+    if (!p) return true;
+    if (p[k] === undefined) return SIGUE[k] ? puede(SIGUE[k]) : !SIN_SU_SQL[k];
+    return p[k] !== false;
+  }
+  /* SQL 285: quien no usa el POS (el contador, en Fábrica → Contable) sólo mira: no abre un ticket ni un cierre, no anula ni ajusta. */
+  function soloMira() { return !puede('usa'); }
+  /* Los retiros de fondos: con su casilla del POS (SQL 262) o, en la Fábrica, con lo contable (SQL 285). */
+  function veRetiros() { return puede('retiros') || (MODO === 'fabrica' && puede('contable')); }
+  /** Los renglones que no se abren: sin el foco del teclado ni la manito. */
+  function noAbre(host, sel) { host.querySelectorAll(sel).forEach(function (tr) { tr.removeAttribute('tabindex'); tr.removeAttribute('title'); tr.classList.add('no-abre'); }); }
   /* Una casilla nueva que la base todavía no trae (sin su SQL): sigue a la de antes. SQL 262: los retiros, a la caja. */
   var SIGUE = { retiros: 'caja' };
+  /* Y la que no sigue a ninguna: mientras la base no la trae, nadie la tiene. SQL 285: lo contable de la Fábrica. */
+  var SIN_SU_SQL = { contable: 1 };
   /* Los locales con los que trabaja: el suyo (y los que supervisa); con «Ver otros locales», todos. */
   function esMio(id) { var p = S.ini && S.ini.puede; return !!id && (!p || p.locales !== false || (p.mios || []).indexOf(id) >= 0); }
   function localesMios() { return S.ini.locales.filter(function (l) { return esMio(l.id); }); }
@@ -5309,6 +5346,7 @@
       }
       $('ivBajar').disabled = false;
       $('ivLista').innerHTML = aviso + ($('ivDia').checked ? tablaDias(porDia(fs), t) : tablaComprobantes(fs, !$('ivLocal').value));
+      if (soloMira()) { noAbre($('ivLista'), 'tr[data-iv]'); return; }   // SQL 285: el ticket es del POS
       $('ivLista').querySelectorAll('tr[data-iv]').forEach(function (tr) {
         tr.onclick = function () { var id = tr.getAttribute('data-iv'); if (tr.getAttribute('data-tipo') === 'nc') abrirNota(id, cargar); else abrirTicket(id, cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
@@ -8800,16 +8838,17 @@
     var c = $('cuerpo');
     c.classList.add('lleno');   // v474: la lista llega hasta abajo (se desliza adentro) y los totales quedan pegados al fondo, como en Tickets
     c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, lo que pasó a la caja fuerte (Movimientos de salida) y los retiros de fondos.',
-        '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
+        /* SQL 285: en la Fábrica es para mirar (el gasto lo carga el local, o la oficina desde Gestión). */
+        (MODO === 'fabrica' ? '' : '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>')) +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
         campo('', 'Sucursal', '<select id="mvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
-        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'salida' && k !== 'ingreso' && (k !== 'retiro' || puede('retiros')); })
+        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).filter(function (k) { return k !== 'salida' && k !== 'ingreso' && (k !== 'retiro' || veRetiros()); })
           .map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +   // SQL 262: el retiro, con su casilla
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="mvLista" class="rgl"><p class="cargando">Cargando…</p></div>';
     var per = periodoPos($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
     ['mvLocal', 'mvTipo', 'mvPrueba'].forEach(function (id) { $(id).onchange = cargar; });
-    $('mvNuevo').onclick = function () { abrirMovimiento($('mvLocal').value || localInicial().id, false, cargar); };
+    if ($('mvNuevo')) $('mvNuevo').onclick = function () { abrirMovimiento($('mvLocal').value || localInicial().id, false, cargar); };
     var pedido = 0;
     function cargar() {
       var r = per.rango(), n = ++pedido;
@@ -8830,7 +8869,7 @@
         (Number(t.salida) ? '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' : '') +
         (Number(t.ingreso) ? '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' : '') +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
-        (t.retiro !== undefined && puede('retiros') ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>';   // SQL 191
+        (t.retiro !== undefined && veRetiros() ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>';   // SQL 191
       var aviso = ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
       if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = aviso + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>' + pie; return; }
       var prueba = $('mvPrueba').value === '1', ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
@@ -8853,6 +8892,7 @@
       if (ctl) tildesControlado($('mvLista'), cargar);
       $('mvLista').querySelectorAll('tr[data-mov]').forEach(function (tr) {
         var f = d.filas[Number(tr.getAttribute('data-mov'))];
+        if (f.origen === 'cierre' && soloMira()) { noAbre(tr.parentNode, 'tr[data-mov="' + tr.getAttribute('data-mov') + '"]'); return; }   // SQL 285: el cierre es del POS
         tr.onclick = function () { if (f.origen === 'cierre') abrirCierre(f.id, cargar); else abrirMovDetalle(f, cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
@@ -8919,6 +8959,8 @@
       '<div id="mdAnular"></div><div class="pos-pie">' + (!an && abierto && !f.controlado ? '<button type="button" class="btn btn-sec btn-chico izq" id="mdAnularBtn">Anular</button>' : '') +
         (ctl && puede('gestion') && !an ? '<button type="button" class="btn btn-sec btn-chico" id="mdCtlBtn">' + (f.controlado ? 'Sacarle el tilde' : 'Marcar como controlado') + '</button>' : '') +
         '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    /* SQL 285: quien sólo mira (el contador) no anula: la base tampoco lo deja. */
+    if (soloMira()) { var sinAn = caja.querySelector('#mdAnularBtn'); if (sinAn) sinAn.remove(); }
     var cb = caja.querySelector('#mdCtlBtn');
     if (cb) cb.onclick = function () {
       cb.disabled = true;
@@ -9001,6 +9043,10 @@
     var c = $('cuerpo'), pedido = 0, pedidoMov = 0, cajas = [], ultD = null, abierta = null, ult = null, filtro = '', per = null;
     var p = function (n) { return plata(cent(n || 0)); };
     var RES = '<div class="dp-res-tit">Resumen</div>';
+    /* SQL 285: la caja la cuenta y la ajusta la oficina (la Gestión); quien sólo mira (lo contable de la Fábrica), no. */
+    var ajusta = puede('gestion') && !soloMira();
+    /* SQL 285: la sucursal que todavía no usa el POS de verdad viene igual (con_pos = false), en $0: se ve, apagada, y no se abre. */
+    function sinPos(x) { return x.con_pos === false; }
     c.classList.add('lleno');
 
     /** Las sucursales en el orden en que vienen; en cada una, la caja chica primero (como en BlueSoft). */
@@ -9064,16 +9110,19 @@
       /* Las cajas fuertes que hace DP_DIAS_AVISO días o más que nadie cuenta. */
       var viejas = cajas.filter(function (x) { return x.caja === 'fuerte' && x.ultimo && ultimoControl(x).aviso; });
       var nomViejas = viejas.map(function (x) { return bonito(x.local); }).join(', ').replace(/, ([^,]*)$/, ' y $1');
-      var sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
+      var sinContar = ajusta && cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo && !sinPos(x); });
+      var faltan = cajas.filter(function (x) { return x.caja === 'chica' && sinPos(x); }).length;
       $('dpAvisos').innerHTML =
         (viejas.length ? '<div class="pos-cartel dp-cartel-aviso">Hace ' + (viejas.length === 1 ? ultimoControl(viejas[0]).dias + ' días' : DP_DIAS_AVISO + ' días o más') +
-          ' que nadie cuenta la caja fuerte de ' + esc(nomViejas) + ': contala y cargá lo que hay con «Ajustar…».</div>' : '') +
-        (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar…» con lo que hay de verdad.</p>' : '');
+          ' que nadie cuenta la caja fuerte de ' + esc(nomViejas) + (ajusta ? ': contala y cargá lo que hay con «Ajustar…».' : '.') + '</div>' : '') +
+        (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar…» con lo que hay de verdad.</p>' : '') +
+        (faltan ? '<p class="pos-ayuda">' + (faltan === 1 ? 'Una sucursal todavía no usa el POS: va' : faltan + ' sucursales todavía no usan el POS: van') +
+          ' a mostrar su plata cuando ' + (faltan === 1 ? 'empiece' : 'empiecen') + ' a vender con él.</p>' : '');
       $('dpLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla dp-cajas"><thead><tr><th>Sucursal</th><th>Caja</th><th>Último control</th>' +
           '<th class="n">Total</th></tr></thead><tbody>' +
         cajas.map(function (x, i) {
-          var uc = ultimoControl(x);
-          return '<tr data-i="' + i + '" tabindex="0" title="Ver lo que entró y lo que salió">' +
+          var uc = sinPos(x) ? { txt: 'Todavía no usa el POS', aviso: false } : ultimoControl(x);
+          return '<tr' + (sinPos(x) ? ' class="dp-sin-pos no-abre"' : ' data-i="' + i + '" tabindex="0" title="Ver lo que entró y lo que salió"') + '>' +
             '<td>' + esc(bonito(x.local)) + '</td><td><b>' + esc(nombreCaja(x)) + '</b></td>' +
             '<td' + (uc.aviso ? ' class="dp-nunca"' : '') + (x.ultimo ? ' title="Último ' + (x.caja === 'chica' ? 'cierre' : 'ajuste') + ': ' + esc(fechaHora(x.ultimo.fecha)) + '"' : '') + '>' +
               esc(uc.txt) + '</td>' +
@@ -9119,7 +9168,7 @@
       var s = $('dpCaja');
       if (!s) return;
       var i = cajas.map(function (y) { return esLaAbierta(y); }).indexOf(true);
-      s.innerHTML = opciones(cajas.map(function (y, k) { return [String(k), bonito(y.local) + ' · ' + nombreCaja(y)]; }), String(i));
+      s.innerHTML = opciones(cajas.map(function (y, k) { return sinPos(y) ? null : [String(k), bonito(y.local) + ' · ' + nombreCaja(y)]; }).filter(Boolean), String(i));
     }
     /* Con suave (el «Actualizar»), lo que se ve queda hasta que llega lo nuevo. */
     function cargarMov(suave) {
@@ -9163,10 +9212,10 @@
         '<div class="dp-r dp-r-tot"><span>Hoy hay</span><b>' + p(d.saldo) + '</b></div>';
       /* Su «Ajustar/Cerrar Caja», abajo del Resumen: la chica se cierra en el mostrador; la fuerte la cuenta la oficina acá. */
       var uc = ultimoControl({ caja: sel.caja, ultimo: u });
-      $('dpAccion').innerHTML = (chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
+      $('dpAccion').innerHTML = (!ajusta ? '' : chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
                                        : '<button type="button" class="btn btn-pri btn-chico" id="dpAjustar">Ajustar…</button>') +
         (!chica && u && uc.aviso ? '<p>Hace ' + uc.dias + ' días que nadie la cuenta.</p>' : '');
-      if (!chica) $('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
+      if (!chica && ajusta) $('dpAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
       $('dpExcel').disabled = !vis.length;
       $('dpExcel').textContent = filtro ? 'Exportar ' + (filtro === 'entra' ? 'las entradas' : 'las salidas') : 'Exportar';
       $('dpMov').innerHTML =
@@ -9179,7 +9228,7 @@
           filas.map(function (f, i) {
             if (!dpPasa(f, filtro)) return '';
             /* El cierre (y lo que pasaba a la caja fuerte al cerrar, hasta el SQL 180) abre el cierre; el ajuste, el suyo. */
-            var abre = f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste';
+            var abre = !soloMira() && (f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste');   // SQL 285: quien sólo mira no abre el cierre
             var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : detalleEvento(f.detalle);   // v481: el retiro que es un gasto de fábrica
             var c0 = cent(f.importe);
             var imp = f.control && f.tipo !== 'inicial' && !c0 ? '<small class="dp-cero">sin diferencia</small>' :
@@ -9193,7 +9242,7 @@
         (u ? '<p>' + (chica ? 'Último cierre: Nº ' : 'Último ajuste: Nº ') + u.numero + ', el ' + esc(fechaHora(u.fecha)) +
             (u.persona ? ', ' + esc(u.persona) : '') + '. Contaron ' + p(u.contado) + '.</p>' :
           '<p class="dp-sin">' + (chica ? 'Esta caja todavía no se cerró nunca: el saldo es lo de hoy desde $0.' :
-            'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar…» para que dé lo de verdad.') + '</p>');
+            'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento.' + (ajusta ? ' Contala y usá «Ajustar…» para que dé lo de verdad.' : '')) + '</p>');
       $('dpMov').querySelectorAll('tr[data-fila]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-fila'))];
         tr.onclick = function () { if (f.tipo === 'ajuste') abrirAjusteHecho(f, d, cargar); else abrirCierre(f.id, cargar); };

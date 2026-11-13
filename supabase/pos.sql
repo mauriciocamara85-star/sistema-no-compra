@@ -14084,3 +14084,382 @@ REVOKE ALL ON FUNCTION public.pos_envio_canales() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.pos_envio_canales() TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
+
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+--  SQL 285 (13/11/2026): FÁBRICA → CONTABLE (App Orden: correr-en-supabase-285.sql)
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+-- ═══ SQL 285 · Fábrica → «Contable»: la disponibilidad, los movimientos y el IVA Ventas de todos los locales (13/11/2026) ═══
+-- Pedido de Mauricio (12/11): «en la parte de fábrica necesito que haya una sección que diga "disponibilidad"… para que el
+-- contador de la empresa pueda ver la disponibilidad de cada local… una sección aparte para la fábrica… que tenga la parte
+-- de disponibilidad y también la parte de movimientos… También tienen que tener una parte de IVA ventas de cada local.»
+-- Y: «Acá me aparece solo la de Rivadavia. El resto de locales no aparece.»
+--
+-- Qué hace (10 funciones, armadas con cada una como está hoy en la base; ninguna tabla ni ningún dato cambia):
+--   1. Una casilla nueva por persona, «Ve lo contable» (clave 'contable'), APARTE de «Usa el POS» y de «Entra a Fábrica».
+--      Arranca apagada en todos; al administrador le viene con el POS (Antonella, Daniel y Mauricio ya la tienen).
+--      (pos_permiso_del_rol, pos_mis_permisos, nc_yo, pos_permisos_lista, pos_permisos_guardar, pos_inicio)
+--   2. Con esa casilla, sin usar el POS: la Disponibilidad de las cajas y sus movimientos (pos_disponibilidad,
+--      pos_caja_valores), los Movimientos de caja (pos_caja_movimientos: gastos, pases a la caja fuerte y retiros) y el IVA
+--      Ventas (pos_iva_ventas), de TODOS los locales y de cualquier día. Sólo mira: no carga, no anula, no ajusta, no tilda.
+--   3. La Disponibilidad trae TODAS las sucursales (hoy, sólo las que ya movieron algo en el POS): las que todavía no lo
+--      usan vienen con con_pos = false y $0, después de las que sí.
+-- Quien ya veía estas pantallas las sigue viendo igual (la Gestión, la caja, el POS): nadie pierde nada.
+-- El sistema publicado de antes sigue andando igual con esto corrido (la Disponibilidad de Gestión muestra los 14 locales).
+-- Se puede correr más de una vez. Se deshace con deshacer-285.sql. Corre entero o nada.
+
+CREATE OR REPLACE FUNCTION public.pos_permiso_del_rol(p_rol text, p_con_local boolean, p_que text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  select case
+    when p_rol = 'admin' then p_que not in ('usa', 'gestion')
+    when p_que in ('usa', 'gestion', 'fabrica', 'contable') then false   -- SQL 256: «Entra a Fábrica», apagada para todos; SQL 285: lo contable, igual
+    when p_rol = 'supervisor' then p_que <> 'locales' or not coalesce(p_con_local, false)
+    else false end
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pos_mis_permisos()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select jsonb_build_object('usa', pos_puede('usa'), 'anular', pos_puede('anular'), 'envios', pos_puede('envios'),
+           'caja', pos_puede('caja'), 'retiros', pos_puede('retiros'), 'dias', pos_puede('dias'), 'locales', pos_puede('locales'), 'precios', pos_puede('precios'),
+           'gestion', pos_puede('gestion'),
+           'fabrica', pos_puede('fabrica'),   -- SQL 256
+           'contable', pos_puede('contable'),   -- SQL 285
+           'mios', coalesce((select jsonb_agg(l.id) from orden_locales l where l.activo and pos_local_mio(l.id)), '[]'::jsonb))
+$function$;
+
+CREATE OR REPLACE FUNCTION public.nc_yo()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial),
+           'pila', p.nombre,
+           'rol', p.rol, 'local_id', p.local_id, 'local', l.codigo, 'local_nombre', l.nombre,
+           'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
+           'activo', p.activo, 'aprobado', p.aprobado,
+           /* SQL 135: además atiende clientes (lo de la oficina, como Atención). */
+           'tambien_atencion', p.tambien_atencion,
+           /* SQL 190: si usa el POS (lo prende la oficina en Config → Usuarios). */
+           'pos', pos_puede_persona(p, 'usa'),
+           /* SQL 229: si entra a la Gestión del POS (la prende la oficina en Config → Usuarios; pide también el POS). */
+           'gestion', pos_puede_persona(p, 'usa') and pos_puede_persona(p, 'gestion'),
+           /* SQL 256: si entra a la Fábrica (los remitos de la fábrica a los locales y sus diferencias), aunque no use el
+              POS. Al administrador le viene con el POS. */
+           'fabrica', pos_puede_persona(p, 'fabrica'),
+           /* SQL 285: si ve lo contable de la Fábrica (la disponibilidad de las cajas, los movimientos y el IVA Ventas de
+              todos los locales), aunque no use el POS ni entre al resto de la Fábrica. Al administrador le viene con el POS. */
+           'contable', pos_puede_persona(p, 'contable'),
+           /* SQL 230: el fichero de prueba de su local, con su usuario (pos_fichero_prueba). */
+           'fichero', p.activo and p.aprobado and p.rol in ('vendedor', 'supervisor')
+                      and exists (select 1 from pos_fichero_prueba f where f.local_id = p.local_id),
+           /* SQL 141: los locales del supervisor de varios locales (los aprobados). */
+           'zona', case when p.rol = 'supervisor' and p.local_id is null then
+                     coalesce((select jsonb_agg(jsonb_build_object('id', z.id, 'codigo', z.codigo, 'nombre', z.nombre) order by z.nombre)
+                                 from orden_supervision s join orden_locales z on z.id = s.local_id
+                                where s.persona_id = p.id and s.aprobado and z.activo), '[]'::jsonb) end,
+           /* Su PIN tiene menos números de los que pide su rol (SQL 110): lo
+              de la oficina no abre hasta cambiarlo. */
+           'pin_corto', k.hash is not null and coalesce(k.digitos, 4) < orden_pin_digitos(p.rol, p.tambien_atencion))
+    from orden_personas p
+    left join orden_locales l on l.id = p.local_id
+    left join equipo e on e.id = p.equipo_id
+    left join orden_pins k on k.persona_id = p.id
+   where p.auth_user_id = auth.uid() and auth.uid() is not null
+   limit 1
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_lista()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare k text[] := array['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica', 'contable'];   -- SQL 256: «Entra a Fábrica»; SQL 262: «Retiros de fondos»; SQL 285: lo contable
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'admin_elige', true,
+    'roles', (select jsonb_object_agg(r.ed, (select jsonb_object_agg(c, pos_permiso_del_rol(r.rol, r.con_local, c)) from unnest(k) c))
+                from (values ('vendedor', 'vendedor', true), ('supervisor', 'supervisor', true), ('zona', 'supervisor', false),
+                             ('atencion', 'atencion', false), ('admin', 'admin', false)) r(ed, rol, con_local)),
+    'personas', coalesce((
+      select jsonb_object_agg(p.id, (select jsonb_object_agg(c, case when p.rol = 'admin' then coalesce((x.cambios ->> 'usa')::boolean, false)
+                                                                     else coalesce((x.cambios ->> c)::boolean, pos_permiso_del_rol(p.rol::text, p.local_id is not null, c)) end)
+                                       from unnest(k) c) || jsonb_build_object('propios', coalesce(x.cambios, '{}'::jsonb)))
+        from orden_personas p left join pos_permisos x on x.persona_id = p.id), '{}'::jsonb));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_guardar(p_persona uuid, p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  k text[] := array['usa', 'anular', 'envios', 'caja', 'retiros', 'dias', 'locales', 'precios', 'gestion', 'fabrica', 'contable'];   -- SQL 256: «Entra a Fábrica»; SQL 262: «Retiros de fondos»; SQL 285: lo contable
+  q orden_personas;
+  c text;
+  v_cambios jsonb;
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  select * into q from orden_personas where id = p_persona;
+  if not found then raise exception 'No existe esa persona.'; end if;
+  if jsonb_typeof(p) is distinct from 'object' then raise exception 'Faltan los permisos.'; end if;
+  /* SQL 236: al administrador, sólo «Usa el POS» (con eso tiene todo, también la Gestión). El suyo no se lo saca él. */
+  if q.rol = 'admin' then
+    if jsonb_typeof(p->'usa') is distinct from 'boolean' then raise exception 'Falta si usa el POS.'; end if;
+    if q.id = orden_yo_id() and not (p->>'usa')::boolean then
+      raise exception 'Tu POS no te lo podés sacar vos: te lo saca otro administrador.';
+    end if;
+    p := jsonb_build_object('usa', p->'usa');
+  end if;
+  select x.cambios into v_cambios from pos_permisos x where x.persona_id = p_persona for update;
+  v_cambios := coalesce(v_cambios, '{}'::jsonb);
+  foreach c in array k loop
+    if p ? c then
+      if jsonb_typeof(p->c) is distinct from 'boolean' then raise exception 'El permiso % no es válido.', c; end if;
+      if (p->>c)::boolean = pos_permiso_del_rol(q.rol::text, q.local_id is not null, c) then v_cambios := v_cambios - c;
+      else v_cambios := v_cambios || jsonb_build_object(c, (p->>c)::boolean); end if;
+    end if;
+  end loop;
+  if v_cambios = '{}'::jsonb then
+    delete from pos_permisos where persona_id = p_persona;
+  else
+    insert into pos_permisos (persona_id, cambios, cambiado_por, cambiado_en) values (p_persona, v_cambios, orden_yo_id(), now())
+    on conflict (persona_id) do update set cambios = excluded.cambios, cambiado_por = excluded.cambiado_por, cambiado_en = now();
+  end if;
+  return (select jsonb_object_agg(c2, pos_puede_persona(q, c2)) from unnest(k) c2) || jsonb_build_object('propios', v_cambios);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_inicio()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not (pos_puede('fabrica') or pos_puede('contable')) then perform pos_permiso(); end if;   -- SQL 256: también quien tiene sólo la Fábrica; SQL 285: o sólo lo contable
+  return jsonb_build_object(
+    /* SQL 190: su local y lo que puede en el POS (las casillas de Config → Usuarios). */
+    'yo', (select jsonb_build_object('id', p.id, 'nombre', p.nombre, 'local_id', p.local_id) from orden_personas p where p.id = orden_yo_id()),
+    'puede', pos_mis_permisos(),
+    'hoy', pos_hoy(),
+    'locales', coalesce((
+      select jsonb_agg(jsonb_build_object('id', l.id, 'nombre', l.nombre, 'codigo', l.codigo,
+                                          'lista_id', s.lista_id, 'habilitada', coalesce(s.habilitada, false),
+                                          'punto_venta', s.punto_venta,
+                                          'arca', s.arca, 'arca_desde', s.arca_desde) order by l.nombre)   -- SQL 276
+        from orden_locales l left join pos_sucursales s on s.local_id = l.id
+       where l.activo), '[]'::jsonb),
+    'listas', coalesce((
+      select jsonb_agg(jsonb_build_object('id', x.id, 'nombre', x.nombre, 'base_id', x.base_id, 'ajuste', x.ajuste,
+                                          'redondeo', x.redondeo,
+                                          'propios', (select count(*) from pos_precios p where p.lista_id = x.id)) order by x.id)
+        from pos_listas x where x.activo), '[]'::jsonb),
+    'promos', coalesce((select jsonb_agg(to_jsonb(pr) - 'creado_en' order by pr.orden, pr.id) from pos_promos pr), '[]'::jsonb),
+    /* SQL 171: el Club en la venta. "suma": si el POS suma los puntos (la regla pos_suma_puntos). */
+    'club', jsonb_build_object(
+      'suma', coalesce((select valor from club_reglas where clave = 'pos_suma_puntos'), 'no') = 'si',
+      'pesos_por_punto', coalesce((select nullif(valor, '')::numeric from club_reglas where clave = 'pesos_por_punto'), 100)),
+    /* Los vendedores de cada local: el equipo del No Compra (los mismos nombres que la Carga). */
+    'vendedores', coalesce((
+      select jsonb_object_agg(l.id, coalesce(v.nombres, '[]'::jsonb))
+        from orden_locales l
+        left join lateral (
+          select jsonb_agg(q.n order by q.n) nombres
+            from (select distinct trim(e.vendedor) n from equipo e
+                   where e.activo and lower(trim(e.local)) = lower(trim(l.codigo)) and trim(e.vendedor) <> '') q
+        ) v on true
+       where l.activo), '{}'::jsonb)
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_disponibilidad()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('contable') then perform pos_permiso('gestion'); end if;   -- SQL 285: también lo contable de la Fábrica
+  return (
+    /* SQL 285 (Mauricio, 12/11: "me aparece sólo la de Rivadavia… lo importante es que pueda haber la disponibilidad de todos
+       los locales"): todas las sucursales; la que todavía no usa el POS de verdad va con con_pos = false (y $0). */
+    with l as (
+      select o.id, o.nombre, o.id in (select x.local_id from pos_cierres x where not x.prueba
+                                   union select x.local_id from pos_ventas x where not x.prueba
+                                   union select x.local_id from pos_cambios x where not x.prueba
+                                   union select x.local_id from pos_caja_movimientos x where not x.prueba
+                                   union select x.local_id from pos_caja_ajustes x) as con_pos
+        from orden_locales o
+       where o.activo
+    ), c as (
+      select l.id, l.nombre, l.con_pos, k.caja, pos_caja_saldo(l.id, k.caja) d
+        from l cross join (values ('chica'), ('fuerte')) k(caja)
+    )
+    select jsonb_build_object(
+      'cajas', coalesce((select jsonb_agg(jsonb_build_object('local_id', c.id, 'local', c.nombre, 'caja', c.caja, 'con_pos', c.con_pos) || c.d
+                                          order by not c.con_pos, c.nombre, c.caja) from c), '[]'::jsonb),
+      'totales', jsonb_build_object(
+        'chica', coalesce((select sum((c.d->>'saldo')::numeric) from c where c.caja = 'chica'), 0),
+        'fuerte', coalesce((select sum((c.d->>'saldo')::numeric) from c where c.caja = 'fuerte'), 0)))
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_valores(p_local uuid, p_caja text, p_desde date, p_hasta date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('contable') then perform pos_permiso('gestion'); end if;   -- SQL 285: también lo contable de la Fábrica
+  if p_local is null or not exists (select 1 from orden_locales where id = p_local) then raise exception 'Elegí la sucursal.'; end if;
+  if p_caja is null or p_caja not in ('chica', 'fuerte') then raise exception 'La caja tiene que ser la chica o la fuerte.'; end if;
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with t as (select * from pos_caja_con_saldo(p_local, p_caja)),
+    f as (select * from t where t.dia between p_desde and p_hasta)
+    select pos_caja_saldo(p_local, p_caja) || jsonb_build_object(
+      'local', (select o.nombre from orden_locales o where o.id = p_local),
+      'filas', coalesce((select jsonb_agg(jsonb_build_object('fecha', z.fecha, 'tipo', z.tipo, 'ref', z.ref, 'detalle', z.detalle,
+                                                             'persona', z.persona, 'importe', z.importe, 'saldo', z.saldo,
+                                                             'control', z.es_control, 'contado', z.contado, 'id', z.ref_id) order by z.n desc)
+                           from (select * from f order by n desc limit 1000) z), '[]'::jsonb),
+      'mas', (select count(*) > 1000 from f),
+      'entro', coalesce((select sum(f.importe) from f where not f.es_control and f.importe > 0), 0),
+      'salio', coalesce((select -sum(f.importe) from f where not f.es_control and f.importe < 0), 0),
+      'ajustado', coalesce((select sum(f.importe) from f where f.es_control and f.tipo <> 'inicial'), 0),
+      'antes', coalesce((select t.saldo from t where t.dia < p_desde order by t.n desc limit 1), 0))
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_movimientos(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_tipo text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_retiros boolean;   -- SQL 262
+  v_contable boolean := pos_puede('contable');   -- SQL 285: lo contable de la Fábrica ve todos los locales, todos los días y los retiros
+begin
+  if not v_contable then
+    perform pos_permiso(case when p_tipo = 'retiro' then 'retiros' else 'caja' end);   -- SQL 190; SQL 262: la lista de los retiros, con su casilla
+    perform pos_local_ok(p_local);
+    perform pos_dias_ok(p_desde);
+  end if;
+  v_retiros := v_contable or pos_puede('retiros');   -- SQL 262: sin la casilla, «Todos» no trae los retiros
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_tipo is not null and p_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte', 'retiro') then raise exception 'Ese tipo de movimiento no existe.'; end if;
+  return (
+    with t as (
+      select m.id, 'mov'::text as origen, m.fecha, m.local_id, m.tipo, m.rubro, m.descripcion, m.monto, m.persona_nombre as persona,
+             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo, m.numero,   -- SQL 179: el número del gasto
+             m.caja, m.retira, m.controlado_en, m.controlado_por   -- SQL 191
+        from pos_caja_movimientos m
+       where m.dia between p_desde and p_hasta and m.prueba = coalesce(p_prueba, false) and (p_local is null or m.local_id = p_local)
+      union all
+      select c.id, 'cierre', c.fecha, c.local_id, 'caja_fuerte', null, null, c.retiro, c.responsable_nombre,
+             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo, null::int,
+             null::text, null::text, null::timestamptz, null::uuid
+        from pos_cierres c
+       where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
+         and (p_local is null or c.local_id = p_local)
+    ), f as (
+      select * from t where (p_tipo is null or t.tipo = p_tipo) and (t.tipo <> 'retiro' or v_retiros)   -- SQL 262
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'origen', z.origen, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id, 'tipo', z.tipo,
+                 'rubro', z.rubro, 'descripcion', z.descripcion, 'monto', z.monto, 'persona', z.persona, 'estado', z.estado,
+                 'motivo', z.anulado_motivo, 'numero', z.numero,
+                 'caja', case when z.tipo = 'gasto' then coalesce(z.caja, 'chica') else z.caja end,   -- SQL 272: el gasto, de la chica o de la fuerte
+                 'retira', z.retira, 'controlado', z.controlado_en is not null, 'controlado_en', z.controlado_en,   -- SQL 191
+                 'controlado_por', (select pe.nombre from orden_personas pe where pe.id = z.controlado_por),
+                 'cierre', (select jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'estado', c.estado)
+                              from pos_cierres c where c.id = z.cierre_id)) order by z.fecha desc)
+          from (select * from f order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'gasto',       coalesce(sum(monto) filter (where vale and tipo = 'gasto'), 0),
+                    'gasto_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'gasto' and caja = 'fuerte'), 0),   -- SQL 272
+                    'salida',      coalesce(sum(monto) filter (where vale and tipo = 'salida'), 0),
+                    'ingreso',     coalesce(sum(monto) filter (where vale and tipo = 'ingreso'), 0),
+                    'caja_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'caja_fuerte'), 0),
+                    'retiro',      coalesce(sum(monto) filter (where vale and tipo = 'retiro'), 0),   -- SQL 191
+                    'controlado',  coalesce(sum(monto) filter (where vale and controlado_en is not null), 0),
+                    'cantidad',    count(*) filter (where vale)) from f),
+      'mas', (select count(*) > 500 from f)
+    )
+  );
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_iva_ventas(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_letra text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not pos_puede('contable') then   -- SQL 285: lo contable de la Fábrica ve el IVA de todos los locales, sin usar el POS
+    perform pos_permiso();
+    perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+    perform pos_dias_ok(p_desde);
+  end if;
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_letra is not null and p_letra not in ('A', 'B') then raise exception 'En el IVA van sólo las facturas A y B.'; end if;
+  return (
+    with z as (
+      select 'ticket'::text tipo, v.id venta_id, v.local_id, v.fecha, v.dia, v.letra, v.numero, null::int nc,
+             v.cliente_nombre, v.cliente_doc, v.cliente_condicion, v.total,
+             /* SQL 276: el CAE del ARCA de prueba no es una factura: no va en el IVA. */
+             case when v.factura->>'ambiente' = 'homologacion' then null else nullif(v.factura->>'cae', '') end cae
+        from pos_ventas v
+       where v.dia between p_desde and p_hasta
+         and not v.prueba
+         and v.letra in ('A', 'B')
+         and (v.estado = 'cobrada' or exists (select 1 from pos_notas_credito n where n.venta_id = v.id))
+         and (p_local is null or v.local_id = p_local)
+         and (p_letra is null or v.letra = p_letra)
+      union all
+      select 'nc', v.id, n.local_id, n.fecha, n.dia, n.letra, v.numero, n.numero,
+             v.cliente_nombre, v.cliente_doc, v.cliente_condicion, -v.total, n.cae
+        from pos_notas_credito n join pos_ventas v on v.id = n.venta_id
+       where n.dia between p_desde and p_hasta
+         and not n.prueba
+         and (p_local is null or n.local_id = p_local)
+         and (p_letra is null or n.letra = p_letra)
+    ),
+    y as (select z.*, round(z.total / 1.21, 2) base from z)
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'tipo', y.tipo, 'venta_id', y.venta_id, 'fecha', y.fecha, 'dia', y.dia, 'letra', y.letra, 'numero', y.numero, 'nc', y.nc,
+                 'local', l.nombre, 'local_id', y.local_id, 'cliente', coalesce(y.cliente_nombre, 'Consumidor final'), 'doc', y.cliente_doc,
+                 'condicion', y.cliente_condicion, 'base', y.base, 'iva', y.total - y.base, 'total', y.total, 'cae', y.cae)
+                 order by y.fecha, y.tipo desc)
+          from (select * from y order by fecha, tipo desc limit 20000) y join orden_locales l on l.id = y.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object('tickets', count(*) filter (where tipo = 'ticket'), 'notas', count(*) filter (where tipo = 'nc'),
+                                            'base', coalesce(sum(base), 0), 'iva', coalesce(sum(total - base), 0), 'total', coalesce(sum(total), 0))
+                    from y),
+      'mas', (select count(*) > 20000 from y)
+    )
+  );
+end $function$;
+
+notify pgrst, 'reload schema';

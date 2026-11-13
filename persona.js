@@ -190,7 +190,8 @@ var persona = (function () {
      administrador le viene con el POS). Sin el SQL 256 (nc_yo sin 'fabrica'), como antes: Administración con la Gestión. */
   function usaFabrica() {
     if (!vigente(_yo)) return false;
-    return _yo.fabrica === true || (_yo.fabrica === undefined && usaGestion() && _yo.rol === 'admin');
+    /* SQL 285: también quien tiene sólo «Ve lo contable» (el contador): entra a la Fábrica y ve sólo ese grupo (nc_yo trae 'contable'). */
+    return _yo.fabrica === true || _yo.contable === true || (_yo.fabrica === undefined && usaGestion() && _yo.rol === 'admin');
   }
   /* SQL 257 (6/11/2026): la gente de la Fábrica (Mauricio: "en vez de local, pueda elegir fábrica"; "que esté el
      asistente y después vemos si le agregamos algo más"). En la base es un vendedor sin local (en Config → Usuarios, el
@@ -317,6 +318,8 @@ var persona = (function () {
         '|' + !!(_yo && _yo.fichero) +
         /* SQL 256: y con la Fábrica. */
         '|' + !!(_yo && _yo.fabrica) +
+        /* SQL 285: y con lo contable de la Fábrica. */
+        '|' + !!(_yo && _yo.contable) +
         /* SQL 257: y si es de la Fábrica (sin local): sólo Fábrica y el Asistente. */
         '|' + deFabrica();
     };
