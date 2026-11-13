@@ -1806,3 +1806,49 @@ $function$
 ;
 
 select 'listo: las gift cards impresas, con su código' as "SQL 72";
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SQL 287 (13/11/2026) — LA GIFT CARD SE VENDE Y SE COBRA SÓLO DESDE EL POS
+   ══════════════════════════════════════════════════════════════════════════
+   La revisión de seguridad del 26/10 encontró que dos funciones de la base se
+   podían llamar desde afuera, sin entrar con usuario y PIN, con la clave
+   pública que está en la página:
+     - vender_giftcard: crea una Gift Card nueva (de hasta $ 9.999.999) que
+       después se puede cobrar con su número;
+     - canjear_beneficio: da por usada una Gift Card o un cupón.
+   Las usaban las pantallas viejas Gift Cards y Cobrar. Desde el 11/11
+   (no-compra-v472) esas dos pantallas son sólo un cartel que manda al POS, y
+   el POS vende y cobra con su propia función (pos_venta_guardar), que pide
+   usuario y usa canjear_beneficio POR ADENTRO para los cupones.
+
+   Qué hace: nadie de afuera ni de adentro las llama directo; el POS sigue
+   igual (sus funciones corren con el permiso de la base, no con el de quien
+   vende). Quedan para el servidor (service_role).
+   No cambia ningún dato ni ninguna pantalla.
+   Se deshace con deshacer-287.sql. */
+
+do $$
+declare
+  v_vende  regprocedure := to_regprocedure('public.vender_giftcard(numeric,text,text,numeric,text,integer,text,text,text,text)');
+  v_canjea regprocedure := to_regprocedure('public.canjear_beneficio(bigint,text,text,text,numeric,text,text,text)');
+begin
+  if v_vende is null or v_canjea is null then
+    raise exception 'No están vender_giftcard (10 datos) o canjear_beneficio (8 datos) como se esperaba: no se corre.';
+  end if;
+  if (select count(*) from pg_proc where proname in ('vender_giftcard', 'canjear_beneficio')
+        and pronamespace = 'public'::regnamespace) <> 2 then
+    raise exception 'Hay otra versión de vender_giftcard o canjear_beneficio: mirarla antes de correr esto.';
+  end if;
+  if not has_function_privilege('anon', v_vende, 'execute')
+     and not has_function_privilege('anon', v_canjea, 'execute') then
+    raise exception 'El SQL 287 ya está corrido (desde afuera ya no se pueden llamar).';
+  end if;
+end $$;
+
+revoke execute on function vender_giftcard(numeric, text, text, numeric, text, integer, text, text, text, text) from public, anon, authenticated;
+revoke execute on function canjear_beneficio(bigint, text, text, text, numeric, text, text, text) from public, anon, authenticated;
+grant execute on function vender_giftcard(numeric, text, text, numeric, text, integer, text, text, text, text) to service_role;
+grant execute on function canjear_beneficio(bigint, text, text, text, numeric, text, text, text) to service_role;
+
+notify pgrst, 'reload schema';
