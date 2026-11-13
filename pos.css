@@ -2198,6 +2198,35 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .rp-av-tit { margin: 0 0 6px; font-weight: 700; }
 .rp-avisos { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 34vh; overflow-y: auto; }
 .rp-avisos li { padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-txt); font-size: 13.5px; line-height: 1.4; font-weight: 600; }
+/* 13/11, segunda vuelta: varios productos a la vez (la lista), la ventana de la planilla y las ventanas más anchas. */
+.rp-prod .btn { align-self: flex-end; }
+.rp-tanda { grid-column: span 12; min-width: 0; }
+.rp-tanda:empty { display: none; }
+.rp-lista { margin: -2px 0 0; padding: 3px; list-style: none; display: grid; gap: 2px; max-height: 132px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.rp-lista li { display: flex; align-items: center; gap: 2px; border-radius: 7px; }
+.rp-lista li.on { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-alta); }
+.rp-it { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 0; border-radius: 7px; background: none; text-align: left; cursor: pointer; font: 500 12.5px var(--sans); color: var(--txt-2); }
+.rp-it span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-it b { color: var(--txt); }
+.rp-it small { flex: none; font-size: 11.5px; color: var(--txt-3); font-variant-numeric: tabular-nums; }
+.rp-lista li.on .rp-it { color: var(--txt); }
+.rp-lista li:not(.on) .rp-it:hover { background: var(--surface-3); }
+.rp-it-x { flex: none; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--txt-3); font-size: 16px; line-height: 1; cursor: pointer; }
+.rp-it-x:hover { background: var(--bad-soft); color: var(--bad-txt); }
+.tk-datos .rp-tanda .rp-fam { margin: 5px 0 0; }
+.rp-por-local { display: inline-block; margin-top: 3px; font-size: 12.5px; }
+.rp-como .rp-ver { color: var(--acc); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.rp-como .rp-ver:hover { text-decoration: underline; }
+.pos-caja.ancha.rp-ancha { width: min(1080px, 100%); }
+.rp-pl-hay { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 13.5px; line-height: 1.45; color: var(--txt-2); }
+.rp-pl-hay b { color: var(--txt); }
+.rp-pl-hay a { color: var(--txt); font-weight: 700; white-space: nowrap; }
+.rp-pl-hay.rp-pl-falta { background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); font-weight: 600; }
+.rp-formatos { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 10px; font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+.rp-formatos li::marker { font-weight: 700; color: var(--txt); }
+.rp-formatos b { color: var(--txt); }
+.rp-cols { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.rp-cols i { padding: 2px 10px; border-radius: 7px; border: 1px solid var(--line-alta); background: var(--surface-2); font: 700 12.5px var(--sans); color: var(--txt); }
 /* La columna de la izquierda no estira la página: si no entra, se desliza adentro. */
 @media (min-width: 1000px) and (min-height: 560px) {
   #cuerpo.pos-cuerpo.lleno.rp-cuerpo { height: calc(100vh - 22px); }

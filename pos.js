@@ -14019,19 +14019,51 @@
      200 L, a cada local le va en esa proporción») o parejos (curvas).
      Lo de los mayoristas con pedido se aparta primero; todavía no se les
      hace el remito desde acá (falta la sección de Pedidos).
+     13/11 (Mauricio: «importar una lista o que se puedan agregar varios
+     productos… o manualmente»): se reparten VARIOS productos a la vez (la
+     tanda), sumados de a uno o con «Importar…»; cada uno con la parte de su
+     familia. Los remitos: uno por local con todo, o uno por producto.
+     Las explicaciones paso a paso salieron de la pantalla («yo solo
+     explico»): quedan en «Ver la cuenta de cada local». Y «Cargar la
+     planilla…» dice antes cómo tiene que venir, con un ejemplo para bajar.
      ════════════════════════════════════════════════════════════════════ */
   var K_RP_PLANILLA = 'pos_rp_planilla', K_RP_PREFS = 'pos_rp_prefs';
   function verRepartir() { RP.ver(); }
   var RP = (function () {
     /* [la clave, como se elige, como se titula en «Comparar»] */
     var FORMAS = [['fam', '% de la venta de la familia', '% familia'], ['rub', '% de la venta del rubro', '% rubro'], ['gen', '% de la venta general', '% general'],
-                  ['nec', 'Lo que necesita', 'Necesidad'], ['par', 'Parejo', 'Parejo']];
+                  ['mix', '% de la familia, contando lo que ya tiene', 'Familia y stock'], ['nec', 'Lo que necesita', 'Necesidad'], ['par', 'Parejo', 'Parejo']];
     var PL = null, PL_DE = '';   // la planilla guardada en esta compu, y de cuándo es
     /* P: el producto. CEL: los casilleros (talle × color). HAY: lo de la fábrica en cada casillero (STOCK: lo que dice el depósito).
        LOC: los locales. A: lo que le va a cada local en cada casillero; MANO: lo corregido a mano. MAY: los mayoristas con pedido.
        LOTE: los remitos de este reparto que ya se guardaron (si se cortó en la mitad, no se repiten). */
     var P = null, TALLES = [], COLORES = [], CEL = [], PREFS = [], HAY = [], HAY_MANO = false, STOCK = null, LOC = [], A = [], MANO = {}, NEC_MANO = {}, REP = null, MAY = [];
-    var MULT = 1.2, MULT_MANO = false, TEMP = null, DEP = '', LOTE = null, nStock = 0, guardandoRp = false;
+    var MULT = 1.2, MULT_MANO = false, TEMP = null, DEP = '', LOTE = null, guardandoRp = false;
+    /* Varios productos a la vez (13/11): TANDA es la lista. El que se ve en la grilla (ACT) está «en la mano», en las variables
+       de arriba: soltar() lo deja en la lista y tomar(k) trae otro. enCada(fn) hace algo con cada uno y vuelve al que estaba. */
+    var TANDA = [], ACT = -1;
+    function soltar() { if (ACT >= 0) TANDA[ACT] = { p: P, ta: TALLES, co: COLORES, ce: CEL, pr: PREFS, hay: HAY, hm: HAY_MANO, st: STOCK, loc: LOC, a: A, ma: MANO, nm: NEC_MANO, rep: REP, may: MAY }; }
+    function tomar(k) {
+      var e = TANDA[k];
+      ACT = e ? k : -1;
+      if (!e) { P = null; return; }
+      P = e.p; TALLES = e.ta; COLORES = e.co; CEL = e.ce; PREFS = e.pr; HAY = e.hay; HAY_MANO = e.hm; STOCK = e.st; LOC = e.loc; A = e.a; MANO = e.ma; NEC_MANO = e.nm; REP = e.rep; MAY = e.may;
+    }
+    function enCada(fn) {
+      var ant = ACT;
+      soltar();
+      for (var k = 0; k < TANDA.length; k++) { tomar(k); fn(k); soltar(); }
+      tomar(ant);
+    }
+    function vaciar() { TANDA = []; ACT = -1; P = null; LOTE = null; MAY = []; MANO = {}; NEC_MANO = {}; REP = null; HAY = []; STOCK = null; HAY_MANO = false; A = []; LOC.forEach(function (l) { l.necMano = null; }); }
+    function conGuardados() { return !!LOTE && Object.keys(LOTE.hechos).length > 0; }
+    /** Lo que hay y lo repartido de un producto de la lista (con lo de los mayoristas). */
+    function totalesDe(e) {
+      var rep = 0;
+      e.a.forEach(function (fila, i) { fila.forEach(function (v, j) { var k = i + '-' + j; rep += k in e.ma ? e.ma[k] : v; }); });
+      e.may.forEach(function (m) { rep += suma(m.c); });
+      return { hay: suma(e.hay), rep: rep };
+    }
 
     function suma(a) { return a.reduce(function (s, x) { return s + x; }, 0); }
     function fmt(x) { if (x == null) return '—'; x = Math.round(x); return x < 0 ? '−' + (-x) : String(x); }
@@ -14043,13 +14075,16 @@
     function segun() { return $('rpSegun').value; }
     /* De dónde se mira lo vendido y lo que tiene: la familia del producto, todo su rubro o todo lo del local. */
     function nivelDe(s) { return s === 'rub' ? 'rub' : s === 'gen' ? 'gen' : 'fam'; }
-    function tipoDe(s) { return s === 'nec' ? 'nec' : s === 'par' ? 'par' : 'ven'; }
+    function tipoDe(s) { return s === 'nec' ? 'nec' : s === 'par' ? 'par' : s === 'mix' ? 'mix' : 'ven'; }
     function familia() { return P ? [P[2], P[7]].filter(Boolean).join(' · ') : ''; }
     function queTxt(nv) { return nv === 'rub' ? 'todo el rubro ' + (P[2] || '') : nv === 'gen' ? 'todos los productos' : (familia() || 'la familia'); }
     function etiqueta() { return P ? P[0] + ' · ' + P[1] : ''; }
     function periodo() { return (PL && PL.periodo) || 'la temporada pasada'; }
     function tallesTxt() { var ts = TALLES.map(nombreTalle); return ts.length <= 4 ? juntar(ts) : ts[0] + ' a ' + ts[ts.length - 1]; }
-    function hecho(i) { return LOTE && LOTE.hechos[LOC[i].id]; }
+    /* Los remitos: uno por local con todos los productos, o uno por local y producto. Con un lote empezado, como empezó. */
+    function porProducto() { return LOTE ? LOTE.modo === 'producto' : !!$('rpRemitos') && $('rpRemitos').value === 'producto'; }
+    function claveLote(l) { return porProducto() ? l.id + '|' + P[0] : l.id; }
+    function hecho(i) { return LOTE && LOTE.hechos[claveLote(LOC[i])]; }
     /* Los mayoristas con pedido (reunión del 12/11: «si no, no la entregamos»): lo suyo se aparta primero y el resto se
        reparte entre los locales. MAY = [{ n: nombre, c: [cantidad por casillero] }]. */
     function mayCel(j) { var s = 0; MAY.forEach(function (m) { s += m.c[j] || 0; }); return s; }
@@ -14198,8 +14233,10 @@
         if (!CODIGOS[cod]) cod = codDeNombre(h.nombre) || cod;
         locales.push({ cod: cod, nombre: CODIGOS[cod] || h.nombre, hoja: h.nombre, orden: parseInt(h.nombre, 10) || 90, filas: filas, conDatos: conDatos });
       });
+      if (!locales.length) locales = planillaSimple(hojas, avisos);
       locales.sort(function (x, y) { return x.orden - y.orden; });
-      if (!locales.length) throw new Error('No encontré las hojas de los locales: cada una tiene que tener las columnas Rubro, Familia, Unidades Vendidas y Reposición.');
+      if (!locales.length) throw new Error('No encontré los datos. Sirve una sola hoja con los títulos Local, Rubro, Familia, Vendió y Tiene (un renglón por local y familia), ' +
+        'o la planilla de la fábrica con una hoja por local (Rubro, Familia, Unidades Vendidas y Reposición). En «Cargar la planilla…» hay un ejemplo para bajar.');
 
       locales.forEach(function (l) { if (!l.conDatos) avisos.push({ cod: l.cod, txt: 'La hoja «' + l.hoja + '» está vacía (ni ventas ni stock): no hay datos de ' + l.nombre + '.' }); });
       ((S.ini && S.ini.locales) || []).map(nombreLocal).forEach(function (n) {
@@ -14242,26 +14279,115 @@
       var fams = {}; locales.forEach(function (l) { Object.keys(l.filas).forEach(function (k) { fams[k] = 1; }); });
       return { archivo: archivo, locales: locales.map(function (l) { return { cod: l.cod, nombre: l.nombre, hoja: l.hoja, filas: l.filas }; }), familias: Object.keys(fams).length, avisos: avisos, mult: mult, periodo: per };
     }
+    /** La planilla simple: una sola hoja con un renglón por local y familia y los títulos Local, Rubro, Familia, Vendió y Tiene
+        (en cualquier orden; «Familia» y «Tiene» pueden faltar). Los locales, por el nombre del sistema o el código de la fábrica. */
+    function planillaSimple(hojas, avisos) {
+      var H = null;
+      hojas.some(function (h) {
+        for (var i = 0; i < Math.min(h.filas.length, 20); i++) {
+          var c = { l: -1, r: -1, f: -1, v: -1, t: -1 };
+          (h.filas[i] || []).map(normal).forEach(function (x, j) {
+            if (c.l < 0 && /^(local|sucursal|cliente)$/.test(x)) c.l = j;
+            else if (c.r < 0 && x === 'rubro') c.r = j;
+            else if (c.f < 0 && x === 'familia') c.f = j;
+            else if (c.v < 0 && /^(vendio|vendidas?|ventas?|unidades vendidas.*)$/.test(x)) c.v = j;
+            else if (c.t < 0 && /^(tiene|tiene hoy|stock|stock actual|existencia)$/.test(x)) c.t = j;
+          });
+          if (c.l >= 0 && c.r >= 0 && c.v >= 0) { H = { h: h, i: i, c: c }; return true; }
+        }
+        return false;
+      });
+      if (!H) return [];
+      var c = H.c, por = {}, orden = [], sis = {}, raros = [];
+      ((S.ini && S.ini.locales) || []).map(nombreLocal).forEach(function (n) { sis[normal(n)] = n; });
+      H.h.filas.slice(H.i + 1).forEach(function (row) {
+        row = row || [];
+        var nom = String(row[c.l] || '').trim(), r = String(row[c.r] || '').trim(), fa = c.f >= 0 ? String(row[c.f] || '').trim() : '';
+        if (!nom || !r || /^total/i.test(nom)) return;
+        var cod = CODIGOS[nom.toUpperCase()] ? nom.toUpperCase() : codDeNombre(nom), n = sis[normal(nom)] || sis[normal(CODIGOS[cod] || '')];
+        if (!n) { if (raros.indexOf(nom) < 0) raros.push(nom); return; }
+        if (!por[n]) { por[n] = { cod: cod || n, nombre: n, hoja: H.h.nombre, orden: orden.length, filas: {}, conDatos: 0 }; orden.push(n); }
+        var v = numPl(row[c.v]), t = c.t >= 0 ? numPl(row[c.t]) : null, k = clavePl(r, fa), y = por[n].filas[k];
+        if (y) { if (v != null) y.v = (y.v || 0) + v; if (t != null) y.t = (y.t || 0) + t; }
+        else por[n].filas[k] = { r: r, f: fa, v: v, t: t, nx: null };
+        if (v != null || t != null) por[n].conDatos++;
+      });
+      if (raros.length) avisos.push({ general: true, txt: 'En la planilla hay ' + (raros.length === 1 ? 'un nombre que no es' : raros.length + ' nombres que no son') + ' de ningún local del sistema y no se ' +
+        (raros.length === 1 ? 'toma' : 'toman') + ': ' + raros.slice(0, 6).join(', ') + (raros.length > 6 ? '…' : '') + '.' });
+      if (c.f < 0) avisos.push({ general: true, txt: 'La planilla no trae la columna Familia: sirve para repartir por el rubro o por la venta general, no por la familia.' });
+      if (c.t < 0) avisos.push({ general: true, txt: 'La planilla no trae la columna Tiene (el stock de cada local): «Lo que necesita» y «contando lo que ya tiene» toman que no tienen nada.' });
+      return orden.map(function (n) { return por[n]; });
+    }
     function leerGuardada() {
       var g = leerJSON(K_RP_PLANILLA, null);
       if (g && g.v === 1 && g.pl && Array.isArray(g.pl.locales)) { PL = g.pl; PL_DE = g.de || ''; } else { PL = null; PL_DE = ''; }
     }
 
     /* ── El producto ── */
-    function elegir(p) {
-      P = p;
-      TALLES = tallesDe(p); if (!TALLES.length) TALLES = [''];
-      COLORES = coloresDe(p); if (!COLORES.length) COLORES = [{ cod: '', nom: '' }];
-      CEL = []; COLORES.forEach(function (c) { TALLES.forEach(function (t) { CEL.push({ t: t, c: c.cod, n: (c.nom ? c.nom + ' ' : '') + nombreTalle(t) }); }); });
-      var nT = TALLES.length, nC = COLORES.length, medio = (nT - 1) / 2;
-      var ot = TALLES.map(function (t, i) { return i; }).sort(function (a, b) { return Math.abs(a - medio) - Math.abs(b - medio) || b - a; });   // primero los del medio
-      /* Un orden por color: el primer local que recibe arranca por el primer color, el segundo por el segundo… */
-      PREFS = [];
-      for (var o = 0; o < nC; o++) { var pr = []; for (var x = 0; x < ot.length; x++) for (var cc = 0; cc < nC; cc++) pr.push(((cc + o) % nC) * nT + ot[x]); PREFS.push(pr); }
-      HAY = CEL.map(function () { return 0; }); HAY_MANO = false; STOCK = null;
-      MAY = []; NEC_MANO = {}; LOTE = null;
-      armarLocales(); repartir(); pintar();
-      traerStock();
+    /** Suma un producto a la tanda y lo muestra (si ya estaba, lo muestra). m: lo que entró de cada talle y color, de una lista
+        importada ({ «COD|TALLE|COLOR»: cantidad }); devuelve cuántas prendas de esa lista tuvieron su casillero. callado: sin pintar. */
+    function elegir(p, m, callado) {
+      var ya = -1, puesto = 0;
+      soltar();
+      TANDA.forEach(function (e, k) { if (e && e.p[0].toUpperCase() === p[0].toUpperCase()) ya = k; });
+      if (ya < 0 && conGuardados()) { avisar('err', 'Ya se guardaron remitos de esta tanda: terminá de armarlos antes de sumar otro producto.'); return 0; }
+      if (ya >= 0) tomar(ya);
+      else {
+        P = p;
+        TALLES = tallesDe(p); if (!TALLES.length) TALLES = [''];
+        COLORES = coloresDe(p); if (!COLORES.length) COLORES = [{ cod: '', nom: '' }];
+        CEL = []; COLORES.forEach(function (c) { TALLES.forEach(function (t) { CEL.push({ t: t, c: c.cod, n: (c.nom ? c.nom + ' ' : '') + nombreTalle(t) }); }); });
+        var nT = TALLES.length, nC = COLORES.length, medio = (nT - 1) / 2;
+        var ot = TALLES.map(function (t, i) { return i; }).sort(function (a, b) { return Math.abs(a - medio) - Math.abs(b - medio) || b - a; });   // primero los del medio
+        /* Un orden por color: el primer local que recibe arranca por el primer color, el segundo por el segundo… */
+        PREFS = [];
+        for (var o = 0; o < nC; o++) { var pr = []; for (var x = 0; x < ot.length; x++) for (var cc = 0; cc < nC; cc++) pr.push(((cc + o) % nC) * nT + ot[x]); PREFS.push(pr); }
+        HAY = CEL.map(function () { return 0; }); HAY_MANO = false; STOCK = null;
+        MAY = []; NEC_MANO = {}; MANO = {}; A = []; REP = null;
+        TANDA.push(null); ACT = TANDA.length - 1;
+        armarLocales();   // los tildes de «Va», como estaban en el producto que se veía
+      }
+      if (m) { HAY = CEL.map(function (c) { var v = m[claveVar(P[0], c.t, c.c)] || 0; puesto += v; return Math.min(v, 9999); }); HAY_MANO = true; }
+      if (m || ya < 0) repartir();
+      soltar();
+      if (!callado) { pintar(); if (m || ya < 0) traerStock(); }
+      return puesto;
+    }
+    /** Saca un producto de la lista. */
+    function quitar(k) {
+      if (conGuardados()) { avisar('err', 'Ya se guardaron remitos de esta tanda: no se puede sacar un producto.'); return; }
+      soltar();
+      var act = ACT;
+      TANDA.splice(k, 1);
+      ACT = -1;
+      if (!TANDA.length) vaciar(); else tomar(act > k ? act - 1 : Math.min(act, TANDA.length - 1));
+      pintar();
+    }
+    /** «Importar…»: la lista de lo que entró (Código, Talle, Color y Cantidad), con la misma ventana del Nuevo remito. Cada código
+        es un producto de la tanda, con lo que entró en cada casillero. */
+    function importar() {
+      if (conGuardados()) { avisar('err', 'Ya se guardaron remitos de esta tanda: terminá de armarlos antes de sumar más productos.'); return; }
+      abrirImportar(function (items) {
+        var por = {}, orden = [], fuera = [], sobran = 0, n = 0;
+        items.forEach(function (x) {
+          var c = String(x.codigo).toUpperCase(), k = claveVar(c, x.talle, x.color);
+          if (!por[c]) { por[c] = {}; orden.push(c); }
+          por[c][k] = (por[c][k] || 0) + x.cantidad;
+        });
+        orden.forEach(function (c) {
+          var p = PROD[c], pedido = suma(Object.keys(por[c]).map(function (k) { return por[c][k]; }));
+          if (!p) { fuera.push(c); return; }
+          sobran += pedido - elegir(p, por[c], true);
+          n++;
+        });
+        if (n) { pintar(); traerStock(true); }
+        if (fuera.length || sobran) setTimeout(function () {
+          ventana('<h3 id="posVentTit">' + (n ? (n === 1 ? 'Se sumó 1 producto' : 'Se sumaron ' + n + ' productos') + ', con algo para revisar' : 'No se sumó ningún producto') + '</h3>' +
+            (fuera.length ? '<p class="pos-bajada"><b>No están en el catálogo y no se sumaron:</b> ' + esc(fuera.slice(0, 12).join(', ')) + (fuera.length > 12 ? '…' : '') + '. Hay que crearlos primero en Fábrica → Productos.</p>' : '') +
+            (sobran ? '<p class="pos-bajada"><b>' + sobran + (sobran === 1 ? ' prenda quedó' : ' prendas quedaron') + ' afuera</b> porque su talle o su color no es de ese producto en el catálogo.</p>' : '') +
+            '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>');
+        }, 0);
+      });
     }
     function sumaFilas(filas, rub) {
       var v = null, t = null;
@@ -14354,16 +14480,32 @@
         queda, según lo que le falta; «nada» = no se le manda nada y lo suyo va a los demás (se saca de a uno, el más chico). */
     function calcular(sg) {
       var nv = nivelDe(sg), tipo = tipoDe(sg), actual = nv === nivelDe(segun());
-      var vs = LOC.map(function (l) { return l.d[nv].v; });
+      var vs = LOC.map(function (l) { return l.d[nv].v; }), ts = LOC.map(function (l) { return l.d[nv].t; }), obj = null, Tm = 0, llenos = [];
       var nec = LOC.map(function (l) { return actual && l.necMano != null ? l.necMano : necesita(l.d[nv].v, l.d[nv].t); });
       var tope = $('rpTope').checked, chico = $('rpChico').value, D = paraLocales(), H = suma(D), nT = TALLES.length;
       var n = LOC.length, idx = LOC.map(function (l, i) { return i; });
       var w = LOC.map(function (l, i) {
         if (!l.va || hecho(i)) return 0;
         if (tipo === 'nec') return Math.max(nec[i] || 0, 0);
-        if (tipo === 'ven') return Math.max(vs[i] || 0, 0);
+        if (tipo === 'ven' || tipo === 'mix') return Math.max(vs[i] || 0, 0);
         return 1;
       });
+      if (tipo === 'mix') {
+        /* Su parte de la venta, contando lo que ya tiene: lo que entra + lo que tienen todos se reparte según la venta y a cada
+           uno se le descuenta lo suyo. El que ya tiene más que su parte no recibe (y lo suyo sale de la cuenta). */
+        var Sm = idx.filter(function (i) { return w[i] > 0; }), xm = {};
+        var tiene = function (i) { return Math.max(ts[i] || 0, 0); };
+        obj = LOC.map(function () { return null; });
+        while (Sm.length) {
+          var sv = suma(Sm.map(function (i) { return w[i]; })), peor = -1e-9, cual = -1;
+          Tm = H + suma(Sm.map(tiene));
+          Sm.forEach(function (i) { xm[i] = w[i] / sv * Tm - tiene(i); if (xm[i] < peor) { peor = xm[i]; cual = i; } });
+          if (cual < 0 || Sm.length === 1) break;
+          llenos.push(cual);
+          Sm = Sm.filter(function (i) { return i !== cual; });
+        }
+        w = w.map(function (v, i) { if (Sm.indexOf(i) < 0) return 0; obj[i] = xm[i] + tiene(i); return Math.max(xm[i], 0); });
+      }
       var cap = LOC.map(function (l, i) { return w[i] <= 0 ? 0 : tope ? Math.max(nec[i] || 0, 0) : Infinity; });
       var entran = idx.filter(function (i) { return w[i] > 0 && cap[i] > 0; });
       var Pc = chico === 'curva' ? nT : 0;
@@ -14392,7 +14534,7 @@
       var act = idx.map(function (i) { return w2[i] > 0 && cap2[i] > 0; });
       var falta = suma(idx.map(function (i) { return act[i] ? w2[i] : 0; }));
       return { segun: sg, tipo: tipo, nivel: nv, tope: tope, chico: chico, H: H, nT: nT, P: Pc, p: p, sumP: sumP, w: w, w2: w2, act: act, q: q, t: t, resto: resto, falta: falta,
-               f: tipo === 'nec' && falta > 0 ? resto / falta : null, entran: entran, afuera: afuera, sinCurva: sinCurva, ins: !!Pc && sumP > H, nec: nec, vs: vs,
+               f: tipo === 'nec' && falta > 0 ? resto / falta : null, entran: entran, afuera: afuera, sinCurva: sinCurva, ins: !!Pc && sumP > H, nec: nec, vs: vs, ts: ts, obj: obj, T: Tm, llenos: llenos,
                may: suma(MAY.map(totMay)), V: suma(LOC.map(function (l, i) { return l.va ? Math.max(vs[i] || 0, 0) : 0; })) };
     }
     function repartir() {
@@ -14448,10 +14590,28 @@
         '<th rowspan="2" class="n" title="El stock que tiene hoy de ' + que + ' (de la planilla)">Tiene<br>hoy</th>' +
         (conNec() ? '<th rowspan="2" class="n" id="rpNecTit">Necesita</th>' : '') + '<th rowspan="2" class="n" id="rpTocaTit">Le<br>toca</th>', '');
     }
+    /** La lista de lo que se reparte (uno o varios productos): tocar uno muestra su grilla; la × lo saca. */
+    function pintarTanda() {
+      var z = $('rpTanda');
+      if (!z) return;
+      if (!P) { z.innerHTML = ''; return; }
+      soltar();
+      z.innerHTML = '<ul class="rp-lista" aria-label="Los productos que se reparten">' + TANDA.map(function (e, k) {
+        var t = totalesDe(e);
+        return '<li' + (k === ACT ? ' class="on"' : '') + '><button type="button" class="rp-it" data-prod="' + k + '" title="' + esc(e.p[1]) + ': ver su reparto"' + (k === ACT ? ' aria-current="true"' : '') + '>' +
+          '<span><b>' + esc(e.p[0]) + '</b> ' + esc(e.p[1]) + '</span><small>' + t.rep + ' de ' + t.hay + '</small></button>' +
+          '<button type="button" class="rp-it-x" data-quitar="' + k + '" title="Sacarlo de la lista" aria-label="Sacar ' + esc(e.p[0]) + ' de la lista">×</button></li>';
+      }).join('') + '</ul>' +
+      '<p class="rp-fam">Rubro <b>' + esc(P[2] || '—') + '</b> · Familia <b>' + esc(P[7] || '—') + '</b>' + (P[8] ? ' <span>· ' + esc(P[8]) + '</span>' : '') + '</p>' +
+      (TANDA.length > 1 ? '<button type="button" class="rp-link rp-por-local" id="rpPorLocal">Ver el total por local</button>' : '');
+      var on = z.querySelector('li.on');
+      if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+    }
     function pintarVacio() {
-      $('rpCab').innerHTML = ''; $('rpPie').innerHTML = ''; $('rpFam').innerHTML = ''; $('rpComo').innerHTML = '';
+      $('rpCab').innerHTML = ''; $('rpPie').innerHTML = ''; $('rpTanda').innerHTML = ''; $('rpComo').innerHTML = '';
       $('rpProd').placeholder = 'Buscá por código o nombre…';
-      $('rpFilas').innerHTML = '<tr><td class="rp-vacio">Buscá a la izquierda el producto que entró. Se reparte solo entre los locales y de acá salen los remitos, uno por local.</td></tr>';
+      $('rpFilas').innerHTML = '<tr><td class="rp-vacio">Buscá a la izquierda el producto que entró, o traé la lista de todo lo que entró con «Importar…». Se reparte solo entre los locales y de acá salen los remitos.</td></tr>';
+      $('rpRemitos').disabled = false;
       $('rpHay').textContent = $('rpRep').textContent = $('rpQueda').textContent = '0';
       $('rpQueda').parentNode.classList.remove('rp-mal');
       $('rpArmar').textContent = 'Armar los remitos';
@@ -14464,8 +14624,9 @@
       if (!P) { pintarVacio(); return; }
       var R = REP, nv = conNec() ? 5 : 4, D = paraLocales();
       $('rpComparar').disabled = $('rpVolver').disabled = false;
-      $('rpFam').innerHTML = '<b class="rp-elegido">' + esc(etiqueta()) + '</b><br>Rubro <b>' + esc(P[2] || '—') + '</b> · Familia <b>' + esc(P[7] || '—') + '</b>' + (P[8] ? ' <span>· ' + esc(P[8]) + '</span>' : '');
-      $('rpProd').placeholder = 'Buscá otro producto…';
+      pintarTanda();
+      $('rpRemitos').disabled = conGuardados();
+      $('rpProd').placeholder = 'Sumá otro producto…';
       cabecera();
       var conStock = STOCK && STOCK.some(function (x) { return x > 0; });
       var origen = HAY_MANO ? 'a mano' : !STOCK ? '…' : conStock ? 'del depósito' : 'escribí lo que entró';
@@ -14521,17 +14682,39 @@
           var q = HAY[j] - x;
           return '<td class="c' + colCls(j) + (q < 0 ? ' rp-mal" title="Mandás ' + (-q) + ' más de lo que hay' : '') + '">' + fmt(q) + '</td>';
         }).join('') + '<td class="n rp-totc' + (H - R < 0 ? ' rp-mal' : '') + '">' + fmt(H - R) + '</td></tr>';
-      $('rpHay').textContent = H; $('rpRep').textContent = R; $('rpQueda').textContent = fmt(H - R);
-      $('rpQueda').parentNode.classList.toggle('rp-mal', H - R < 0);
-      var n = LOC.filter(function (l, i) { return l.va && !hecho(i) && totLocal(i) > 0; }).length;
+      /* Las cajas de abajo: lo de toda la tanda (con un solo producto, lo mismo que la grilla). */
+      soltar();
+      var T = TANDA.map(totalesDe), Ht = suma(T.map(function (x) { return x.hay; })), Rt = suma(T.map(function (x) { return x.rep; }));
+      $('rpHay').textContent = Ht; $('rpRep').textContent = Rt; $('rpQueda').textContent = fmt(Ht - Rt);
+      $('rpQueda').parentNode.classList.toggle('rp-mal', Ht - Rt < 0);
+      $('rpQueda').parentNode.parentNode.title = TANDA.length > 1 ? 'De los ' + TANDA.length + ' productos de la lista' : '';
+      var chico = $('rpTanda').querySelector('.rp-it[data-prod="' + ACT + '"] small');
+      if (chico) chico.textContent = R + ' de ' + H;
+      var n = unidades().length;
       $('rpArmar').textContent = n ? 'Armar los remitos (' + n + ')' : 'Armar los remitos';
       $('rpArmar').disabled = !n || guardandoRp;
+    }
+    /** Los remitos por armar: uno por local con todos los productos, o uno por local y producto (los ya guardados, no).
+        → [{ k: la clave del lote, l: { id, n }, items, tot, prods: [{ cod, nom, u }] }] */
+    function unidades() {
+      var por = {}, orden = [];
+      enCada(function () {
+        var cod = P[0].toUpperCase();
+        LOC.forEach(function (l, i) {
+          if (!l.va || hecho(i)) return;
+          var u = totLocal(i), k = claveLote(l);
+          if (!u) return;
+          if (!por[k]) { por[k] = { k: k, l: { id: l.id, n: l.n }, items: [], tot: 0, prods: [] }; orden.push(k); }
+          CEL.forEach(function (c, j) { var v = val(i, j); if (v > 0) por[k].items.push({ codigo: cod, descripcion: '', talle: c.t, color: c.c, cantidad: v }); });
+          por[k].tot += u; por[k].prods.push({ cod: P[0], nom: P[1], u: u });
+        });
+      });
+      return orden.map(function (k) { return por[k]; });
     }
 
     /* ── Cómo se repartió, paso a paso, con los números de ahora (para ver qué forma funciona mejor) ── */
     function pasos(conLink) {
       var R = REP, que = esc(queTxt(R.nivel)), it = [], pm = (PL && PL.mult) || 1.2;
-      var hay = R.tipo === 'par' || LOC.some(function (l) { return R.tipo === 'ven' ? l.v != null : necDe(l) != null; });
       var queda = R.may ? 'para los locales quedan' : 'en la fábrica hay';
       if (R.may) it.push('Primero, lo de los mayoristas: <b>' + R.may + '</b>. Quedan <b>' + R.H + '</b> para los locales.');
       var curva = 'una curva (' + esc(tallesTxt()) + ')', verL = conLink ? ' <a href="#" id="rpVer">Ver la cuenta de cada local</a>' : '';
@@ -14540,16 +14723,18 @@
         (Math.abs(MULT - pm) > 0.001 ? ' La planilla usa × ' + coma(pm) + '.' : '') + (manos.length ? ' A mano: ' + esc(juntar(manos)) + '.' : '');
       var sinPasar = R.tope ? ' Sin pasarse de lo que necesita (lo que vendió × ' + coma(MULT) + ', menos lo que tiene).' : '';
       if (R.tipo === 'nec') it.push(nec);
-      else if (R.tipo === 'ven') {
+      else if (R.tipo === 'ven' || R.tipo === 'mix') {
         var top = LOC.filter(function (l) { return parte(l) != null; }).sort(function (a, b) { return b.v - a.v; })[0];
         it.push('<b>La parte de cada local</b> = lo que vendió de ' + que + ' en ' + esc(periodo()) + ' ÷ lo que vendieron todos (<b>' + fmt(R.V) + '</b>).' +
           (top ? ' ' + esc(top.n) + ' vendió ' + fmt(top.v) + ': el <b>' + Math.round(parte(top) * 100) + ' %</b>.' : '') + sinPasar);
+        if (R.tipo === 'mix') it.push('Entre lo que entra (<b>' + R.H + '</b>) y lo que ya tienen esos locales (<b>' + fmt(R.T - R.H) + '</b>) hay <b>' + fmt(R.T) + '</b>. A cada uno le correspondería su parte de eso: se le manda lo que le falta para llegar.' +
+          (R.llenos.length ? ' Ya ' + (R.llenos.length === 1 ? 'tiene más que su parte y no recibe' : 'tienen más que su parte y no reciben') + ': ' + esc(juntar(R.llenos.map(function (i) { return LOC[i].n; }))) + '.' : ''));
       } else it.push('Lo mismo a cada local que tenga el tilde.' + sinPasar);
       if (R.ins) {
         it.push('No alcanza ' + curva + ' para cada uno: hacen falta <b>' + R.sumP + '</b> y hay <b>' + R.H + '</b>. Va primero a los que más necesitan' +
           (R.sinCurva.length ? '; ' + (R.sinCurva.length === 1 ? 'se queda' : 'se quedan') + ' sin nada: ' + esc(juntar(R.sinCurva.map(function (i) { return LOC[i].n; }))) : '') + '.' + verL);
       } else {
-        if (R.P) it.push('Primero ' + curva + ' a cada uno de los ' + R.entran.length + ' que ' + (R.tipo === 'par' ? 'tienen el tilde' : R.tipo === 'ven' ? 'vendieron' : 'necesitan') + ': <b>' + R.sumP + '</b> prendas.');
+        if (R.P) it.push('Primero ' + curva + ' a cada uno de los ' + R.entran.length + ' que ' + (R.tipo === 'par' ? 'tienen el tilde' : R.tipo === 'nec' ? 'necesitan' : 'vendieron') + ': <b>' + R.sumP + '</b> prendas.');
         if (R.afuera.length) it.push('Al que le toca menos de una curva no se le manda nada: ' + esc(juntar(R.afuera.map(function (a) { return LOC[a.i].n + ' (le tocaba ' + a.tocaba + ')'; }))) + '; lo suyo va a los demás.');
         if (R.tipo === 'nec') {
           if (R.f == null) it.push('Nadie necesita ' + que + ': no se reparte nada.');
@@ -14562,13 +14747,18 @@
             } else if (R.tope) it.push(quien + ': <b>alcanza para todos</b>. Cada uno recibe lo que necesita y quedan <b>' + (R.H - suma(R.t)) + '</b> en la fábrica.' + verL);
             else it.push(quien + ': alcanza para todos y, como no hay tope, se reparten todas: lo que ' + cuanto + ' × ' + coma2(R.f) + '.' + verL);
           }
-        } else if (R.tipo === 'ven') it.push('A cada uno, su parte de las <b>' + R.H + '</b> que ' + (R.may ? 'quedan' : 'hay en la fábrica') + ': la columna «Le toca», antes de redondear.' + verL);
+        } else if (R.tipo === 'mix') it.push('La columna «Le toca» es lo que le falta a cada uno, antes de redondear.' + verL);
+        else if (R.tipo === 'ven') it.push('A cada uno, su parte de las <b>' + R.H + '</b> que ' + (R.may ? 'quedan' : 'hay en la fábrica') + ': la columna «Le toca», antes de redondear.' + verL);
         else it.push(queda.charAt(0).toUpperCase() + queda.slice(1) + ' <b>' + R.H + '</b>: «Le toca» es la parte de cada uno antes de redondear.' + verL);
       }
       it.push(R.talles === 'stock' ? 'Los talles, en la proporción del stock: del que entró el doble, recibe el doble.' : 'Los talles, parejos: primero ' + curva + '.');
-      var falta = hay ? '' : PL ? '<p class="rp-mal-txt"><b>La planilla no tiene ' + que + ':</b> elegí otra forma de repartir o escribí a mano lo que le va a cada uno.</p>'
-                                 : '<p class="rp-mal-txt"><b>Falta la planilla en esta compu:</b> tocá «Cargar la planilla…». Mientras tanto se puede repartir «Parejo» o a mano.</p>';
-      return falta + '<ol class="rp-pasos">' + it.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>';
+      return faltaDatos() + '<ol class="rp-pasos">' + it.map(function (x) { return '<li>' + x + '</li>'; }).join('') + '</ol>';
+    }
+    /** Si con la forma elegida no hay con qué repartir (falta la planilla, o no trae esa familia), lo dice. */
+    function faltaDatos() {
+      var R = REP, hay = R.tipo === 'par' || LOC.some(function (l) { return R.tipo === 'nec' ? necDe(l) != null : l.v != null; });
+      return hay ? '' : PL ? '<p class="rp-mal-txt"><b>La planilla no tiene ' + esc(queTxt(R.nivel)) + ':</b> elegí otra forma de repartir o escribí a mano lo que le va a cada uno.</p>'
+                           : '<p class="rp-mal-txt"><b>Falta la planilla en esta compu:</b> tocá «Cargar la planilla…». Mientras tanto se puede repartir «Parejo» o a mano.</p>';
     }
     function notaPlanilla() {
       var gen = ((PL && PL.avisos) || []).length;
@@ -14578,7 +14768,8 @@
       var r = $('rpRevisar'); if (r) r.onclick = function (e) { e.preventDefault(); resumen(false); };
     }
     function explicar() {
-      $('rpComo').innerHTML = pasos(true);
+      /* 13/11 (Mauricio: «no hace falta que deje las explicaciones, yo solo explico»): los pasos quedan en «Ver la cuenta». */
+      $('rpComo').innerHTML = faltaDatos() + '<a href="#" id="rpVer" class="rp-ver">Ver la cuenta de cada local</a>';
       var v = $('rpVer'); if (v) v.onclick = function (e) { e.preventDefault(); cuenta(); };
       var R = REP, a = $('rpNecTit'), b = $('rpTocaTit');
       if (a) a.title = 'Lo que vendió × ' + coma(MULT) + ' (' + cuantoMas() + '), menos lo que tiene hoy. Se puede corregir a mano.';
@@ -14603,15 +14794,16 @@
     function cuenta() {
       var R = REP, nec = R.tipo === 'nec', conF = nec && R.f != null && !R.ins;
       var col = [{ t: 'Local', izq: 1, v: function (i) { return '<b>' + esc(LOC[i].n) + '</b>' + (LOC[i].va ? '' : ' <small>(sin tilde)</small>'); }, tot: 'Total' }];
-      if (R.tipo !== 'par') col.push({ t: 'Vendió', v: function (i) { return fmt(LOC[i].v); }, tot: R.tipo === 'ven' ? fmt(R.V) : null });
-      if (R.tipo === 'ven') col.push({ t: '% de la venta', v: function (i) { return pctTxt(LOC[i]); }, tot: R.V ? '100 %' : '' });
+      if (R.tipo !== 'par') col.push({ t: 'Vendió', v: function (i) { return fmt(LOC[i].v); }, tot: R.tipo === 'ven' || R.tipo === 'mix' ? fmt(R.V) : null });
+      if (R.tipo === 'ven' || R.tipo === 'mix') col.push({ t: '% de la venta', v: function (i) { return pctTxt(LOC[i]); }, tot: R.V ? '100 %' : '' });
+      if (R.tipo === 'mix') col.push({ t: 'Tiene', v: function (i) { return fmt(LOC[i].t); } }, { t: 'Su parte de ' + fmt(R.T), v: function (i) { return R.obj[i] == null ? '—' : coma1(R.obj[i]); } });
       if (nec) col.push({ t: '× ' + coma(MULT), v: function (i) { return LOC[i].v == null ? '—' : coma1(LOC[i].v * MULT); } }, { t: 'Tiene', v: function (i) { return fmt(LOC[i].t); } });
       if (nec || R.tope) col.push({ t: 'Necesita', v: function (i) { return fmt(necDe(LOC[i])) + (LOC[i].necMano != null ? ' <small class="rp-a-mano">a mano</small>' : ''); },
                  tot: suma(LOC.map(function (l) { return l.va ? Math.max(necDe(l) || 0, 0) : 0; })) });
       if (R.P) col.push({ t: 'Curva', v: function (i) { var x = R.ins ? R.t[i] : R.p[i]; return x || '—'; }, tot: R.ins ? suma(R.t) : R.sumP });
       if (!R.ins) {
         if (nec && R.P) col.push({ t: 'Le falta', v: function (i) { return R.act[i] ? R.w2[i] : '—'; }, tot: R.falta });
-        col.push({ t: conF ? '× ' + coma2(R.tope ? Math.min(R.f, 1) : R.f) : R.tipo === 'ven' ? 'Su parte de ' + R.resto : 'Su parte', v: function (i) {
+        col.push({ t: conF ? '× ' + coma2(R.tope ? Math.min(R.f, 1) : R.f) : R.tipo === 'ven' ? 'Su parte de ' + R.resto : R.tipo === 'mix' ? 'Le falta' : 'Su parte', v: function (i) {
           var af = afueraDe(i); if (af) return '<s>' + coma1(af.q) + '</s>';
           return R.act[i] ? coma1(R.q[i] - R.p[i]) : '—';
         }, tot: coma1(suma(R.q.map(function (x, i) { return R.act[i] ? x - R.p[i] : 0; }))) });
@@ -14640,7 +14832,7 @@
         LOC.map(function (l, i) {
           return '<tr class="' + (l.va ? '' : 'rp-no') + '"><td class="rp-loc"><b>' + esc(l.n) + '</b>' + (hecho(i) ? ' <small>ya tiene su remito</small>' : l.va ? '' : ' <small>(sin tilde)</small>') + '</td>' +
             Rs.map(function (R) {
-              var chico = R.tipo === 'ven' ? pct(R, i) : R.tipo === 'nec' ? (R.nec[i] == null ? '—' : 'pide ' + fmt(R.nec[i])) : '';
+              var chico = R.tipo === 'ven' ? pct(R, i) : R.tipo === 'mix' ? (R.ts[i] == null ? '—' : 'tiene ' + fmt(R.ts[i])) : R.tipo === 'nec' ? (R.nec[i] == null ? '—' : 'pide ' + fmt(R.nec[i])) : '';
               return '<td class="n' + (R.segun === sg ? ' rp-elegida' : '') + '"><b>' + R.t[i] + '</b>' + (chico ? ' <small>' + chico + '</small>' : '') + '</td>';
             }).join('') + '</tr>';
         }).join('') +
@@ -14649,8 +14841,9 @@
           return '<td class="n' + (R.segun === sg ? ' rp-elegida' : '') + '"><b>' + s + '</b>' + (s < R.H ? ' <small>quedan ' + (R.H - s) + '</small>' : '') + '</td>';
         }).join('') + '</tr></tfoot></table></div>' +
         '<p class="rp-nota rp-comp-nota">Al lado de cada número: en las de la venta, la parte del local (de la familia ' + esc(familia() || '—') + ', de todo el rubro ' + esc(P[2] || '—') +
-          ' o de todo lo que vendió); en «Necesidad», lo que pide (lo vendido × ' + coma(MULT) + ' menos lo que tiene). Lo que cambiaste a mano en la grilla no cuenta acá.</p>' +
+          ' o de todo lo que vendió); en «Familia y stock», lo que ya tiene de la familia; en «Necesidad», lo que pide (lo vendido × ' + coma(MULT) + ' menos lo que tiene). Lo que cambiaste a mano en la grilla no cuenta acá.</p>' +
         '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+      caja.classList.add('rp-ancha');
       caja.addEventListener('click', function (e) {
         var b = e.target.closest('[data-usar]');
         if (!b) return;
@@ -14660,44 +14853,103 @@
       });
     }
     function depActual() { var ds = (S.dep[FAB] || []).filter(function (d) { return d.activo; }); return depDe(ds, DEP) || depPredeterminado(ds) || ds[0] || null; }
-    /* «Armar los remitos»: uno por local, como el Nuevo remito de la fábrica (salen del depósito al guardarlos y quedan
-       «Pendiente de envío»). Se guardan de a uno; si se corta en la mitad, los que ya están no se repiten (LOTE). */
+    /** «Ver el total por local»: cuántas prendas de cada producto de la tanda se lleva cada local. */
+    function porLocal() {
+      soltar();
+      var ids = [], nom = {};
+      TANDA.forEach(function (e) { e.loc.forEach(function (l) { if (!(l.id in nom)) { nom[l.id] = l.n; ids.push(l.id); } }); });
+      var de = function (e, id) {
+        var i = -1, t = 0;
+        e.loc.forEach(function (l, x) { if (l.id === id) i = x; });
+        if (i < 0 || !e.a[i]) return 0;
+        e.a[i].forEach(function (v, j) { var k = i + '-' + j; t += k in e.ma ? e.ma[k] : v; });
+        return t;
+      };
+      var M = ids.map(function (id) { return TANDA.map(function (e) { return de(e, id); }); });
+      var tp = TANDA.map(function (e, k) { return suma(M.map(function (f) { return f[k]; })); });
+      ventana('<h3 id="posVentTit">El total por local</h3><p class="pos-bajada">Cuántas prendas de cada producto se lleva cada local, con lo que hay ahora en la grilla de cada uno.</p>' +
+        '<div class="tk-grilla rp-grilla-c"><table class="tk-tabla rp-tabla rp-cuenta"><thead><tr><th>Local</th>' +
+          TANDA.map(function (e) { return '<th class="n" title="' + esc(e.p[1]) + '">' + esc(e.p[0]) + '</th>'; }).join('') + '<th class="n rp-totc">Total</th></tr></thead><tbody>' +
+        ids.map(function (id, x) {
+          return '<tr><td class="rp-loc"><b>' + esc(nom[id]) + '</b></td>' + M[x].map(function (v) { return '<td class="n">' + (v || '<span class="rp-sin">·</span>') + '</td>'; }).join('') +
+            '<td class="n rp-totc"><b>' + suma(M[x]) + '</b></td></tr>';
+        }).join('') + '</tbody><tfoot><tr class="rp-tot"><th scope="row">Total</th>' + tp.map(function (v) { return '<td class="n">' + v + '</td>'; }).join('') +
+          '<td class="n rp-totc"><b>' + suma(tp) + '</b></td></tr></tfoot></table></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar autofocus>Listo</button></div>', true).classList.add('rp-ancha');
+    }
+    /* «Armar los remitos»: como el Nuevo remito de la fábrica (salen del depósito al guardarlos y quedan «Pendiente de envío»).
+       Uno por local con todos los productos de la tanda, o uno por local y producto. Se guardan de a uno; si se corta en la
+       mitad, los que ya están no se repiten (LOTE: una clave por remito). */
     function armar() {
       if (guardandoRp || !P) return;
-      var dep = depActual(), temp = $('rpTemp').value, cod = P[0].toUpperCase();
+      var dep = depActual(), temp = $('rpTemp').value;
       if (S.sin259) { avisar('err', 'Todavía falta correr el SQL 259 (los transportes) en Supabase.'); return; }
       if (!S.envios || !dep) { avisar('err', 'Todavía no llegaron el depósito y los transportes de la fábrica. Tocá el botón de actualizar y probá de nuevo.'); return; }
-      var van = LOC.map(function (l, i) { return i; }).filter(function (i) { return LOC[i].va && !hecho(i) && totLocal(i) > 0; });
-      if (!van.length) return;
-      var mal = CEL.some(function (x, j) { return repCel(j) > HAY[j]; });
-      if (!LOTE) LOTE = { claves: {}, hechos: {} };
-      var lista = van.map(function (i) {
-        var l = LOC[i], items = [];
-        if (!LOTE.claves[l.id]) LOTE.claves[l.id] = nuevaClave();
-        CEL.forEach(function (c, j) { var v = val(i, j); if (v > 0) items.push({ codigo: cod, descripcion: '', talle: c.t, color: c.c, cantidad: v }); });
-        var tr = transporteDe(transpDe(l.id));
-        return { i: i, l: l, tot: totLocal(i), transp: tr ? nombreTransp(tr) : '',
-                 pl: { clave: LOTE.claves[l.id], origen_local_id: null, destino_local_id: l.id, a_fabrica: false, referencia: '', observaciones: P[0] + ' ' + P[1], items: items,
+      var us = unidades();
+      if (!us.length) return;
+      var pp = porProducto(), nP = TANDA.length, mal = [], faltan = [], mays = [], uMay = 0;
+      enCada(function () {
+        CEL.forEach(function (c, j) {
+          var van = 0;
+          if (repCel(j) > HAY[j]) mal.push(P[0]);
+          LOC.forEach(function (l, i) { if (l.va && !hecho(i)) van += val(i, j); });
+          /* Si el depósito no tiene todo según el sistema, que lo sepa (no frena, como en el Nuevo remito). */
+          if (STOCK && van > STOCK[j]) faltan.push({ n: (nP > 1 ? P[0] + ' ' : '') + c.n, hay: STOCK[j], van: van });
+        });
+        MAY.forEach(function (m) { var t = totMay(m), n = m.n || 'el mayorista'; if (t > 0) { uMay += t; if (mays.indexOf(n) < 0) mays.push(n); } });
+      });
+      mal = unicos(mal);
+      if (!LOTE) LOTE = { modo: pp ? 'producto' : 'local', claves: {}, hechos: {}, nombres: {}, totales: {} };
+      var lista = us.map(function (u) {
+        if (!LOTE.claves[u.k]) LOTE.claves[u.k] = nuevaClave();
+        LOTE.nombres[u.k] = u.l.n + (pp && nP > 1 ? ' (' + u.prods[0].cod + ')' : '');
+        LOTE.totales[u.k] = u.tot;
+        var tr = transporteDe(transpDe(u.l.id)), obs = u.prods.map(function (x) { return x.cod + ' ' + x.nom; }).join(' · ');
+        if (obs.length > 300) obs = obs.slice(0, 299) + '…';
+        return { k: u.k, l: u.l, tot: u.tot, prods: u.prods, transp: tr ? nombreTransp(tr) : '',
+                 pl: { clave: LOTE.claves[u.k], origen_local_id: null, destino_local_id: u.l.id, a_fabrica: false, referencia: '', observaciones: obs, items: u.items,
                        origen_deposito_id: dep.id, transporte_id: tr ? tr.id : null, bultos: '', asegurado: '', temporada: temp } };
       });
-      var tot = suma(lista.map(function (x) { return x.tot; })), nR = lista.length;
-      var mays = MAY.filter(function (m) { return totMay(m) > 0; });
-      /* Si el depósito no tiene todo según el sistema, que lo sepa (no frena, como en el Nuevo remito). */
-      var faltan = !STOCK ? [] : CEL.map(function (c, j) { return { n: c.n, hay: STOCK[j], van: suma(van.map(function (i) { return val(i, j); })) }; }).filter(function (x) { return x.van > x.hay; });
+      var tot = suma(lista.map(function (x) { return x.tot; })), nR = lista.length, cab, filas;
+      var fin = function (x) {
+        return '<td class="n rp-totc"><b>' + x.tot + '</b></td><td>' + (x.transp ? esc(x.transp) : '<span class="rp-sin">Sin transporte</span>') + '</td><td class="rp-est"></td></tr>';
+      };
+      var ult = '<th' + (nP === 1 ? ' rowspan="2"' : '') + '>Transporte</th><th' + (nP === 1 ? ' rowspan="2"' : '') + '><span class="sr">Cómo quedó</span></th>';
+      if (nP === 1) {   // un solo producto: con sus talles y colores
+        cab = cabeceraHtml('<th rowspan="2">Cliente</th>', ult);
+        filas = lista.map(function (x) {
+          var i = -1;
+          LOC.forEach(function (l, n) { if (l.id === x.l.id) i = n; });
+          return '<tr data-fila="' + esc(x.k) + '"><td class="rp-loc">' + esc(x.l.n) + '</td>' +
+            CEL.map(function (c, j) { var v = val(i, j); return '<td class="c' + colCls(j) + '">' + (v || '<span class="rp-sin">·</span>') + '</td>'; }).join('') + fin(x);
+        });
+      } else if (pp) {   // uno por local y producto
+        cab = '<tr><th>Cliente</th><th>Producto</th><th class="n rp-totc">Total</th>' + ult + '</tr>';
+        filas = lista.map(function (x) {
+          return '<tr data-fila="' + esc(x.k) + '"><td class="rp-loc">' + esc(x.l.n) + '</td><td><b>' + esc(x.prods[0].cod) + '</b> ' + esc(x.prods[0].nom) + '</td>' + fin(x);
+        });
+      } else {   // uno por local, con una columna por producto
+        cab = '<tr><th>Cliente</th>' + TANDA.map(function (e) { return '<th class="n" title="' + esc(e.p[1]) + '">' + esc(e.p[0]) + '</th>'; }).join('') + '<th class="n rp-totc">Total</th>' + ult + '</tr>';
+        filas = lista.map(function (x) {
+          var m = {};
+          x.prods.forEach(function (y) { m[y.cod] = y.u; });
+          return '<tr data-fila="' + esc(x.k) + '"><td class="rp-loc">' + esc(x.l.n) + '</td>' +
+            TANDA.map(function (e) { return '<td class="n">' + (m[e.p[0]] || '<span class="rp-sin">·</span>') + '</td>'; }).join('') + fin(x);
+        });
+      }
+      var que = nP === 1 ? 'Uno por local con ' + esc(P[0] + ' ' + P[1]) : pp ? 'Uno por local y por producto (' + nP + ' productos)' : 'Uno por local con los ' + nP + ' productos';
       var caja = ventana('<h3 id="posVentTit">Armar ' + nR + (nR === 1 ? ' remito' : ' remitos') + '</h3>' +
-        '<p class="pos-bajada">Uno por local con ' + esc(P[0] + ' ' + P[1]) + ', del depósito «' + esc(dep.nombre) + '»' + (temp ? ', temporada ' + esc(temp) : '') + ': ' + tot + (tot === 1 ? ' prenda' : ' prendas') +
+        '<p class="pos-bajada">' + que + ', del depósito «' + esc(dep.nombre) + '»' + (temp ? ', temporada ' + esc(temp) : '') + ': ' + tot + (tot === 1 ? ' prenda' : ' prendas') +
           ' en total. Salen del depósito ahora y quedan «Pendiente de envío» en Fábrica → Remitos; cada local los ve cuando toques «Enviar».</p>' +
-        '<div class="tk-grilla rp-grilla-v"><table class="tk-tabla rp-tabla"><thead>' + cabeceraHtml('<th rowspan="2">Cliente</th>', '<th rowspan="2">Transporte</th><th rowspan="2"><span class="sr">Cómo quedó</span></th>') + '</thead><tbody>' +
-        lista.map(function (x) {
-          return '<tr data-fila="' + esc(x.l.id) + '"><td class="rp-loc">' + esc(x.l.n) + '</td>' + CEL.map(function (c, j) { var v = val(x.i, j); return '<td class="c' + colCls(j) + '">' + (v || '<span class="rp-sin">·</span>') + '</td>'; }).join('') +
-            '<td class="n rp-totc"><b>' + x.tot + '</b></td><td>' + (x.transp ? esc(x.transp) : '<span class="rp-sin">Sin transporte</span>') + '</td><td class="rp-est"></td></tr>';
-        }).join('') + '</tbody></table></div>' +
-        (mays.length ? '<p class="rp-nota rp-nota-v">Lo de ' + esc(juntar(mays.map(function (m) { return m.n || 'el mayorista'; }))) + ' (' + suma(mays.map(totMay)) + ' prendas) queda apartado en la fábrica: a un mayorista todavía no se le hace el remito desde acá.</p>' : '') +
+        '<div class="tk-grilla rp-grilla-v"><table class="tk-tabla rp-tabla"><thead>' + cab + '</thead><tbody>' + filas.join('') + '</tbody></table></div>' +
+        (mays.length ? '<p class="rp-nota rp-nota-v">Lo de ' + esc(juntar(mays)) + ' (' + uMay + ' prendas) queda apartado en la fábrica: a un mayorista todavía no se le hace el remito desde acá.</p>' : '') +
         (faltan.length ? '<p class="rp-ojo">Ojo: según el sistema, el depósito «' + esc(dep.nombre) + '» no tiene todo (' + esc(faltan.slice(0, 4).map(function (x) { return x.n + ': hay ' + fmt(x.hay) + ', mandás ' + x.van; }).join('; ')) +
           (faltan.length > 4 ? '…' : '') + '). Si los guardás igual, queda en negativo.</p>' : '') +
-        '<p class="pos-error" id="rpError">' + (mal ? 'Repartiste más de lo que hay en la fábrica: corregí lo que está en rojo en «Queda en la fábrica».' : '') + '</p>' +
-        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="rpGuardar"' + (mal ? ' disabled' : '') + '>Guardar ' +
+        '<p class="pos-error" id="rpError">' + (mal.length ? 'Repartiste más de lo que hay en la fábrica' + (nP > 1 ? ' (' + esc(mal.slice(0, 4).join(', ')) + (mal.length > 4 ? '…' : '') + ')' : '') +
+          ': corregí lo que está en rojo en «Queda en la fábrica».' : '') + '</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="rpGuardar"' + (mal.length ? ' disabled' : '') + '>Guardar ' +
           (nR === 1 ? 'el remito' : 'los ' + nR + ' remitos') + '</button></div>', true);
+      if (nP > 1) caja.classList.add('rp-ancha');
       caja.querySelector('#rpGuardar').onclick = function () { guardarLote(caja, lista); };
     }
     function guardarLote(caja, lista) {
@@ -14706,15 +14958,15 @@
       var g = caja.querySelector('#rpGuardar'), err = caja.querySelector('#rpError'), k = 0;
       g.disabled = true; g.textContent = 'Guardando…'; err.textContent = '';
       $('rpArmar').disabled = true;
-      function est(x, txt, cls) { var td = caja.querySelector('tr[data-fila="' + x.l.id + '"] .rp-est'); if (td) { td.textContent = txt; td.className = 'rp-est' + (cls ? ' ' + cls : ''); } }
-      function cuantos() { return lista.filter(function (x) { return LOTE.hechos[x.l.id]; }).length; }
+      function est(x, txt, cls) { var td = caja.querySelector('tr[data-fila="' + x.k + '"] .rp-est'); if (td) { td.textContent = txt; td.className = 'rp-est' + (cls ? ' ' + cls : ''); } }
+      function cuantos() { return lista.filter(function (x) { return LOTE.hechos[x.k]; }).length; }
       function cortar(txt) {
         guardandoRp = false;
         if (g.isConnected) { g.disabled = false; g.textContent = 'Guardar los que faltan'; err.textContent = txt; } else avisar('err', txt);
         if (S.vista === 'repartir') pintar();
       }
       function sigue() {
-        while (k < lista.length && LOTE.hechos[lista[k].l.id]) k++;
+        while (k < lista.length && LOTE.hechos[lista[k].k]) k++;
         if (k >= lista.length) { listo(); return; }
         /* Cerraron la ventana en la mitad: se para acá. Los que faltan siguen en la grilla, para armarlos después. */
         if (!caja.isConnected) {
@@ -14726,7 +14978,7 @@
         var x = lista[k];
         est(x, 'Guardando…');
         llamar('pos_remito_guardar', { p: x.pl }).then(function (r) {
-          LOTE.hechos[x.l.id] = r.numero;
+          LOTE.hechos[x.k] = r.numero;
           est(x, 'R-' + r.numero + ' ✓', 'ok');
           sigue();
         }, function (e) {
@@ -14736,27 +14988,65 @@
       }
       function listo() {
         guardandoRp = false;
-        var todos = LOC.map(function (l, i) { return i; }).filter(hecho);
-        var nums = todos.map(function (i) { return 'R-' + LOTE.hechos[LOC[i].id] + ' ' + LOC[i].n; }), tot = suma(todos.map(totLocal)), que = P[0] + ' ' + P[1];
-        /* Lo que sigue es otro producto: la pantalla queda vacía. */
-        P = null; LOTE = null; MAY = []; MANO = {}; NEC_MANO = {}; REP = null; HAY = []; STOCK = null; HAY_MANO = false; A = [];
-        LOC.forEach(function (l) { l.necMano = null; });
+        var ks = Object.keys(LOTE.hechos).sort(function (a, b) { return LOTE.hechos[a] - LOTE.hechos[b]; });
+        var nums = ks.map(function (c) { return 'R-' + LOTE.hechos[c] + ' ' + (LOTE.nombres[c] || ''); }), tot = suma(ks.map(function (c) { return LOTE.totales[c] || 0; }));
+        var que = TANDA.length === 1 ? P[0] + ' ' + P[1] : TANDA.length + ' productos';
+        /* Lo que sigue es otra tanda: la pantalla queda vacía. */
+        vaciar();
         if (S.vista === 'repartir') pintar();
         if (!caja.isConnected) { avisar('ok', 'Listo: ' + nums.length + (nums.length === 1 ? ' remito' : ' remitos') + ' «Pendiente de envío».'); return; }
         caja.querySelector('.pos-caja-in').innerHTML = '<div class="vg-cab">' + icono('ok') + '<div><h3 id="posVentTit">Listo: ' + nums.length + (nums.length === 1 ? ' remito' : ' remitos') + ' «Pendiente de envío»</h3>' +
           '<p class="vg-datos">' + esc(que) + ' · ' + tot + (tot === 1 ? ' prenda' : ' prendas') + '</p></div></div>' +
-          '<p class="pos-bajada">' + esc(nums.join(' · ')) + '</p>' +
+          '<p class="pos-bajada">' + esc(nums.slice(0, 40).join(' · ')) + (nums.length > 40 ? ' … y ' + (nums.length - 40) + ' más' : '') + '</p>' +
           '<p class="pos-bajada">Están en Fábrica → Remitos: marcalos y salen con «Enviar» (también Imprimir, Expreso y Rótulos). Cada local los cuenta y los recibe como siempre.</p>' +
-          '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Repartir otro producto</button><button type="button" class="btn btn-pri btn-chico" id="rpIrRemitos">Ver los remitos</button></div>';
+          '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Repartir otra tanda</button><button type="button" class="btn btn-pri btn-chico" id="rpIrRemitos">Ver los remitos</button></div>';
         caja.querySelector('#rpIrRemitos').onclick = function () { cerrarVentana(); ir('remitos'); };
       }
       sigue();
     }
 
-    /* ── Cargar la planilla: queda guardada en esta compu ── */
+    /* ── Cargar la planilla: queda guardada en esta compu ──
+       13/11 (Mauricio: «cuando pongamos cargar planilla, si necesitamos que las columnas y eso estén de alguna manera, tendrían
+       que aclarar eso antes de cargar»): el botón abre primero cómo tiene que venir, con un ejemplo para bajar. */
+    function abrirPlanilla() {
+      var gen = ((PL && PL.avisos) || []).length;
+      var caja = ventana('<h3 id="posVentTit">La planilla de ventas y stock</h3>' +
+        '<p class="pos-bajada">De acá sale lo que vendió y lo que tiene cada local, por rubro y familia: con eso se calcula la parte de cada uno. Se carga una vez y queda guardada en esta compu; cuando cambian los números, se carga de nuevo.</p>' +
+        (PL ? '<p class="rp-pl-hay"><b>Cargada:</b> ' + esc(PL_DE) + ' · ' + PL.locales.length + ' locales, ' + PL.familias + ' familias · <a href="#" id="rpPlRevisar">lo que revisó el sistema' + (gen ? ' (' + gen + ')' : '') + '</a></p>'
+            : '<p class="rp-pl-hay rp-pl-falta">Todavía no hay ninguna cargada en esta compu.</p>') +
+        '<p class="rp-av-tit">Cómo tiene que venir (sirve cualquiera de las dos):</p>' +
+        '<ol class="rp-formatos">' +
+          '<li><b>Una sola hoja, con un renglón por local y familia</b> y estos títulos en la primera fila, en cualquier orden:' +
+            '<span class="rp-cols"><i>Local</i><i>Rubro</i><i>Familia</i><i>Vendió</i><i>Tiene</i></span>' +
+            '«Vendió» son las unidades vendidas en la temporada que se toma de referencia; «Tiene», el stock de hoy. En Excel (.xlsx) o .csv. ' +
+            '<button type="button" class="rp-link" id="rpPlEjemplo">Bajar un ejemplo</button></li>' +
+          '<li><b>La planilla de la fábrica tal cual</b> («Gestión de Unidades»): una hoja por local y, en cada una, la tabla con Rubro, Familia, Unidades Vendidas, el stock y Reposición. Si está en Google: Archivo → Descargar → Microsoft Excel (.xlsx).</li>' +
+        '</ol>' +
+        '<p class="rp-nota">Los locales, con el nombre del sistema (Unicenter, Rivadavia, San Justo Shopping…). El rubro y la familia, como en los productos (Camperas · Gabardina). Lo que no se entienda, el sistema lo avisa al cargarla.</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button><button type="button" class="btn btn-pri btn-chico" id="rpPlElegir" autofocus>Elegir el archivo…</button></div>', true);
+      caja.querySelector('#rpPlElegir').onclick = function () { $('rpArchivo').click(); };
+      caja.querySelector('#rpPlEjemplo').onclick = bajarEjemploPlanilla;
+      var r = caja.querySelector('#rpPlRevisar');
+      if (r) r.onclick = function (e) { e.preventDefault(); resumen(false); };
+    }
+    /** El ejemplo de la planilla simple: tres locales del sistema y unas familias del catálogo, con números INVENTADOS. */
+    function bajarEjemploPlanilla() {
+      var ls = ((S.ini && S.ini.locales) || []).map(nombreLocal).slice(0, 3), fams = [], visto = {}, filas = [];
+      LISTA_PROD.slice().sort(function (a, b) { return (b[5] < 9000 ? b[5] : 0) - (a[5] < 9000 ? a[5] : 0); }).some(function (p) {
+        var k = p[2] + '|' + p[7];
+        if (p[6] && p[2] && p[7] && !visto[k]) { visto[k] = 1; fams.push([p[2], p[7]]); }
+        return fams.length >= 4;
+      });
+      if (!ls.length) ls = ['Unicenter', 'Rivadavia', 'Flores'];
+      if (!fams.length) fams = [['Remeras', 'Lisas'], ['Camperas', 'Gabardina'], ['Pantalones', 'Jean']];
+      ls.forEach(function (l, i) { fams.forEach(function (f, j) { var v = 60 - i * 18 - j * 7; filas.push([l, f[0], f[1], v, Math.round(v * 0.3) + j]); }); });
+      bajarCsv('ejemplo-planilla-para-repartir.csv', ['Local', 'Rubro', 'Familia', 'Vendió', 'Tiene'], filas);
+      avisar('ok', 'Se bajó «ejemplo-planilla-para-repartir.csv». Los números son inventados: poné los de cada local y cargala con «Elegir el archivo…».');
+    }
     function cargar(archivo) {
       var b = $('rpCargar'); b.disabled = true; b.textContent = 'Leyendo…';
-      archivo.arrayBuffer().then(leerLibro).then(function (hojas) {
+      var leer = /\.(csv|txt|tsv)$/i.test(archivo.name) ? archivo.text().then(function (t) { return [{ nombre: archivo.name, filas: filasDeTexto(t) }]; }) : archivo.arrayBuffer().then(leerLibro);
+      leer.then(function (hojas) {
         var pl = interpretar(hojas, archivo.name), d = new Date();
         PL = pl;
         PL_DE = '«' + archivo.name + '» (cargada el ' + d.getDate() + '/' + (d.getMonth() + 1) + ' a las ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2) + ')';
@@ -14765,7 +15055,7 @@
         if (!MULT_MANO) { MULT = PL.mult || 1.2; if ($('rpMult')) $('rpMult').value = coma(MULT); }   // si lo cambió a mano, queda el suyo
         if (S.vista !== 'repartir' || !$('rpFilas')) return;
         /* Con un reparto a medio guardar, la planilla nueva vale desde el próximo: lo que ya salió no se mueve. */
-        if (!(LOTE && Object.keys(LOTE.hechos).length)) { NEC_MANO = {}; armarLocales(); if (P) repartir(); }
+        if (!conGuardados()) enCada(function () { NEC_MANO = {}; armarLocales(); repartir(); });
         pintar();
         resumen(true);
         if (!quedo) avisar('info', 'La planilla se leyó, pero no se pudo guardar en esta compu: vale hasta que cierres la ventana.');
@@ -14773,20 +15063,26 @@
         ventana('<h3 id="posVentTit">No pude leer la planilla</h3><p class="pos-bajada">' + esc((e && e.message) || e) + '</p><div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>');
       }).then(function () { if (b.isConnected) { b.disabled = false; b.textContent = 'Cargar la planilla…'; } var a = $('rpArchivo'); if (a) a.value = ''; });
     }
-    /** Lo que tiene el depósito de la fábrica de este producto. Si en «En la fábrica» no escribieron nada a mano, va eso. */
-    function traerStock() {
-      var d = depActual(), cod = P && P[0].toUpperCase(), n = ++nStock;
-      if (!d || !cod) return Promise.resolve();
-      return llamar('pos_stock_consulta', { p_local: null, p_deposito: d.id, p_ocultar_sin: false, p_codigos: [cod] }).then(function (x) {
-        if (n !== nStock || !P || P[0].toUpperCase() !== cod) return;
-        var m = {};
+    /** Lo que tiene el depósito de la fábrica del producto que se ve (o de todos los de la tanda). Si en «En la fábrica» no
+        escribieron nada a mano ni vino de una lista, va eso. */
+    function traerStock(todos) {
+      var d = depActual();
+      if (!d || !P) return Promise.resolve();
+      soltar();
+      var cods = (todos ? TANDA.map(function (e) { return e.p[0]; }) : [P[0]]).map(function (c) { return c.toUpperCase(); });
+      return llamar('pos_stock_consulta', { p_local: null, p_deposito: d.id, p_ocultar_sin: false, p_codigos: cods }).then(function (x) {
+        var ahora = depActual(), m = {}, aca = S.vista === 'repartir' && !!$('rpFilas');
+        if (!ahora || ahora.id !== d.id || !aca) return;   // cambiaron el depósito (o se fueron) mientras tanto
         ((x && x.filas) || []).forEach(function (f) { var k = claveVar(f[1], f[2], f[3]); m[k] = (m[k] || 0) + (Number(f[4]) || 0); });
-        STOCK = CEL.map(function (c) { return m[claveVar(cod, c.t, c.c)] || 0; });
-        if (S.vista !== 'repartir' || !$('rpFilas')) return;
-        var nuevo = STOCK.map(function (s) { return Math.max(s, 0); });
-        if (!HAY_MANO && !(LOTE && Object.keys(LOTE.hechos).length) && nuevo.join() !== HAY.join()) { HAY = nuevo; repartir(); }
+        enCada(function () {
+          var cod = P[0].toUpperCase();
+          if (cods.indexOf(cod) < 0) return;
+          STOCK = CEL.map(function (c) { return m[claveVar(cod, c.t, c.c)] || 0; });
+          var nuevo = STOCK.map(function (s) { return Math.max(s, 0); });
+          if (!HAY_MANO && !conGuardados() && nuevo.join() !== HAY.join()) { HAY = nuevo; repartir(); }
+        });
         pintar();
-      }, function () { if (n === nStock && S.vista === 'repartir' && $('rpFilas')) pintar(); });
+      }, function () { if (S.vista === 'repartir' && $('rpFilas')) pintar(); });
     }
     function pintarDatos() {
       var st = $('rpTemp'), sd = $('rpDep');
@@ -14797,16 +15093,17 @@
       sd.innerHTML = ds.length ? opciones(ds.map(function (x) { return [x.id, nombreDep(x)]; }), d ? d.id : '') : '<option value="">El predeterminado</option>';
     }
     function guardarPrefs() {
-      guardarJSON(K_RP_PREFS, { segun: segun(), talles: $('rpTalles').value, chico: $('rpChico').value, tope: $('rpTope').checked, mult: MULT_MANO ? MULT : null });
+      guardarJSON(K_RP_PREFS, { segun: segun(), talles: $('rpTalles').value, chico: $('rpChico').value, tope: $('rpTope').checked, mult: MULT_MANO ? MULT : null, remitos: $('rpRemitos').value });
     }
     /** Cambió «Repartir según»: si ahora se mira otra cosa (la familia, el rubro, todo), lo corregido a mano en «Necesita» era de la otra. */
     var nivelAntes = 'fam';
     function cambioForma() {
-      var nv = nivelDe(segun());
-      if (nv !== nivelAntes) { NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); nivelAntes = nv; }
-      nivelar();
+      var nv = nivelDe(segun()), otro = nv !== nivelAntes;
+      nivelAntes = nv;
       guardarPrefs();
-      if (P) { repartir(); pintar(); }
+      if (!P) return;
+      enCada(function () { if (otro) { NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); } nivelar(); repartir(); });
+      pintar();
     }
     /* «Lo vendido ×»: 1,2 = un 20 % más; 1,5 = un 50 % más. Con coma o con punto; lo que no es un número no cambia nada. */
     function leerMult(s) { var t = String(s).trim().replace(',', '.'); if (!/^\d+(\.\d+)?$|^\.\d+$/.test(t)) return null; var n = parseFloat(t); return n > 0 && n <= 5 ? n : null; }
@@ -14818,17 +15115,18 @@
       var sg = FORMAS.some(function (f) { return f[0] === pf.segun; }) ? pf.segun : 'fam';
       nivelAntes = nivelDe(sg);
       c.classList.add('lleno', 'rp-cuerpo');
-      c.innerHTML = cabeza('Repartir un producto', 'Lo que entra de un producto, repartido entre los locales. De acá salen los remitos.',
-          '<button type="button" class="btn btn-sec btn-chico" id="rpCargar" title="El Excel de la fábrica con lo vendido y el stock de cada local, una hoja por local (si está en Google: Archivo → Descargar → Microsoft Excel). Queda guardado en esta compu.">Cargar la planilla…</button>' +
-          '<input type="file" id="rpArchivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>' +
+      c.innerHTML = cabeza('Repartir un producto', 'Lo que entra, repartido entre los locales. De acá salen los remitos.',
+          '<button type="button" class="btn btn-sec btn-chico" id="rpCargar" title="Lo que vendió y lo que tiene cada local, por rubro y familia. Abre cómo tiene que venir, con un ejemplo. Queda guardada en esta compu.">Cargar la planilla…</button>' +
+          '<input type="file" id="rpArchivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>' +
           '<button type="button" class="btn btn-sec btn-chico" id="rpComparar" title="Cuántas recibiría cada local con cada forma de repartir, lado a lado">Comparar</button>' +
-          '<button type="button" class="btn btn-sec btn-chico" id="rpVolver" title="Borra lo que cambiaste a mano y reparte de nuevo">Volver a repartir</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="rpVolver" title="Borra lo que cambiaste a mano en el producto que se ve y lo reparte de nuevo">Volver a repartir</button>' +
           '<button type="button" class="btn btn-pri btn-chico" id="rpArmar" disabled>Armar los remitos</button>') +
         '<div class="tk rp">' +
           '<section class="tk-izq" aria-label="El producto y cómo se reparte"><div class="tk-datos">' +
             '<div class="tk-prod rp-prod">' + campo('', 'Producto', '<input type="search" id="rpProd" autocomplete="off" spellcheck="false" placeholder="Buscá por código o nombre…" aria-controls="rpSug">') +
+              '<button type="button" class="btn btn-sec btn-chico" id="rpImportar" title="La lista de lo que entró, desde un Excel o pegada: Código, Talle, Color y Cantidad. Suma todos los productos de una vez.">Importar…</button>' +
               '<div class="tk-sug" id="rpSug" role="listbox" aria-label="Productos" hidden></div></div>' +
-            '<p class="rp-fam" id="rpFam"></p>' +
+            '<div class="rp-tanda" id="rpTanda"></div>' +
             campo('c6', 'Temporada', '<select id="rpTemp" class="desplegable" title="La temporada que llevan los remitos"></select>') +
             campo('c6', 'Sale del depósito', '<select id="rpDep" class="desplegable" title="De dónde sale la mercadería"></select>') +
             campo('', 'Repartir según', '<select id="rpSegun" class="desplegable" title="La parte de la venta: lo que vendió cada local (de la familia del producto, de todo su rubro o de todo), sobre lo que vendieron todos. Lo que necesita: lo vendido × 1,2, menos lo que tiene. Parejo: lo mismo a cada uno.">' +
@@ -14838,6 +15136,8 @@
             campo('c6 rp-mult', 'Lo vendido ×', '<input type="text" id="rpMult" inputmode="decimal" autocomplete="off" spellcheck="false">') +
             campo('', 'Si le toca menos de una curva', '<select id="rpChico" class="desplegable">' +
               opciones([['toca', 'Mandarle lo que le toca'], ['curva', 'Mandarle la curva igual'], ['nada', 'No mandarle nada']], ['curva', 'nada'].indexOf(pf.chico) >= 0 ? pf.chico : 'toca') + '</select>') +
+            campo('', 'Los remitos', '<select id="rpRemitos" class="desplegable" title="Uno por local: un solo remito con todo lo que le va (lo cuenta y lo recibe una vez). Uno por producto: un remito por cada producto y local.">' +
+              opciones([['local', 'Uno por local, con todos los productos'], ['producto', 'Uno por producto']], pf.remitos === 'producto' ? 'producto' : 'local') + '</select>') +
             '<label class="rp-tope"><input type="checkbox" id="rpTope"' + (pf.tope ? ' checked' : '') + '> No mandarle a nadie más de lo que necesita</label>' +
             '<div class="rp-como" id="rpComo"></div>' +
           '</div>' +
@@ -14858,21 +15158,22 @@
                   elegir: function (p) { campoP.limpiar(); elegir(p); campoP.blur(); }, agregar: function (p) { campoP.limpiar(); elegir(p); campoP.blur(); } };
       engancharProducto(oRp);
 
-      $('rpCargar').onclick = function () { $('rpArchivo').click(); };
+      $('rpCargar').onclick = abrirPlanilla;
+      $('rpImportar').onclick = importar;
       $('rpArchivo').onchange = function () { if (this.files && this.files[0]) cargar(this.files[0]); };
       $('rpComparar').onclick = comparar;
       $('rpVolver').onclick = function () { if (!P) return; NEC_MANO = {}; LOC.forEach(function (l) { l.necMano = null; }); repartir(); pintar(); };
       $('rpArmar').onclick = armar;
       $('rpSegun').onchange = cambioForma;
       $('rpTemp').onchange = function () { TEMP = this.value; };
-      $('rpDep').onchange = function () { DEP = this.value; HAY_MANO = false; traerStock(); };
+      $('rpDep').onchange = function () { DEP = this.value; traerStock(true); };
       $('rpMult').oninput = function () {
         var n = leerMult(this.value);
         this.classList.toggle('rp-mult-mal', n == null && this.value.trim() !== '');
         if (n == null || n === MULT) return;
         MULT = n; MULT_MANO = Math.abs(n - ((PL && PL.mult) || 1.2)) > 0.001;
-        nivelar(); guardarPrefs();
-        if (P) { repartir(); pintar(); }
+        guardarPrefs();
+        if (P) { enCada(function () { nivelar(); repartir(); }); pintar(); }
       };
       $('rpMult').onchange = function () { this.value = coma(MULT); this.classList.remove('rp-mult-mal'); };
       $('rpMult').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); this.blur(); } };
@@ -14907,12 +15208,17 @@
         if (!x.dataset) return;
         if (x.dataset.va != null && P) { LOC[+x.dataset.va].va = x.checked; repartir(); pintar(); return; }
         if (x.dataset.nec != null && P && x.value.trim() === '') { var l = LOC[+x.dataset.nec]; delete NEC_MANO[l.id]; l.necMano = null; repartir(); pintar(); return; }
-        if (x.id === 'rpTope' || x.id === 'rpChico' || x.id === 'rpTalles') { guardarPrefs(); if (P) { repartir(); pintar(); } }
+        if (x.id === 'rpTope' || x.id === 'rpChico' || x.id === 'rpTalles') { guardarPrefs(); if (P) { enCada(repartir); pintar(); } }
+        if (x.id === 'rpRemitos') { guardarPrefs(); if (!conGuardados()) LOTE = null; if (P) pintarPie(); }
       });
       z.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.dataset && e.target.dataset.nec != null) { e.preventDefault(); e.target.blur(); } });
       z.addEventListener('focusin', function (e) { if (e.target.classList && e.target.classList.contains('rp-n')) e.target.select(); });
       z.addEventListener('click', function (e) {
         if (!P) return;
+        var qx = e.target.closest('[data-quitar]'), it = e.target.closest('[data-prod]');
+        if (qx) { quitar(+qx.getAttribute('data-quitar')); return; }
+        if (it) { soltar(); tomar(+it.getAttribute('data-prod')); pintar(); return; }
+        if (e.target.id === 'rpPorLocal') { porLocal(); return; }
         var b = e.target.closest('[data-mayx]');
         if (b) { MAY.splice(+b.dataset.mayx, 1); repartir(); pintar(); return; }
         if (e.target.id === 'rpMayMas') {
@@ -14923,13 +15229,13 @@
 
       pintarDatos();
       /* Volvió a la pantalla con un reparto a medio hacer: sigue como lo dejó (lo corregido a mano también). */
-      if (P) { nivelar(); if (!REP) repartir(); }
+      if (P) enCada(function () { nivelar(); if (!REP) repartir(); });
       pintar();
       var traer = function (forzar) {
         return Promise.all([traerEnvios(forzar), traerDepositos(FAB, forzar)]).then(function () {
           if (S.vista !== 'repartir' || !$('rpFilas')) return;
           pintarDatos();
-          return traerStock();
+          return traerStock(true);
         });
       };
       traer(false);
