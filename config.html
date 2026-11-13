@@ -3208,7 +3208,9 @@
     var botones = document.querySelectorAll('#locales button');
     Array.prototype.forEach.call(botones, function (b) { b.disabled = true; });
 
-    base.objetivo(local, periodo, meta)
+    /* SQL 289: la base guarda el objetivo sólo con la sesión de quien entró (Administración o Atención). */
+    persona.token()
+      .then(function (t) { return base.objetivo(local, periodo, meta, t); })
       .then(function (r) {
         var nombre = local === '*' ? '' : bonito(local);
         agregando = false;

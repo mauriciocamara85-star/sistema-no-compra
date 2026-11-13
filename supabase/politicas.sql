@@ -253,3 +253,65 @@ $$;
 -- Las funciones no heredan permisos: hay que dárselos aunque sean definer.
 grant execute on function beneficio_buscar(text) to anon, authenticated;
 grant execute on function beneficio_usar(text, text, text, numeric, text) to anon, authenticated;
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SQL 289 (13/11/2026) — LA META DEL NO COMPRA, SÓLO DESDE ADENTRO
+   ══════════════════════════════════════════════════════════════════════════
+   La revisión de seguridad del 26/10 encontró dos tablas viejas del No Compra
+   que cualquiera podía cambiar sin entrar con usuario, con la clave pública
+   que está en la página:
+     - objetivos: la meta de No Compra de cada local (hoy, «3 por día» para
+       todos), la que muestra la Carga. Se podía cambiar o borrar.
+     - equipo: la lista de vendedores de la Carga. Se podía desactivar a todos.
+
+   Qué hace:
+     - objetivos: sólo la cambian (poner, cambiar, sacar) Administración y
+       Atención, entrando con su usuario: son los que la ven en Config →
+       General. Verla sigue igual para todos (la Carga la muestra).
+     - equipo: nadie la desactiva desde la API (ninguna pantalla lo hace desde
+       hace rato). Anotarse en la lista desde la Carga y verla, igual que hoy.
+     - Se van los permisos que sobraban (TRUNCATE y otros) en las dos.
+   Desde la no-compra-v497 Config manda la sesión al guardar el objetivo.
+   No cambia ningún dato. Se deshace con deshacer-289.sql. */
+
+do $$ begin
+  if to_regprocedure('public.orden_es_servicio()') is null then
+    raise exception 'Falta orden_es_servicio(): no se corre.';
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'objetivos' and policyname = 'cambiar un objetivo')
+     or not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'equipo' and policyname = 'activar o desactivar a alguien') then
+    raise exception 'El SQL 289 ya está corrido (o las políticas de objetivos y equipo no son las de politicas.sql).';
+  end if;
+end $$;
+
+/* Quién puede cambiar la meta: Administración y Atención, con su sesión. */
+create or replace function nc_puede_meta()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $pm$
+  select orden_es_servicio() or exists (
+    select 1 from orden_personas
+     where auth_user_id = auth.uid() and activo and aprobado and rol::text in ('admin', 'atencion'))
+$pm$;
+revoke all on function nc_puede_meta() from public;
+grant execute on function nc_puede_meta() to authenticated, service_role;
+
+-- La meta (objetivos): leerla, todos; cambiarla, sólo desde adentro.
+drop policy "poner un objetivo"   on objetivos;
+drop policy "cambiar un objetivo" on objetivos;
+drop policy "sacar un objetivo"   on objetivos;
+create policy "poner un objetivo (de adentro)"   on objetivos for insert to authenticated with check (nc_puede_meta());
+create policy "cambiar un objetivo (de adentro)" on objetivos for update to authenticated using (nc_puede_meta()) with check (nc_puede_meta());
+create policy "sacar un objetivo (de adentro)"   on objetivos for delete to authenticated using (nc_puede_meta());
+revoke insert, update, delete, truncate, references, trigger on objetivos from anon;
+revoke truncate, references, trigger on objetivos from authenticated;
+
+-- La lista de la Carga (equipo): verla y anotarse, igual; desactivar, nadie desde la API.
+drop policy "activar o desactivar a alguien" on equipo;
+revoke update, truncate, references, trigger on equipo from anon, authenticated;
+
+notify pgrst, 'reload schema';

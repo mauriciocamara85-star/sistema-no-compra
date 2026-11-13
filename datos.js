@@ -1791,16 +1791,28 @@ var base = {
    * objetivo de todos sin querer.
    *
    * Una meta en cero lo borra, que es como se apaga.
+   *
+   * `sesion`: el token de quien entró. Desde el SQL 289 (13/11/2026) la base
+   * deja cambiar el objetivo sólo a Administración y Atención con su sesión;
+   * sin sesión, o con la de un vendedor, no se guarda.
    */
-  objetivo: function (local, periodo, meta) {
+  objetivo: function (local, periodo, meta, sesion) {
     var general = local === '*';
     var n = Number(String(meta).replace(/[^0-9]/g, ''));
     if (n > 100000) return Promise.reject(new Error('Esa meta es demasiado grande.'));
+    var NO_PUEDE = 'El objetivo lo cambia la administración, entrando con su usuario.';
+    /* Un PATCH o un DELETE que la base no deja hacer no da error: no toca
+       ninguna fila. Por eso se pide el conteo y cero filas es «no se pudo». */
+    var contado = function (cuantas) { if (!cuantas) { throw rechazo(NO_PUEDE); } return cuantas; };
+    var sinPermiso = function (err) {
+      if (err && err.delServidor && /row-level security|permission denied|42501/i.test(err.message || '')) { throw rechazo(NO_PUEDE); }
+      throw err;
+    };
 
     /* Se lee la tabla entera y se busca acá. Son quince filas, y filtrar en
        el servidor por un nombre de local con coma adentro parte la condición
        de PostgREST en dos. */
-    return pedir('/objetivos?select=id,local').then(function (filas) {
+    return pedir('/objetivos?select=id,local', { sesion: sesion }).then(function (filas) {
       var k = general ? '' : clave_(local);
       var suyo = null;
       (filas || []).forEach(function (f) {
@@ -1809,14 +1821,15 @@ var base = {
 
       if (!n) {
         if (!suyo) return null;
-        return pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'DELETE' })
+        return pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'DELETE', sesion: sesion, contar: true })
+          .then(contado, sinPermiso)
           .then(function () { return null; });
       }
 
       var fila = { local: general ? null : local, periodo: periodo, meta: n };
       var camino = suyo
-        ? pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'PATCH', cuerpo: fila })
-        : pedir('/objetivos', { metodo: 'POST', cuerpo: fila });
+        ? pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'PATCH', cuerpo: fila, sesion: sesion, contar: true }).then(contado, sinPermiso)
+        : pedir('/objetivos', { metodo: 'POST', cuerpo: fila, sesion: sesion }).catch(sinPermiso);
       return camino.then(function () { return { periodo: periodo, meta: n }; });
     });
   },
