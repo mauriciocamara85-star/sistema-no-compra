@@ -535,6 +535,24 @@
     .ti-tablero { grid-auto-columns: minmax(220px, 1fr); }
     .ti-tablero .col { min-height: max(220px, calc(100vh - 330px)); }
   }
+  /* ── Envíos (SQL 294, 13/11/2026): lo que dice OCA de cada paquete ──
+     El mismo tablero que Tienda online; las tarjetas no se mueven a mano
+     (las mueve OCA). La que hay que mirar, con el borde rojo. Tocarla abre
+     el recorrido. */
+  .tj.en-alarma { border-left-color: var(--bad); }
+  .col-cab i.c-mal { background: var(--bad); }
+  .en-estado { margin-top: 5px; font-size: 12.5px; color: var(--txt-2); line-height: 1.35; }
+  .en-estado b { font-weight: 700; }
+  .en-rec { margin: 9px 0 0; padding: 8px 0 0 0; list-style: none; border-top: 1px dashed var(--line-alta); cursor: default;
+            -webkit-user-select: text; user-select: text; }
+  .en-rec[hidden] { display: none; }
+  .en-rec li { position: relative; padding: 0 0 7px 14px; font-size: 12px; color: var(--txt-2); line-height: 1.35; }
+  .en-rec li::before { content: ''; position: absolute; left: 2px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--line-alta); }
+  .en-rec li:last-child::before { background: var(--acc); }
+  .en-rec li span { display: block; font-size: 11.5px; color: var(--txt-3); }
+  .en-rec .en-num { padding-left: 0; color: var(--txt-3); }
+  .en-rec .en-num::before { display: none; }
+  .en-rec .en-num button { margin-left: 6px; }
   .burbuja { max-width: 82%; padding: 7px 10px 5px; border-radius: 12px; font-size: 14px; line-height: 1.38;
              white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(0, 0, 0, .06); }
   .burbuja.entra { align-self: flex-start; background: var(--surface); color: var(--txt); border-top-left-radius: 4px; }
@@ -1796,6 +1814,7 @@
   <!-- Tienda online (SQL 67): las consultas del WhatsApp de la tienda, como
        tarjetas que se mueven solas. -->
   <section id="vistaTienda" hidden></section>
+  <section id="vistaEnvios" hidden></section>
   <!-- Segmentos (Beta), Difusiones, el Agente de IA (SQL 77) y lo que está
        por venir (Bots). -->
   <section id="vistaSegmentos" hidden></section>
@@ -2444,6 +2463,9 @@
         pintarVistas();
         pintarVista();
         if (fichaId) { pintarFicha(); }
+        /* El numerito de Envíos en el menú (los que hay que revisar), aunque
+           no estés en Envíos. En Envíos ya lo trae pintarVista. */
+        if (vista !== 'envios') { cargarEnvios(true); }
       })
       .catch(function (err) {
         $('btnRefrescar').classList.remove('girando');
@@ -2471,7 +2493,8 @@
     est: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
     flecha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
-    cupon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M14 5v2M14 11v2M14 17v2"/></svg>'
+    cupon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M14 5v2M14 11v2M14 17v2"/></svg>',
+    camion: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4h13v12H1z"/><path d="M14 9h4l3 3.5V16h-7"/><circle cx="5.5" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/></svg>'
   };
   var MENU_CRM = [
     { v: 'mensajes', t: 'Mensajes', i: ICO.chat, nt: 'Sin contestar' },
@@ -2479,6 +2502,7 @@
       { v: 'no_compra', t: 'No Compra', nt: 'Sin contactar' },
       { v: 'carrito', t: 'Carritos abandonados', nt: 'Sin contactar' },
       { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
+    { v: 'envios', t: 'Envíos', i: ICO.camion, nt: 'Para revisar' },
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
     { v: 'cupones', t: 'Cupones', i: ICO.cupon },
@@ -2502,7 +2526,8 @@
   function pintarVistas() {
     if (vista === 'agente') { pintarMenuAgentes(); return; }
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
-    var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos), tienda: MS.tienda };
+    var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos), tienda: MS.tienda,
+                    envios: EN.datos ? enviosParaRevisar().length : null };
     var cerrados = gruposCerrados();
     var item = function (o, sub) {
       var n = cuantos[o.v], sel = o.v === vista;
@@ -2673,6 +2698,7 @@
     else if (vista === 'segmentos') { cargarSegmentos(); }
     else if (vista === 'difusiones') { pintarDifusiones(); }
     else if (vista === 'tienda') { cargarTienda(); }
+    else if (vista === 'envios') { cargarEnvios(); }
     else if (vista === 'agente') { cargarAgente(); }
     else if (vista === 'cupones') { cargarCupones(); }
     else if (PRONTO[vista]) { pintarPronto(vista); }
@@ -2689,6 +2715,7 @@
     $('vistaSegmentos').hidden = vista !== 'segmentos';
     $('vistaDifusiones').hidden = vista !== 'difusiones';
     $('vistaTienda').hidden = vista !== 'tienda';
+    $('vistaEnvios').hidden = vista !== 'envios';
     $('vistaPronto').hidden = !PRONTO[vista];
     $('vistaAgente').hidden = vista !== 'agente';
     $('crm').classList.toggle('en-agentes', vista === 'agente');
@@ -2709,6 +2736,7 @@
     colSel = 'Pendiente';
     filtroEtq = '';
     TI.kpi = '';
+    EN.kpi = '';
     MS.rec = false;
     atajo = '';
     eligiendo = false; elegidos = [];
@@ -7134,6 +7162,193 @@
         volver();
         avisar('err', (err && err.message) || 'No se pudo mover.');
       });
+  }
+
+  /* ═══ Envíos (SQL 294, 13/11/2026) ═══════════════════════════════════════
+     Los paquetes de vdh.com.ar que van por OCA, con lo que dice OCA de cada
+     uno. Pedido de Mauricio (13/11) por el #8927: el cliente reclamó una
+     semana sin novedades y estaba parado en OCA Liniers desde el viernes 6,
+     con otros cinco de la misma tanda. Nadie lo había visto.
+     El robot de cada hora (oca-envios.js, en vdh-respaldos) le pregunta a
+     OCA y lo deja en oca_envios; crm_envios lo trae con el cliente de la
+     tienda y la alarma, que la calcula la base:
+       - sin_ingresar: la etiqueta se hizo hace 2 días hábiles y OCA todavía
+         no lo recibió;
+       - parado: en camino sin moverse hace 3 días hábiles;
+       - sin_retirar: espera en una sucursal de OCA hace 3 días hábiles;
+       - problema: OCA puso un motivo (una visita que no se pudo, una
+         devolución).
+     Las tarjetas no se mueven a mano: las mueve OCA. Tocar una abre el
+     recorrido; «Abrir contacto» abre la ficha con el chat. */
+  var COLS_ENVIOS = [
+    { e: 'etiqueta', t: 'Etiqueta impresa', c: 'c-pend' },
+    { e: 'en_camino', t: 'En camino', c: 'c-seg' },
+    { e: 'en_reparto', t: 'Sale a reparto', c: 'c-esp' },
+    { e: 'para_retirar', t: 'Para retirar en OCA', c: 'c-esp' },
+    { e: 'entregado', t: 'Entregado', c: 'c-ok' },
+    { e: 'problema', t: 'Con problema', c: 'c-mal' }];
+  var EN = { datos: null, error: '', pedido: 0, kpi: '', abiertos: {} };
+
+  /* callado: sólo para el numerito del menú (sin esqueleto ni carteles). */
+  function cargarEnvios(callado) {
+    var n = ++EN.pedido;
+    if (!callado && !EN.datos && !EN.error) { $('vistaEnvios').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
+    base.crmEnvios(pinGuardado())
+      .then(function (d) {
+        if (n !== EN.pedido) return;
+        EN.datos = d || { envios: [] };
+        EN.error = '';
+        if (vista === 'envios') { pintarEnvios(); }
+        pintarVistas();
+      })
+      .catch(function (err) {
+        if (n !== EN.pedido) return;
+        if (err && err.sinSesion) { if (!callado) { caducada(); } return; }
+        EN.error = /crm_envios|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+        if (callado) { return; }
+        EN.datos = null;
+        pintarEnvios();
+      });
+  }
+
+  function enviosTodos() { return (EN.datos && EN.datos.envios) || []; }
+  function enviosParaRevisar() { return enviosTodos().filter(function (x) { return !!x.alarma; }); }
+
+  /* "LINIERS" → "Liniers"; "PAQ. CAPITAL" → "Paq. Capital". */
+  function sucursalOca(s) {
+    return String(s || '').toLowerCase().replace(/(^|[\s.(\-])([a-záéíóúñü])/g, function (m, a, b) { return a + b.toUpperCase(); });
+  }
+  /* "6/11 17:06" (con getHours: toLocaleTimeString dice "p. m."). */
+  function fechaEnvio(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) { return ''; }
+    var dos = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getDate() + '/' + (d.getMonth() + 1) + ' ' + dos(d.getHours()) + ':' + dos(d.getMinutes());
+  }
+  function habilesTxt(n) { return n === 1 ? '1 día hábil' : n + ' días hábiles'; }
+
+  function alarmaEnvio(x) {
+    var suc = x.sucursal ? ' en ' + sucursalOca(x.sucursal) : '';
+    if (x.alarma === 'parado') { return 'Parado hace ' + habilesTxt(x.quieto) + suc; }
+    if (x.alarma === 'sin_ingresar') { return 'OCA todavía no lo recibió (etiqueta hace ' + habilesTxt(x.quieto) + ')'; }
+    if (x.alarma === 'sin_retirar') { return 'Hace ' + habilesTxt(x.quieto) + ' que espera que lo retiren' + suc; }
+    if (x.alarma === 'problema') { return 'OCA: ' + (x.motivo || x.estado || 'un problema con el envío'); }
+    return '';
+  }
+  /* En cada columna: arriba los que hay que mirar (el más quieto primero);
+     después, el último movimiento. */
+  function ordenEnvios(a, b) {
+    if (!!a.alarma !== !!b.alarma) { return a.alarma ? -1 : 1; }
+    if (a.alarma) { return (Number(b.quieto) || 0) - (Number(a.quieto) || 0); }
+    return new Date(b.ultimo || 0) - new Date(a.ultimo || 0);
+  }
+
+  function pintarEnvios() {
+    var caja = $('vistaEnvios');
+    if (EN.error) {
+      caja.innerHTML = '<div class="vacio-vista"><b>' + (EN.error === 'falta' ? 'Falta un paso' : 'No se pudieron traer los envíos') + '</b>' +
+        (EN.error === 'falta' ? 'Para ver los envíos de OCA hay que correr el SQL 294 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      return;
+    }
+    if (!EN.datos) { return; }
+    var todos = enviosTodos();
+    var revisar = enviosParaRevisar().length;
+    var de = function (e) { return todos.filter(function (x) { return x.etapa === e; }).length; };
+    var cuando = EN.datos.actualizado ? ' Lo último que se le preguntó a OCA: ' + haceTxt(EN.datos.actualizado) + '.' : '';
+    if (!todos.length) {
+      caja.innerHTML = '<p class="ti-intro">Los envíos de vdh.com.ar que van por OCA.' + esc(cuando) + '</p>' +
+        '<div class="vacio-vista"><b>Todavía no hay envíos</b>El sistema se los pregunta a OCA cada hora: en un rato aparecen.</div>';
+      return;
+    }
+    var l = EN.kpi === 'revisar' ? todos.filter(function (x) { return !!x.alarma; }) : todos;
+    var cuenta = {};
+    l.forEach(function (x) { cuenta[x.etapa] = (cuenta[x.etapa] || 0) + 1; });
+    caja.innerHTML =
+      '<p class="ti-intro">Los envíos de vdh.com.ar que van por OCA, con lo que dice OCA de cada uno. Se actualiza solo cada hora.' +
+        esc(cuando) + ' En rojo, los que hay que mirar: parados, sin entrar a OCA o sin retirar. Tocá uno para ver el recorrido.</p>' +
+      '<div class="cifras ti-cifras">' +
+        kpiHtml('revisar', 'Para revisar', revisar, '', revisar ? 'mal' : '', EN.kpi === 'revisar', 'mal') +
+        kpiHtml('etiqueta', 'Etiqueta impresa', de('etiqueta'), '', '', false, 'ojo') +
+        kpiHtml('en_camino', 'En camino', de('en_camino'), '', '', false, 'azul') +
+        kpiHtml('para_retirar', 'Para retirar', de('para_retirar'), '', '', false, 'azul') +
+        kpiHtml('entregado', 'Entregados · 7 días', de('entregado'), '', de('entregado') ? 'hay' : '', false, 'ok') +
+      '</div>' +
+      '<div class="filtros ti-cols">' + COLS_ENVIOS.map(function (c) {
+        return '<button type="button" class="chip" data-col="' + esc(c.e) + '">' + esc(c.t) + ' <span class="cuenta">' + (cuenta[c.e] || 0) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div class="tablero ti-tablero en-tablero">' + COLS_ENVIOS.map(function (c) {
+        var dentro = l.filter(function (x) { return x.etapa === c.e; }).sort(ordenEnvios);
+        return '<section class="col" data-col="' + esc(c.e) + '" data-tono="' + (c.c || 'gris') + '">' +
+          '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + dentro.length + '</span></div>' +
+          (dentro.length ? dentro.map(tarjetaEnvio).join('') : '<div class="col-vacia">Ninguno</div>') +
+        '</section>';
+      }).join('') + '</div>';
+    var tb = caja.querySelector('.en-tablero');
+    ajustarAltoTableros();
+    [].forEach.call(caja.querySelectorAll('.en-tj'), function (a) {
+      a.onclick = function (ev) {
+        if (ev.target.closest('.en-rec')) { return; }
+        var b = ev.target.closest('button');
+        var x = envioPorNumero(a.dataset.n);
+        if (b && b.classList.contains('en-contacto')) {
+          var cl = (x && x.cliente) || {};
+          abrirContacto(cl.clave, { nombre: cl.nombre, tel: cl.tel });
+          return;
+        }
+        EN.abiertos[a.dataset.n] = !EN.abiertos[a.dataset.n];
+        var rec = a.querySelector('.en-rec');
+        rec.hidden = !EN.abiertos[a.dataset.n];
+        a.setAttribute('aria-expanded', String(!rec.hidden));
+      };
+      a.onkeydown = function (ev) {
+        if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === a) { ev.preventDefault(); a.click(); }
+      };
+      var cp = a.querySelector('.en-copiar');
+      if (cp) { cp.onclick = function (ev) { ev.stopPropagation(); copiarCu(a.dataset.n, 'Número de envío copiado.'); }; }
+    });
+    [].forEach.call(caja.querySelectorAll('.ti-cifras [data-kpi]'), function (b) {
+      b.onclick = function () {
+        if (b.dataset.kpi === 'revisar') { EN.kpi = EN.kpi === 'revisar' ? '' : 'revisar'; pintarEnvios(); return; }
+        irAColumnaDe(tb, b.dataset.kpi);
+      };
+    });
+    [].forEach.call(caja.querySelectorAll('.ti-cols [data-col]'), function (b) {
+      b.onclick = function () {
+        irAColumnaDe(tb, b.dataset.col);
+        [].forEach.call(caja.querySelectorAll('.ti-cols .chip'), function (x) { x.classList.toggle('sel', x === b); });
+      };
+    });
+  }
+  function envioPorNumero(n) {
+    return enviosTodos().filter(function (x) { return x.numero === n; })[0];
+  }
+
+  function tarjetaEnvio(x) {
+    var cl = x.cliente || null, abierto = !!EN.abiertos[x.numero];
+    var aviso = alarmaEnvio(x);
+    var estado = x.etapa === 'entregado' && x.entregado
+      ? '<b>Entregado</b> el ' + esc(fechaEnvio(x.entregado)) + (x.sucursal ? ' · ' + esc(sucursalOca(x.sucursal)) : '')
+      : x.estado ? '<b>' + esc(x.estado) + '</b>' + (x.sucursal ? ' · ' + esc(sucursalOca(x.sucursal)) : '')
+      : '<b>Etiqueta impresa</b>: OCA todavía no informó movimientos';
+    var eventos = (x.eventos || []).slice().reverse();
+    return '<article class="tj ti-tj en-tj' + (x.alarma ? ' en-alarma' : x.etapa === 'entregado' ? ' es-ok' : '') +
+        '" data-n="' + esc(x.numero) + '" tabindex="0" role="button" aria-expanded="' + abierto + '">' +
+      '<div class="tj-top"><span class="pill pill-neutra">' + (x.pedido ? 'Pedido #' + esc(x.pedido) : 'Envío de OCA') + '</span>' +
+        '<span class="tj-dias' + (x.alarma ? ' viejo' : '') + '">' + esc(x.ultimo ? haceTxt(x.ultimo) : '') + '</span></div>' +
+      '<b class="tj-nom">' + esc(cl && cl.nombre ? cl.nombre : 'Sin pedido de la tienda') + '</b>' +
+      (cl && cl.producto ? '<div class="tj-prod">' + esc(cl.producto) + '</div>' : '') +
+      '<div class="en-estado">' + estado + '</div>' +
+      (aviso ? '<div class="tj-aviso">' + esc(aviso) + '</div>' : '') +
+      (cl && cl.clave ? '<div class="tj-acc"><button type="button" class="btn btn-sec btn-chico en-contacto">Abrir contacto</button></div>' : '') +
+      '<ol class="en-rec"' + (abierto ? '' : ' hidden') + '>' +
+        '<li class="en-num">Envío de OCA ' + esc(x.numero) +
+          '<button type="button" class="btn btn-sec btn-chico en-copiar">Copiar</button></li>' +
+        (eventos.length ? eventos.map(function (e) {
+          return '<li>' + esc(e.estado) + (e.motivo ? ' · ' + esc(e.motivo) : '') +
+            '<span>' + esc(fechaEnvio(e.fecha)) + (e.sucursal ? ' · ' + esc(sucursalOca(e.sucursal)) : '') + '</span></li>';
+        }).join('') : '<li>OCA todavía no informó movimientos.</li>') +
+      '</ol>' +
+    '</article>';
   }
 
   /* ═══ Agentes de IA (SQL 77, 11/10/2026; dos agentes desde el 12/10) ═════

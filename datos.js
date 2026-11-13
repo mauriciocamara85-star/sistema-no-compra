@@ -1423,6 +1423,9 @@ var base = {
   /** El tablero Tienda online (SQL 67): las consultas al WhatsApp de la
    *  tienda, ya puestas al día (compras y 7 días), y el resumen del mes. */
   crmTienda: function (pin) { return funcion('crm_tienda', { p_pin: pin }); },
+  /** Los envíos de OCA de la tienda online, con el cliente y la alarma
+      (SQL 294, 13/11/2026). Los trae el robot de cada hora. */
+  crmEnvios: function (pin) { return funcion('crm_envios', { p_pin: pin }); },
   crmConsultaMover: function (pin, id, columna, quien) {
     return funcion('crm_consulta_mover', { p_pin: pin, p_id: id, p_columna: columna, p_quien: quien || null });
   },

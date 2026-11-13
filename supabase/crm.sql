@@ -12791,3 +12791,223 @@ grant execute on function asistente_charla(text, text, text, uuid) to anon, auth
 -- (El pulgar, asistente_votar, ya usa asistente_disp: con el usuario anda solo.)
 
 select 'listo: el Asistente, con el usuario de cada uno' as "SQL 184";
+
+
+-- ─────────────────────────── PARTE 294 ───────────────────────────
+/* ══════════════════════════════════════════════════════════════════════════
+   SQL 294 (13/11/2026) — ENVÍOS DE OCA EN EL CRM
+   ══════════════════════════════════════════════════════════════════════════
+   Pedido de Mauricio (13/11): seguir los pedidos de vdh.com.ar «como Mercado
+   Libre». Salió del pedido #8927: el cliente reclamó una semana sin novedades
+   y en OCA estaba parado en Liniers desde el viernes 6 (con otros 5).
+
+   OCA tiene un seguimiento público (sin usuario ni clave): la lista de los
+   envíos de la empresa por CUIT, con el número de pedido de la tienda, y el
+   recorrido de cada uno. El robot de cada hora (oca-envios.js, vdh-respaldos)
+   lo trae acá.
+
+   Qué hace (todo nuevo, no cambia nada de lo que ya hay):
+     1) oca_envios: un renglón por envío de OCA, con todo su recorrido, el
+        último estado, la sucursal y la «etapa» (etiqueta, en_camino,
+        en_reparto, para_retirar, entregado, problema).
+     2) oca_etapa(estado, motivo): traduce el estado de OCA a la etapa.
+     3) oca_dias_habiles(desde): días hábiles (lunes a viernes) desde una
+        fecha, en hora de Argentina (sin feriados).
+     4) oca_envios_cargar(jsonb): la carga del robot. Sólo el robot. Si OCA
+        no devuelve movimientos de un envío que ya tenía, no se borran.
+     5) crm_envios(pin): lo que ve la sección «Envíos» del CRM: los envíos de
+        los últimos 45 días (los entregados, sólo los de la última semana),
+        con el cliente de la tienda y las alarmas:
+          - sin_ingresar: la etiqueta se imprimió hace 2 días hábiles o más y
+            OCA todavía no lo recibió;
+          - parado: en camino sin moverse hace 3 días hábiles o más (lo normal
+            entre dos movimientos es 0 a 2, medido con los 37 de noviembre);
+          - sin_retirar: espera en una sucursal de OCA hace 3 días hábiles;
+          - problema: OCA puso un motivo (una visita que no se pudo, una
+            devolución…).
+
+   Se deshace con deshacer-294.sql (borra la tabla y las 5 funciones). */
+
+do $$ begin
+  if to_regclass('public.oca_envios') is not null then
+    raise exception 'El SQL 294 ya está corrido (ya existe oca_envios).';
+  end if;
+end $$;
+
+create table oca_envios (
+  numero      text primary key,                      -- el número de envío de OCA (19 números)
+  pedido      text,                                  -- el número de pedido de vdh.com.ar (NroProducto)
+  eventos     jsonb not null default '[]'::jsonb,    -- [{fecha, estado, sucursal, motivo}], del más viejo al más nuevo
+  estado      text,                                  -- el último
+  sucursal    text,
+  motivo      text,
+  etapa       text not null default 'etiqueta',
+  etiqueta    timestamptz,                           -- el primer movimiento (la etiqueta)
+  ultimo_mov  timestamptz,
+  entregado   timestamptz,
+  visto       timestamptz not null default now(),    -- la última vez que el robot le preguntó a OCA
+  creado      timestamptz not null default now()
+);
+create index oca_envios_pedido on oca_envios (pedido);
+alter table oca_envios enable row level security;
+revoke all on oca_envios from anon, authenticated;
+
+create or replace function oca_etapa(p_estado text, p_motivo text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select case
+    when p_estado is null or btrim(p_estado) = '' then 'etiqueta'
+    when p_estado ilike '%entregado%' and p_estado not ilike '%no entregado%' then 'entregado'
+    when p_estado ilike '%devol%' or p_estado ilike '%devuelto%' or p_estado ilike '%remitente%' then 'problema'
+    when nullif(btrim(coalesce(p_motivo, '')), '') is not null and p_motivo not ilike 'sin motivo' then 'problema'
+    when p_estado ilike 'pendiente de ingreso%' then 'etiqueta'
+    when p_estado ilike '%espera de retiro%' then 'para_retirar'
+    when p_estado ilike '%visita%' or p_estado ilike '%reparto%' or p_estado ilike '%distribuci_n domiciliaria%' then 'en_reparto'
+    else 'en_camino'
+  end
+$$;
+revoke all on function oca_etapa(text, text) from public, anon, authenticated;
+
+create or replace function oca_dias_habiles(p_desde timestamptz)
+returns integer
+language sql
+stable
+set search_path = public
+as $$
+  select count(*)::integer
+    from generate_series(((p_desde at time zone 'America/Argentina/Buenos_Aires')::date + 1)::timestamp,
+                         ((now() at time zone 'America/Argentina/Buenos_Aires')::date)::timestamp,
+                         interval '1 day') d
+   where p_desde is not null and extract(isodow from d) < 6
+$$;
+revoke all on function oca_dias_habiles(timestamptz) from public, anon, authenticated;
+
+create or replace function oca_envios_cargar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  x jsonb;
+  ev jsonb;
+  ult jsonb;
+  ent jsonb;
+  recibidos integer := 0;
+  nuevos integer := 0;
+  era_nuevo boolean;
+begin
+  for x in select * from jsonb_array_elements(coalesce(p->'envios', '[]'::jsonb)) loop
+    if coalesce(x->>'numero', '') !~ '^\d{6,30}$' then continue; end if;
+    recibidos := recibidos + 1;
+    ev := case when jsonb_typeof(x->'eventos') = 'array' then x->'eventos' else '[]'::jsonb end;
+    if jsonb_array_length(ev) = 0 then
+      /* Sin movimientos (recién hecha la etiqueta, o OCA no contestó bien):
+         si ya lo teníamos, no se le borra el recorrido. */
+      insert into oca_envios (numero, pedido, visto)
+      values (x->>'numero', nullif(btrim(x->>'pedido'), ''), now())
+      on conflict (numero) do update set
+        pedido = coalesce(excluded.pedido, oca_envios.pedido), visto = now()
+      returning (xmax = 0) into era_nuevo;
+    else
+      /* Después de entregar, OCA suma «Acuse digitalizado» en la «Planta
+         digitalizadora» (cuando escanea la firma, días después): si en el
+         recorrido hay un «Entregado», manda ese y no el último. */
+      select e into ent
+        from jsonb_array_elements(ev) e
+       where oca_etapa(e->>'estado', e->>'motivo') = 'entregado'
+       order by (e->>'fecha')::timestamptz desc
+       limit 1;
+      ult := coalesce(ent, ev -> (jsonb_array_length(ev) - 1));
+      insert into oca_envios (numero, pedido, eventos, estado, sucursal, motivo, etapa,
+                              etiqueta, ultimo_mov, entregado, visto)
+      values (x->>'numero', nullif(btrim(x->>'pedido'), ''), ev,
+              nullif(ult->>'estado', ''), nullif(ult->>'sucursal', ''), nullif(ult->>'motivo', ''),
+              oca_etapa(ult->>'estado', ult->>'motivo'),
+              (ev->0->>'fecha')::timestamptz, (ult->>'fecha')::timestamptz,
+              (ent->>'fecha')::timestamptz,
+              now())
+      on conflict (numero) do update set
+        pedido = coalesce(excluded.pedido, oca_envios.pedido),
+        eventos = excluded.eventos, estado = excluded.estado, sucursal = excluded.sucursal,
+        motivo = excluded.motivo, etapa = excluded.etapa, etiqueta = excluded.etiqueta,
+        ultimo_mov = excluded.ultimo_mov, entregado = excluded.entregado, visto = now()
+      returning (xmax = 0) into era_nuevo;
+    end if;
+    if era_nuevo then nuevos := nuevos + 1; end if;
+  end loop;
+  return jsonb_build_object('recibidos', recibidos, 'nuevos', nuevos,
+                            'en_total', (select count(*) from oca_envios));
+end;
+$$;
+revoke all on function oca_envios_cargar(jsonb) from public, anon, authenticated;
+
+create or replace function crm_envios(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  with e as (
+    select o.*,
+           oca_dias_habiles(coalesce(o.ultimo_mov, o.creado)) as quieto
+      from oca_envios o
+     where coalesce(o.etiqueta, o.creado) > now() - interval '45 days'
+       and (o.etapa <> 'entregado' or o.entregado > now() - interval '7 days')
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'numero', e.numero, 'pedido', e.pedido, 'etapa', e.etapa, 'estado', e.estado,
+           'sucursal', e.sucursal, 'motivo', e.motivo, 'etiqueta', e.etiqueta,
+           'ultimo', e.ultimo_mov, 'entregado', e.entregado, 'eventos', e.eventos,
+           'quieto', e.quieto,
+           'alarma', case
+               when e.etapa = 'problema' then 'problema'
+               when e.etapa = 'etiqueta' and e.quieto >= 2 then 'sin_ingresar'
+               when e.etapa in ('en_camino', 'en_reparto') and e.quieto >= 3 then 'parado'
+               when e.etapa = 'para_retirar' and e.quieto >= 3 then 'sin_retirar'
+             end,
+           'cliente', (select jsonb_build_object(
+                          'nombre', t.nombre, 'tel', t.telefono, 'mail', t.mail,
+                          'clave', coalesce(club_tel10(t.telefono), 'm:' || lower(t.mail)),
+                          'total', t.total, 'pagado', t.pagado,
+                          /* Tienda Nube ya pone el talle y el color en el nombre
+                             («Pantalon Vary Wide (Marrón, 40)»): la variante se
+                             suma sólo si no está. */
+                          'producto', (select string_agg(btrim(coalesce(pr->>'nombre', '') ||
+                                              case when coalesce(pr->>'variante', '') <> ''
+                                                    and position(lower(pr->>'variante') in lower(coalesce(pr->>'nombre', ''))) = 0
+                                                   then ' (' || (pr->>'variante') || ')' else '' end), ' · ')
+                                         from jsonb_array_elements(t.productos) pr))
+                         from tienda_pedidos t
+                        where t.numero = e.pedido
+                          /* Sólo un pedido de antes de la etiqueta y de los
+                             60 días anteriores: OCA también trae envíos que no
+                             salieron de la tienda (el «1211» del 12/11 es de
+                             Mar del Plata, y la tienda tiene un #1211 de 2020). */
+                          and t.creado between coalesce(e.etiqueta, e.creado) - interval '60 days'
+                                           and coalesce(e.etiqueta, e.creado) + interval '1 day'
+                        order by t.pagado desc nulls last
+                        limit 1))
+         order by coalesce(e.ultimo_mov, e.creado) desc), '[]'::jsonb)
+    into salida
+    from e;
+
+  return jsonb_build_object('envios', salida,
+                            'actualizado', (select max(visto) from oca_envios));
+end;
+$$;
+revoke all on function crm_envios(text) from public;
+grant execute on function crm_envios(text) to anon, authenticated;
+
+select 'listo: los envíos de OCA en el CRM' as "SQL 294";
