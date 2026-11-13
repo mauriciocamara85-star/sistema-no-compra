@@ -14853,3 +14853,271 @@ REVOKE ALL ON FUNCTION public.pos_repartos_ver(date, date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.pos_repartos_ver(date, date) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
+
+-- ════════════════════════════════════════════════════════════════════
+-- ═══ SQL 295 · La Gift Card suma una sola vez: cuando se vende (13/11/2026) ═══
+-- Mauricio (13/11, con la foto de Tickets: X-9 vendió la Gift Card Black Nº 132 por $80.000 y X-10 la usó para un Beren
+-- Wide de $79.000): «cuando vuelve a cambiarla la toma como otra venta, eso está mal… sólo una tiene que sumar, y tiene
+-- que ser la de la venta de gift; cuando vuelve sólo tendría que sumar si hay una diferencia de más».
+--
+-- La regla, en todos los números de ventas: lo vendido = el total de la venta MENOS lo pagado con una Gift Card.
+--   · La venta de la Gift Card cuenta entera, para quien la vendió (antes, SQL 264, no contaba).
+--   · La venta pagada entera con una Gift Card no es una venta: no suma plata, ni ticket, ni prendas, ni tráfico.
+--   · La pagada con una Gift Card y algo más suma sólo ese algo más (su ticket y sus prendas, sí).
+--
+-- Qué cambia (sólo tres funciones de lectura; ningún dato, ninguna tabla):
+--   1. pos_ventas_vendedor: Ventas por vendedor y el «Por vendedor» de Tickets.
+--   2. pos_tickets: los totales de abajo de Tickets (Tickets, Productos, Neto, Descuentos, Total, por comprobante), el
+--      tráfico y la conversión del panel, y un dato nuevo, «giftcard» (lo pagado con Gift Card en el período, para que la
+--      pantalla lo muestre aparte). La lista de tickets no cambia: el canje sigue ahí, con su total.
+--   3. ventas_pos_hechos: Ventas del sistema (la venta de cada vendedor, el tráfico, la conversión, el ticket y el Informe
+--      Vendedor del local que vende con el POS). El cron «ventas-pos» recalcula el mes cada minuto: lo de hoy se corrige
+--      solo en el minuto siguiente (queda anotado en el historial de Ventas con quien 'POS').
+-- No cambia: el cierre de caja (es la plata de cada medio de pago), el IVA Ventas, ARCA, los puntos del Club, ni Ventas
+-- por productos (ésa ya cuenta una sola vez: la prenda que se lleva, no la tarjeta).
+--
+-- Frena sin hacer nada si ya está corrido o si alguna de las tres funciones cambió desde que se armó (13/11).
+-- Se deshace con deshacer-295.sql (vuelven las tres como estaban). Corre entero o nada.
+
+do $$
+declare x record;
+begin
+  if coalesce(obj_description('public.pos_ventas_vendedor(date,date,uuid,text,boolean)'::regprocedure, 'pg_proc'), '') like 'SQL 295%' then
+    raise exception 'El SQL 295 ya está corrido.';
+  end if;
+  for x in select * from (values
+      ('public.pos_ventas_vendedor(date,date,uuid,text,boolean)', '5d24110ea90c5aa8876eb8f7ce07d140'),
+      ('public.pos_tickets(date,date,uuid,text,text,text,text,boolean)', 'f08b621e0ec372f84de3e5e493237d96'),
+      ('public.ventas_pos_hechos(uuid,date,date)', '95ff06afa57e82937840d5db4406519a')) t(f, m)
+  loop
+    if (select md5(replace(prosrc, chr(13), '')) from pg_proc where oid = x.f::regprocedure) is distinct from x.m then
+      raise exception 'La función % cambió desde que se armó el SQL 295 (13/11): no corro nada. Hay que rehacerlo sobre la de ahora.', x.f;
+    end if;
+  end loop;
+end $$;
+
+-- ── 1) Ventas por vendedor (y el «Por vendedor» de Tickets) ───────────────
+CREATE OR REPLACE FUNCTION public.pos_ventas_vendedor(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_vendedor text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    /* SQL 295 (Mauricio, 13/11: «sólo una tiene que sumar, y tiene que ser la de la venta de gift»): la venta de la Gift
+       Card cuenta entera para quien la vendió, y lo pagado CON una Gift Card no cuenta (ya se contó al venderla). A cada
+       venta se le saca lo pagado con Gift Card (y su parte del neto y de los descuentos); la pagada entera con Gift Card
+       no es una venta. (SQL 264 era al revés: no contaba la tarjeta y sí lo que se compraba con ella.) */
+    with g as (
+      select p.venta_id, sum(p.monto) monto
+        from pos_venta_pagos p where p.medio = 'giftcard' group by p.venta_id
+    ),
+    v as (
+      select x.vendedor,
+             x.neto - case when g.monto is not null and x.total > 0 then round(g.monto * x.neto / x.total, 2) else 0 end neto,
+             x.descuentos - case when g.monto is not null and x.total > 0 then round(g.monto * x.descuentos / x.total, 2) else 0 end descuentos,
+             x.total - coalesce(g.monto, 0) total,
+             x.cantidad,
+             lpad(extract(hour from x.fecha at time zone 'America/Argentina/Buenos_Aires')::int::text, 2, '0') hora,
+             x.dia::text dia,
+             (x.dia - (extract(isodow from x.dia)::int - 1))::text semana,
+             to_char(x.dia, 'YYYY-MM') mes
+        from pos_ventas x
+        left join g on g.venta_id = x.id
+       where x.dia between p_desde and p_hasta
+         and (g.monto is null or x.total > g.monto)
+         and x.prueba = coalesce(p_prueba, false)
+         and x.estado = 'cobrada'
+         and (p_local is null or x.local_id = p_local)
+         and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))
+    ),
+    b as (
+      select v.vendedor, k.por, k.k, v.total, v.cantidad
+        from v cross join lateral (values ('hora', v.hora), ('dia', v.dia), ('semana', v.semana), ('mes', v.mes)) k(por, k)
+    )
+    select jsonb_build_object(
+      'vendedores', coalesce((
+        select jsonb_agg(jsonb_build_object('vendedor', z.vendedor, 'neto', z.neto, 'descuentos', z.descuentos, 'total', z.total,
+                                            'productos', z.productos, 'ventas', z.ventas) order by z.total desc, z.vendedor)
+          from (select vendedor, sum(neto) neto, sum(descuentos) descuentos, sum(total) total, sum(cantidad) productos, count(*) ventas
+                  from v group by vendedor) z), '[]'::jsonb),
+      'por', coalesce((
+        select jsonb_object_agg(y.por, y.filas)
+          from (select z.por, jsonb_agg(jsonb_build_object('vendedor', z.vendedor, 'k', z.k, 'total', z.total, 'productos', z.productos,
+                                                           'ventas', z.ventas) order by z.k, z.vendedor) filas
+                  from (select por, vendedor, k, sum(total) total, sum(cantidad) productos, count(*) ventas from b group by por, vendedor, k) z
+                 group by z.por) y), '{}'::jsonb),
+      'totales', (select jsonb_build_object('ventas', count(*), 'productos', coalesce(sum(cantidad), 0), 'neto', coalesce(sum(neto), 0),
+                                            'descuentos', coalesce(sum(descuentos), 0), 'total', coalesce(sum(total), 0)) from v)
+    )
+  );
+end $function$;
+COMMENT ON FUNCTION public.pos_ventas_vendedor(date,date,uuid,text,boolean) IS 'SQL 295: la Gift Card cuenta cuando se vende; lo pagado con Gift Card no suma (la venta pagada entera con una no es una venta).';
+
+-- ── 2) Tickets: los totales de abajo, el tráfico y la conversión ──────────
+CREATE OR REPLACE FUNCTION public.pos_tickets(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_vendedor text DEFAULT NULL::text, p_medio text DEFAULT NULL::text, p_estado text DEFAULT NULL::text, p_letra text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190: su local y, sin «Ver otros días», hoy
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with v as (
+      select x.* from pos_ventas x
+       where x.dia between p_desde and p_hasta
+         and x.prueba = coalesce(p_prueba, false)
+         and (p_local is null or x.local_id = p_local)
+         and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))
+         and (p_estado is null or x.estado = p_estado)
+         and (p_letra is null or x.letra = p_letra)
+         and (p_medio is null or exists (select 1 from pos_venta_pagos g where g.venta_id = x.id and g.medio = p_medio))
+    ),
+    /* SQL 295: lo pagado con Gift Card de cada venta. No suma en los totales ni en el tráfico (ya se contó al vender la
+       tarjeta); la venta pagada entera con una Gift Card no cuenta como venta. La lista la muestra igual, con su total. */
+    gc as (
+      select p.venta_id, sum(p.monto) monto
+        from pos_venta_pagos p where p.medio = 'giftcard' group by p.venta_id
+    ),
+    w as (
+      select v.*, coalesce(gc.monto, 0) gc_monto, (gc.monto is null or v.total > gc.monto) cuenta,
+             case when gc.monto is not null and v.total > 0 then round(gc.monto * v.neto / v.total, 2) else 0 end gc_neto,
+             case when gc.monto is not null and v.total > 0 then round(gc.monto * v.descuentos / v.total, 2) else 0 end gc_desc
+        from v left join gc on gc.venta_id = v.id
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', v.id, 'numero', v.numero, 'serie', v.serie, 'prueba', v.prueba, 'fecha', v.fecha, 'local', l.nombre, 'local_id', v.local_id,
+                 'vendedor', v.vendedor, 'cliente', coalesce(v.cliente_nombre, 'Consumidor final'), 'letra', v.letra,
+                 'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = v.id),
+                 'estado', v.estado, 'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
+                 'factura', v.factura, 'socio', v.socio is not null,
+                 'nc', (select n.numero from pos_notas_credito n where n.venta_id = v.id)) order by v.fecha desc)   -- SQL 205
+          from (select * from v order by fecha desc limit 500) v join orden_locales l on l.id = v.local_id), '[]'::jsonb),
+      /* SQL 171: el panel de la derecha de BlueSoft. Tráfico = ventas + ventas fallidas + No Compras (Mauricio,
+         24/10: los que entraron y no compraron son las dos cosas, separadas) del período, de la sucursal y del
+         vendedor elegidos; los demás filtros (comprobante, forma de pago, estado) no cambian a quién entró.
+         Conversión = ventas ÷ tráfico. Las pruebas cuentan sólo con las pruebas (los No Compra no tienen).
+         SQL 295: la venta pagada entera con una Gift Card no es una venta (la que se contó fue la de la tarjeta). */
+      'trafico', (
+        select jsonb_build_object('ventas', t.ventas, 'fallidas', f.n, 'perdido', f.perdido, 'no_compras', nc.n,
+                                  'trafico', t.ventas + f.n + nc.n,
+                                  'conversion', case when t.ventas + f.n + nc.n > 0 then round(t.ventas::numeric / (t.ventas + f.n + nc.n), 4) end)
+          from (select count(*) ventas from pos_ventas x left join gc on gc.venta_id = x.id
+                 where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false) and x.estado = 'cobrada'
+                   and (gc.monto is null or x.total > gc.monto)
+                   and (p_local is null or x.local_id = p_local)
+                   and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))) t,
+               (select count(*) n, coalesce(sum(y.monto), 0) perdido from pos_fallidas y
+                 where y.dia between p_desde and p_hasta and y.prueba = coalesce(p_prueba, false)
+                   and (p_local is null or y.local_id = p_local)
+                   and (p_vendedor is null or lower(y.vendedor) = lower(p_vendedor))) f,
+               (select count(*) n from registros r
+                 where not coalesce(p_prueba, false)
+                   and r.creado >= (p_desde::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and r.creado < ((p_hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and (p_local is null or lower(trim(r.sucursal)) = (select lower(trim(l.codigo)) from orden_locales l where l.id = p_local))
+                   and (p_vendedor is null or lower(trim(r.vendedor)) = lower(trim(p_vendedor)))) nc),
+      /* SQL 295: sin lo pagado con Gift Card; «giftcard» es eso, para mostrarlo aparte. */
+      'totales', (select jsonb_build_object(
+                    'tickets', count(*) filter (where estado = 'cobrada' and cuenta),
+                    'anulados', count(*) filter (where estado = 'anulada'),
+                    'productos', coalesce(sum(cantidad) filter (where estado = 'cobrada' and cuenta), 0),
+                    'neto', coalesce(sum(neto - gc_neto) filter (where estado = 'cobrada'), 0),
+                    'descuentos', coalesce(sum(descuentos - gc_desc) filter (where estado = 'cobrada'), 0),
+                    'total', coalesce(sum(total - gc_monto) filter (where estado = 'cobrada'), 0),
+                    'giftcard', coalesce(sum(gc_monto) filter (where estado = 'cobrada'), 0)) from w),
+      /* Lo cobrado por comprobante: {"A": …, "B": …, "X": …}. SQL 295: sin lo pagado con Gift Card. */
+      'por_letra', (select coalesce(jsonb_object_agg(z.letra, z.total), '{}'::jsonb)
+                      from (select letra, sum(total - gc_monto) total from w where estado = 'cobrada' group by letra) z),
+      'mas', (select count(*) > 500 from v),
+      /* SQL 260: las notas de crédito del período (por su día) como renglones propios, como en BlueSoft. Con los mismos
+         filtros que la venta que anulan (sucursal, vendedor, comprobante, forma de pago); con «Cobradas», ninguna.
+         No cambian ningún total: la venta anulada ya no suma. */
+      'notas', (
+        select coalesce(jsonb_agg(jsonb_build_object(
+                 'venta_id', z.venta_id, 'numero', z.numero, 'prueba', z.prueba, 'letra', z.letra, 'fecha', z.fecha,
+                 'local', l.nombre, 'local_id', z.local_id, 'vendedor', x.vendedor, 'cliente', coalesce(x.cliente_nombre, 'Consumidor final'),
+                 'socio', x.socio is not null,
+                 'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = x.id),
+                 'total', x.total, 'cantidad', x.cantidad, 'venta_numero', x.numero, 'venta_serie', x.serie,
+                 'arca', z.arca, 'cae', z.cae) order by z.fecha desc), '[]'::jsonb)
+          from (select n.* from pos_notas_credito n join pos_ventas y on y.id = n.venta_id
+                 where n.dia between p_desde and p_hasta
+                   and n.prueba = coalesce(p_prueba, false)
+                   and (p_local is null or n.local_id = p_local)
+                   and (p_vendedor is null or lower(y.vendedor) = lower(p_vendedor))
+                   and (p_estado is null or p_estado = 'anulada')
+                   and (p_letra is null or n.letra = p_letra)
+                   and (p_medio is null or exists (select 1 from pos_venta_pagos g where g.venta_id = y.id and g.medio = p_medio))
+                 order by n.fecha desc limit 500) z
+          join pos_ventas x on x.id = z.venta_id
+          join orden_locales l on l.id = z.local_id)
+    )
+  );
+end $function$;
+COMMENT ON FUNCTION public.pos_tickets(date,date,uuid,text,text,text,text,boolean) IS 'SQL 295: los totales y el tráfico sin lo pagado con Gift Card (dato «giftcard» aparte); la lista, igual.';
+
+-- ── 3) Ventas del sistema (el cron «ventas-pos») ──────────────────────────
+CREATE OR REPLACE FUNCTION public.ventas_pos_hechos(p_local uuid, p_desde date, p_hasta date)
+ RETURNS TABLE(fecha date, vid bigint, venta numeric, compra integer, ticket integer, prendas integer, perfumes integer, boxer integer, fallida integer, efectivo numeric, descuento numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with vend as (
+    select v.id, v.nombre, p.nombre as persona, e.vendedor as apodo
+      from ventas_vendedores v
+      left join orden_personas p on p.id = v.persona_id
+      left join equipo e on e.id = p.equipo_id
+     where v.local_id = p_local and v.mes = ventas_mes_de(p_desde) and v.nombre <> ''),
+  claves as (
+    -- El nombre del POS es el del equipo del local (el apodo de la Carga); si no, el de su usuario o el de Ventas.
+    select distinct on (k) k, id from (
+      select orden_nombre_comparable(apodo) as k, id, 1 as pri from vend
+      union all select orden_nombre_comparable(persona), id, 2 from vend
+      union all select orden_nombre_comparable(nombre), id, 3 from vend) q
+     where k <> '' order by k, pri, id),
+  h as (
+    /* SQL 295: lo pagado con una Gift Card no suma (se contó al vender la tarjeta); la venta pagada entera con una no es
+       una venta (ni compra, ni ticket, ni prendas). */
+    select v.dia as fecha, v.vendedor, v.total - coalesce(gc.monto, 0) as venta, 1 as compra, 1 as ticket, v.cantidad as prendas,
+           coalesce((select sum(i.cantidad) from pos_venta_items i join pos_articulos a on a.codigo = i.codigo
+                      where i.venta_id = v.id and lower(btrim(a.familia)) like 'perfume%'), 0)::int as perfumes,
+           coalesce((select sum(i.cantidad) from pos_venta_items i join pos_articulos a on a.codigo = i.codigo
+                      where i.venta_id = v.id and lower(btrim(a.familia)) like 'boxer%'), 0)::int as boxer,
+           0 as fallida,
+           coalesce((select sum(pg.monto) from pos_venta_pagos pg where pg.venta_id = v.id and pg.medio = 'efectivo'), 0) as efectivo,
+           v.descuentos - case when gc.monto is not null and v.total > 0 then round(gc.monto * v.descuentos / v.total, 2) else 0 end as descuento
+      from pos_ventas v
+      left join lateral (select sum(pg.monto) as monto from pos_venta_pagos pg where pg.venta_id = v.id and pg.medio = 'giftcard') gc on true
+     where v.local_id = p_local and v.dia between p_desde and p_hasta and not v.prueba and v.estado = 'cobrada'
+       and (gc.monto is null or v.total > gc.monto)
+    union all
+    select c.dia, c.vendedor, c.diferencia, (c.diferencia > 0)::int, 0, 0, 0, 0, 0,
+           coalesce((select sum(pg.monto) from pos_cambio_pagos pg where pg.cambio_id = c.id and pg.medio = 'efectivo'), 0),
+           c.descuentos
+      from pos_cambios c
+     where c.local_id = p_local and c.dia between p_desde and p_hasta and not c.prueba and c.estado = 'hecho'
+    union all
+    select f.dia, f.vendedor, 0, 0, 0, 0, 0, 0, 1, 0, 0
+      from pos_fallidas f
+     where f.local_id = p_local and f.dia between p_desde and p_hasta and not f.prueba)
+  select h.fecha, k.id, h.venta, h.compra, h.ticket, h.prendas, h.perfumes, h.boxer, h.fallida, h.efectivo, h.descuento
+    from h left join claves k on k.k = orden_nombre_comparable(h.vendedor)
+$function$;
+COMMENT ON FUNCTION public.ventas_pos_hechos(uuid,date,date) IS 'SQL 295: lo pagado con Gift Card no suma en Ventas; la venta pagada entera con una no es una venta.';
+
+NOTIFY pgrst, 'reload schema';

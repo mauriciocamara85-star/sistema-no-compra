@@ -4795,7 +4795,7 @@
           '<button type="button" class="pos-link tkl-ver" data-ir="fallida">Ver las ventas fallidas</button>' +
           /* Mauricio (6/11): "en la columna derecha queda mucho espacio abajo". Lo que vendió cada uno, en el alto que queda. */
           '<div class="tkl-vend-caja" id="tkVendP" hidden><section class="tkl-vend" aria-label="Lo que vendió cada vendedor"' +
-            ' title="Lo cobrado por cada vendedor en el período y la sucursal elegidos (sin las anuladas). Tocá un nombre para ver sólo sus tickets; tocalo otra vez para ver todos.">' +
+            ' title="Lo cobrado por cada vendedor en el período y la sucursal elegidos (sin las anuladas). Lo pagado con Gift Card no suma: la tarjeta suma para quien la vendió. Tocá un nombre para ver sólo sus tickets; tocalo otra vez para ver todos.">' +
             '<h4><span>Por vendedor</span><span>Tickets</span></h4><div class="tkl-vend-l" id="tkVendL"></div></section></div>' +
         '</aside>' +
       '</div>' +
@@ -4910,20 +4910,27 @@
     }
     function pintarTickets(d, cb) {
       var t = d.totales || {}, pl = d.por_letra || {}, n = Number(t.tickets) || 0;
+      /* SQL 295 (Mauricio, 13/11: «sólo una tiene que sumar, y tiene que ser la de la venta de gift»): los totales vienen sin
+         lo pagado con Gift Card (la tarjeta ya sumó el día que se vendió); la venta pagada entera con una no es un ticket.
+         La lista la muestra igual, con su total: lo pagado con Gift Card va aparte, para que la cuenta cierre. */
+      var gc = cent(t.giftcard || 0);
       var letras = ['A', 'B', 'X'].filter(function (l) { return pl[l] != null; });
       /* Los cambios, al lado de los comprobantes: cuántos y lo cobrado en ellos (el de $0 cuenta, pero no suma). */
-      var porLetra = letras.length || cb.hechos ? '<p class="pos-por-letra">' + letras.map(function (l) {
+      var porLetra = letras.length || cb.hechos || gc ? '<p class="pos-por-letra">' + letras.map(function (l) {
         return '<span>' + esc(LETRAS[l]) + ' <b>' + plata(cent(pl[l])) + '</b></span>'; }).join('') +
         (cb.hechos ? '<span title="Lo cobrado en los cambios (la diferencia): ya está sumado en el Total">' + (cb.hechos === 1 ? '1 cambio' : cb.hechos + ' cambios') +
-          ' <b>' + plata(cb.dif) + '</b></span>' : '') + '</p>' : '';
+          ' <b>' + plata(cb.dif) + '</b></span>' : '') +
+        (gc ? '<span title="No está sumado en el Total: la Gift Card sumó el día que se vendió">Con Gift Card <b>' + plata(gc) + '</b></span>' : '') + '</p>' : '';
       pintarTrafico(d.trafico || null);
       /* La plata de los cambios (lo cobrado de diferencia) va en Neto, Descuentos y Total, como en el cierre de caja («Ventas
          totales del día»). Tickets, Productos, el ticket promedio y las prendas por ticket siguen siendo de las ventas. */
       var sinCb = cb.hechos ? ' (sin los cambios)' : '';
-      $('tkPie').innerHTML = caja('Tickets', n, '', 'Las ventas cobradas' + sinCb) + caja('Productos', t.productos || 0, '', 'Las prendas de las ventas' + sinCb) +
+      $('tkPie').innerHTML = caja('Tickets', n, '', 'Las ventas cobradas' + sinCb + (gc ? '; las pagadas enteras con Gift Card no cuentan' : '')) +
+        caja('Productos', t.productos || 0, '', 'Las prendas de las ventas' + sinCb + (gc ? '; las de las pagadas enteras con Gift Card no cuentan' : '')) +
         caja('Neto', plata(cent(t.neto || 0) + cb.dif + cb.desc)) +
         caja('Descuentos', plata(cent(t.descuentos || 0) + cb.desc)) + caja('Total', plata(cent(t.total || 0) + cb.dif), 'fuerte',
-          cb.hechos ? 'Las ventas ' + plata(cent(t.total || 0)) + ' + lo cobrado en los cambios ' + plata(cb.dif) : '') +
+          (cb.hechos ? 'Las ventas ' + plata(cent(t.total || 0)) + ' + lo cobrado en los cambios ' + plata(cb.dif) : gc ? 'Las ventas' : '') +
+          (gc ? ' (sin lo pagado con Gift Card, ' + plata(gc) + ': la tarjeta sumó el día que se vendió)' : '')) +
         caja('Ticket promedio', n ? plata(Math.round(cent(t.total) / n)) : '—', '', 'Lo vendido sobre los tickets de venta' + sinCb) +
         caja('Prendas por ticket', n ? decimal(Number(t.productos) / n) : '—', '', 'Las prendas sobre los tickets de venta' + sinCb) +
         caja('Anulados', (Number(t.anulados) || 0) + cb.anulados) + porLetra;
@@ -5552,7 +5559,8 @@
     var por = leer('pos_vendedores_vista') || 'vendedor';
     if (!VV_POR.some(function (x) { return x[0] === por; })) por = 'vendedor';
     c.innerHTML = cabeza('Ventas por vendedor' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
-        'Lo que vendió cada uno: las ventas cobradas, como los totales de Tickets (las anuladas y los cambios no cuentan).',
+        /* SQL 295: lo pagado con una Gift Card no suma (la tarjeta ya sumó para quien la vendió). */
+        'Lo que vendió cada uno: las ventas cobradas, como los totales de Tickets (no cuentan las anuladas, los cambios ni lo pagado con Gift Card: la tarjeta suma para quien la vendió).',
         '<button type="button" class="btn btn-sec btn-chico" id="vvBajar" disabled>Bajar para Excel</button>') +
       '<div class="pos-filtros"><div id="vvPer"></div>' +
         campo('', 'Sucursal', '<select id="vvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +

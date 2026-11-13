@@ -1386,3 +1386,8 @@ delete from cron.job_run_details where start_time < now() - interval '7 days';
 
 -- Y aparte, una vez después de correrlo (13/11: el historial bajó de 41 MB a 6,4 MB y la base de 143 a 108 MB):
 -- vacuum full cron.job_run_details;
+
+-- ════════════════════════════════════════════════════════════════════
+-- SQL 295 (13/11/2026): ventas_pos_hechos ya no suma lo pagado con una Gift Card (la tarjeta sumó cuando se vendió); la
+-- venta pagada entera con una no es una venta. La función nueva está al final de supabase/pos.sql (junto con
+-- pos_ventas_vendedor y pos_tickets, que cambian por lo mismo). App Orden: correr-en-supabase-295.sql / deshacer-295.sql.
