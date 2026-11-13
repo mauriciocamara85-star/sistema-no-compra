@@ -1295,3 +1295,94 @@ end $function$;
 -- ── Cada 5 minutos, y una vez ahora ───────────────────────────────────────
 select cron.schedule('ventas-pos', '*/5 * * * *', 'select ventas_pos_cargar()');
 select ventas_pos_cargar();
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SQL 293 (13/11/2026) — VENTAS DEL POS CADA MINUTO + LIMPIEZA DEL HISTORIAL
+   ══════════════════════════════════════════════════════════════════════════
+   Lautaro (Rivadavia), 13/11 17:19: «no se ponen las ventas en efectivo
+   automáticamente, sólo lee las de Mercado Pago y tarjeta». Sí se ponían: la
+   X 8 en efectivo (17:15:43) entró en la pasada de las 17:20 y él miró a las
+   17:19. Para que no vuelva a pasar, Mauricio: «son las dos» (cada minuto y
+   la limpieza del historial).
+
+   Qué hace:
+     1) El cron «ventas-pos» (SQL 288) pasa de cada 5 minutos a cada minuto.
+        Cada pasada tarda ~0,2 s (medido el 13/11: 203 pasadas, 0 fallas).
+        Con los 14 locales en el POS cada pasada va a tardar más: medirlo ahí.
+     2) La traba (ventas_pos_traba) avisa «en un minuto se actualiza solo».
+     3) Limpieza diaria del historial del cron (cron.job_run_details): a las
+        04:45 (07:45 UTC) borra lo de más de 7 días. Ese historial nunca se
+        limpiaba: el 13/11 era la tabla más grande de la base (41 MB, 215.577
+        renglones desde el 22/09). Es sólo el registro de cada pasada (hora y
+        si anduvo); ninguna pantalla ni función lo lee. Corre una vez al final
+        (borra ~179.000 renglones).
+
+   Después de correrlo, APARTE (no puede ir dentro de una transacción):
+        vacuum full cron.job_run_details;
+     devuelve a la base el lugar que liberó el borrado (sin eso queda
+     reservado para reusarse, pero el tamaño de la base no baja).
+
+   Se deshace con deshacer-293.sql (lo borrado del historial no vuelve). */
+
+do $$ begin
+  if not exists (select 1 from cron.job where jobname = 'ventas-pos') then
+    raise exception 'Falta el SQL 288 (no existe el cron ventas-pos): no corro nada.';
+  end if;
+  if exists (select 1 from cron.job where jobname = 'limpiar-historial-cron') then
+    raise exception 'El SQL 293 ya está corrido (existe el cron limpiar-historial-cron).';
+  end if;
+end $$;
+
+-- ── 1) Ventas del POS cada minuto (mismo nombre: cambia el horario del que ya está) ──
+select cron.schedule('ventas-pos', '* * * * *', 'select ventas_pos_cargar()');
+
+-- ── 2) La traba: «en un minuto se actualiza solo» ─────────────────────────
+create or replace function public.ventas_pos_traba()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare v_local uuid; v_mes date; v_fecha date; v_desde date;
+begin
+  if current_setting('ventas.pos', true) = 'si' then return new; end if;
+  if tg_table_name = 'ventas_diarias' then
+    select local_id into v_local from ventas_vendedores where id = new.vendedor_id;
+    v_fecha := new.fecha;
+  elsif tg_table_name = 'ventas_trafico' then
+    v_local := new.local_id;
+    v_fecha := new.fecha;
+  elsif tg_table_name = 'ventas_semanal' then
+    /* Los días trabajados se siguen cargando; lo demás de la semana, no. */
+    if tg_op = 'INSERT' and coalesce(new.trafico, new.conversion, new.ticket, new.perfumes, new.boxer, new.pxt) is null then return new; end if;
+    if tg_op = 'UPDATE' and (new.trafico, new.conversion, new.ticket, new.perfumes, new.boxer, new.pxt)
+                            is not distinct from (old.trafico, old.conversion, old.ticket, old.perfumes, old.boxer, old.pxt) then return new; end if;
+    select local_id, mes into v_local, v_mes from ventas_vendedores where id = new.vendedor_id;
+    v_fecha := ventas_pos_semana_fin(v_mes, new.semana);
+  elsif tg_table_name = 'ventas_mes' then
+    if (new.efectivo, new.descuento, new.q_lineas, new.q_prendas) is not distinct from (old.efectivo, old.descuento, old.q_lineas, old.q_prendas) then
+      return new;
+    end if;
+    v_local := new.local_id;
+  end if;
+  select desde into v_desde from ventas_pos where local_id = v_local;
+  if v_desde is null then return new; end if;
+  if tg_table_name = 'ventas_mes' then
+    if v_desde > new.mes then return new; end if;
+  elsif v_fecha < v_desde then
+    return new;
+  end if;
+  raise exception 'ventas: eso lo carga el POS solo (desde el %): se corrige en el POS', to_char(v_desde, 'DD/MM')
+    using hint = 'Si está mal, corregí el ticket, el cambio o la venta fallida en el POS: en un minuto se actualiza solo.';
+end $function$;
+
+-- ── 3) El historial del cron: cada día, sólo los últimos 7 días ───────────
+select cron.schedule('limpiar-historial-cron', '45 7 * * *',
+  $cr$delete from cron.job_run_details where start_time < now() - interval '7 days'$cr$);
+
+-- Y una vez ahora.
+delete from cron.job_run_details where start_time < now() - interval '7 days';
+
+-- Y aparte, una vez después de correrlo (13/11: el historial bajó de 41 MB a 6,4 MB y la base de 143 a 108 MB):
+-- vacuum full cron.job_run_details;

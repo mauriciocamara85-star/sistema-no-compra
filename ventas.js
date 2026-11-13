@@ -351,7 +351,8 @@
   function editaAdmin() { return edita() && esAdmin(); }
   function ambAdmin(cl) { return editaAdmin() ? 'amb' + (cl ? ' ' + cl : '') : 'fijo' + (cl ? ' ' + cl : ''); }
 
-  /* SQL 288 (Mauricio, 13/11): el local que usa el POS se carga solo desde ese día, cada 5 minutos: la venta de cada
+  /* SQL 288 (Mauricio, 13/11): el local que usa el POS se carga solo desde ese día, cada minuto (SQL 293; antes cada
+     5 minutos, y Lautaro creyó que el efectivo no entraba porque miró antes de la pasada): la venta de cada
      vendedor, el tráfico del día (compras + ventas fallidas), el Informe Vendedor de cada semana que tenga algún día
      desde ahí y, en un mes entero con el POS, el efectivo, el descuento y Q líneas · Q prendas. Esas celdas van fijas
      y en azul ("se calcula solo"); la base tampoco las acepta a mano. Sin el SQL 288, D.pos no viene: todo a mano. */
@@ -369,7 +370,7 @@
   function avisoPos(que) {
     var p = posDesde(), u = ST.D.pos && ST.D.pos.ultima;
     return '<p class="aviso-carga aviso-pos">🔄  ' + esc(ST.D.local.nombre) + ' se carga sola con el POS desde el ' + p.slice(8, 10) + '/' + p.slice(5, 7) +
-      ' (' + que + '), cada 5 minutos' + (u ? ': la última vez, el ' + esc(fechaHora(u)) : '') +
+      ' (' + que + '), cada minuto' + (u ?': la última vez, el ' + esc(fechaHora(u)) : '') +
       '. Lo azul no se escribe: si algo está mal, se corrige en el POS (el ticket, el cambio o la venta fallida).</p>';
   }
 
