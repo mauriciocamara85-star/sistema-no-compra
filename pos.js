@@ -4970,7 +4970,7 @@
             /* SQL 205: la anulada con una nota de crédito dice cuál. */
             '<td class="c">' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
                 esc(refNota({ numero: f.nc, prueba: f.prueba })) + '</span>' : an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
-            '<td class="c">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
+            '<td class="c">' + f.cantidad + '</td>' + celdaTotalTk(f) +
             /* SQL 274 y 276: con CAE («De prueba» si es del ARCA de prueba), «Sin CAE» si le toca y no lo tiene (se pide desde el
                ticket), y si no, la hace BlueSoft. */
             (f.letra === 'X' ? '<td class="apagado c" title="La X es un comprobante interno">No va</td>' :
@@ -5039,6 +5039,17 @@
         '<td class="c">' + (cant == null ? '<span class="apagado" title="Las prendas, en el cambio (tocalo)">—</span>' : cant) + '</td>' +
         '<td class="n tachar"><b>' + plata(cent(f.diferencia)) + '</b></td>' +
         '<td class="apagado c" title="' + (f.prueba ? 'Es una prueba' : 'El cambio es un comprobante interno: no va a ARCA') + '">No va</td></tr>';
+    }
+    /* SQL 298 (Mauricio, 14/11: «no tendría que figurar 80 [mil]… eso no suma; tendría que figurar cero. Si hay una diferencia,
+       2.000»): la venta pagada con Gift Card muestra en «Total» sólo lo pagado de más, como un cambio (la Gift Card sumó el día
+       que se vendió); el ticket abierto sigue con su total. Sin el SQL 298 (la fila sin «giftcard»), la pagada ENTERA con Gift
+       Card igual va en $0 y la mixta muestra el total, como antes. */
+    function celdaTotalTk(f) {
+      var tot = cent(f.total), soloGc = (f.medios || []).length > 0 && f.medios.every(function (m) { return m === 'giftcard'; });
+      var gc = f.giftcard != null ? Math.min(cent(f.giftcard), tot) : soloGc ? tot : 0;
+      if (!gc) return '<td class="n tachar"><b>' + plata(tot) + '</b></td>';
+      return '<td class="n tachar" title="' + esc('Ticket de ' + plata(tot) + ': lo pagado con Gift Card (' + plata(gc) + ') no suma, la tarjeta sumó cuando se vendió.') + '">' +
+        '<b>' + plata(tot - gc) + '</b></td>';
     }
     /* SQL 212: cuando llegan las ventas hechas sin internet, la lista se vuelve a traer. */
     S.recargar = function () { if (S.vista === 'tickets' && $('tkLista')) cargar(); };
