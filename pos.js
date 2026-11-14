@@ -15906,6 +15906,7 @@
   }
 
   function pintarRn(marcar) {
+    if (RN_SG) pintarParcialSg();   // v516: los parciales del módulo (stock general)
     if ($('rnFilas')) { pintarRnBs(marcar); return; }   // el remito nuevo, como el de BlueSoft (7/11)
     var z = $('rnLista');
     if (!z) return;
@@ -16512,8 +16513,9 @@
         campo('', 'Quién lo pasa', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Tu nombre"><datalist id="rnVend">' +
           vendedoresDe(g.local).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: faltan las etiquetas de dos" autocomplete="off">') +
-      '</div>' + htmlProdRn();
+      '</div>' + htmlProdRn() + htmlParcialSg();   // v516: los parciales
     engancharIr(c);
+    engancharParcialSg();
     $('rnResp').value = RN.responsable || '';
     $('rnObs').value = RN.observaciones || '';
     $('rnResp').oninput = function () { RN.responsable = this.value; guardarBorradorRn(); };
@@ -16544,7 +16546,7 @@
         return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', pasás ' + l.cantidad; }).join('; ') +
         (faltan.length > 4 ? '…' : '') + '). Si lo pasás igual, ahí queda en negativo.' : '';
     }, function () { return ''; }).then(function (extra) {
-      if (!confirm('¿Pasar ' + (g.mod.otro ? '«' + lugar + '»' : 'el ' + nom) + ' con ' + num(unidades) + (unidades === 1 ? ' prenda' : ' prendas') + ' a «' + g.nuevo.nombre + '»?' + extra)) return;
+      if (!confirm('¿Pasar ' + (g.mod.otro ? '«' + lugar + '»' : 'el ' + nom) + ' con ' + num(unidades) + (unidades === 1 ? ' prenda' : ' prendas') + ' a «' + g.nuevo.nombre + '»?' + extra + ojoParcialesSg())) return;
       S.guardando = true;
       var b = $('rnGuardar');
       if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
@@ -16565,6 +16567,102 @@
         avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : sinFuncion(e) || /column .*modulo_id/.test(e && e.message) ? 'Todavía falta correr el SQL 222 (el stock general) en Supabase.' : mensajeDe(e));
       });
     });
+  }
+
+  /* v516 (Mauricio, 14/11: «En vez de contarlas todas de una, empiezo por el perchero, cuento 10… Después sigo con un estante
+     de 5… el stock del módulo tiene que ser 15… Si hay algún error lo encontrás en ese estante»; «a medida que cierro uno, se
+     me abre otro»): los parciales del módulo. Escribe cuántas prendas contó con la mano y el sistema lo compara con lo
+     escaneado desde el parcial anterior (el total de ahora menos lo de los parciales cerrados). A ciegas, como los testigos:
+     lo escaneado del parcial no se ve hasta comparar. Si no coincide, el parcial sigue abierto y se mira de nuevo a cada
+     escaneo: al escanear lo que faltaba (o sacar lo de más) se cierra solo; o «Cerrarlo igual» (queda con la ✗). Sólo en la
+     pantalla: van en el borrador del módulo (RN.parciales: esc = escaneadas, cont = contadas, ok) y no van a la base. */
+  var SG_PA_DIF = false;   // el último «Cerrar el parcial» no coincidió
+  function parcialSg() {
+    var cer = (RN && RN.parciales) || [], ya = 0, tot = 0;
+    cer.forEach(function (p) { ya += p.esc; });
+    (RN ? RN.lineas : []).forEach(function (l) { tot += l.cantidad; });
+    return { cer: cer, ya: ya, esc: tot - ya, tot: tot };
+  }
+  function htmlParcialSg() {
+    return '<div class="sg-parcial" id="sgParcial" role="region" aria-label="Los parciales del módulo">' +
+      '<div class="sg-pa-fila"><b class="sg-pa-n" id="sgPaN">Parcial 1</b>' +
+        campo('sg-pa-cont', 'Contaste', '<input type="text" id="sgPaCont" inputmode="numeric" maxlength="4" autocomplete="off" aria-describedby="sgPaMsg">') +
+        '<button type="button" class="btn btn-sec btn-chico" id="sgPaOk">Cerrar el parcial</button>' +
+        '<span class="sg-pa-msg" id="sgPaMsg" aria-live="polite"></span></div>' +
+      '<div class="sg-pa-lista" id="sgPaLista"></div></div>';
+  }
+  function engancharParcialSg() {
+    var i = $('sgPaCont');
+    SG_PA_DIF = false;
+    if (!i) return;
+    i.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); cerrarParcialSg(); } };
+    i.oninput = function () { if (SG_PA_DIF) { SG_PA_DIF = false; avisoParcialSg('', ''); } };
+    $('sgPaOk').onclick = function () { cerrarParcialSg(); };
+    pintarParcialSg();
+    if (!parcialSg().cer.length) avisoParcialSg('', 'Contá un perchero o un estante con la mano, escribí cuántas son y cerralo: el sistema lo compara con lo que escaneaste.');
+  }
+  function avisoParcialSg(tipo, html) { var m = $('sgPaMsg'); if (m) { m.className = 'sg-pa-msg' + (tipo ? ' ' + tipo : ''); m.innerHTML = html; } }
+  function difParcialSg(es, co) {
+    var d = Math.abs(es - co);
+    return 'Escaneaste ' + num(es) + ' y contaste ' + num(co) + ': ' +
+      (es < co ? (d === 1 ? 'falta escanear una' : 'faltan escanear ' + num(d)) + ' en este parcial.' : (d === 1 ? 'hay una de más' : 'hay ' + num(d) + ' de más') + ' (¿pasaste dos veces la misma?).');
+  }
+  /** Después de comparar, el foco vuelve a «Producto» (la pistola escribe donde está el foco). En el celular no: abriría el teclado. */
+  function alProductoSg() {
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) { var p = $('rnProd'); if (p) p.focus(); }
+    else if (document.activeElement && document.activeElement.id === 'sgPaCont') document.activeElement.blur();
+  }
+  /** A cada cambio de lo cargado (pintarRn) y al cerrar: el número del parcial y los cerrados; si el último no coincidió, lo mira de nuevo. */
+  function pintarParcialSg() {
+    if (!$('sgParcial')) return;
+    var p = parcialSg(), v = $('sgPaCont').value.trim(), n = /^\d+$/.test(v) ? Number(v) : null;
+    $('sgPaN').textContent = 'Parcial ' + (p.cer.length + 1);
+    $('sgPaLista').innerHTML = !p.cer.length ? '' : p.cer.map(function (x, i) {
+        return '<span class="sg-pa-chip ' + (x.ok ? 'ok' : 'mal') + '"' + (x.ok ? '' : ' title="Escaneaste ' + x.esc + ' y contaste ' + x.cont + '"') + '>' +
+          (i + 1) + ': ' + num(x.esc) + (x.ok ? ' ✓' : ' ✗') + '</span>';
+      }).join('') + '<span class="sg-pa-tot">' + num(p.ya) + (p.ya === 1 ? ' prenda' : ' prendas') + ' en parciales cerrados</span>' +
+      '<button type="button" class="pos-link" id="sgPaAbrir">Abrir de nuevo el ' + p.cer.length + '</button>';
+    var ab = $('sgPaAbrir');
+    if (ab) ab.onclick = function () {
+      RN.parciales = parcialSg().cer.slice(0, -1); SG_PA_DIF = false; guardarBorradorRn(); pintarParcialSg();
+      avisoParcialSg('', 'El parcial ' + (RN.parciales.length + 1) + ' quedó abierto otra vez: contalo y cerralo.');
+    };
+    if (SG_PA_DIF && n != null) {
+      if (n === p.esc) { cerrarParcialSg(false, true); return; }
+      avisoParcialSg('mal', esc(difParcialSg(p.esc, n)) + ' <button type="button" class="pos-link" id="sgPaIgual">Cerrarlo igual</button>');
+      $('sgPaIgual').onclick = function () { cerrarParcialSg(true); };
+    }
+  }
+  /** «Cerrar el parcial» (o Enter en «Contaste»). igual: cerrarlo aunque no coincida (queda con la ✗). ahora: se cerró solo al corregir. */
+  function cerrarParcialSg(igual, ahora) {
+    var i = $('sgPaCont'), v = i.value.trim(), p = parcialSg();
+    if (!/^\d+$/.test(v)) {
+      var etiqueta = /[a-z]/i.test(v);   // un disparo de la pistola en el campo equivocado
+      i.value = ''; SG_PA_DIF = false;
+      avisoParcialSg('mal', etiqueta ? 'Eso parece una etiqueta: se escanea en «Producto». Acá va cuántas prendas contaste con la mano.' : 'Escribí cuántas prendas contaste con la mano.');
+      if (etiqueta) alProductoSg(); else i.focus();
+      return;
+    }
+    var n = Number(v);
+    if (!n && !p.esc) { avisoParcialSg('mal', 'Todavía no escaneaste nada en este parcial.'); alProductoSg(); return; }
+    if (n !== p.esc && !igual) { SG_PA_DIF = true; pintarParcialSg(); alProductoSg(); return; }
+    RN.parciales = p.cer.concat([{ esc: p.esc, cont: n, ok: n === p.esc }]);
+    SG_PA_DIF = false; i.value = '';
+    guardarBorradorRn();
+    pintarParcialSg();
+    var k = RN.parciales.length;
+    avisoParcialSg(n === p.esc ? 'ok' : 'mal', n === p.esc ? 'Parcial ' + k + (ahora ? ': ahora sí, ' : ': ') + num(n) + ', coincide. Seguí con el ' + (k + 1) + '.'
+                                                       : 'El parcial ' + k + ' quedó cerrado sin coincidir. Seguí con el ' + (k + 1) + '.');
+    alProductoSg();
+  }
+  /** Al guardar el módulo, si usó los parciales: lo que quedó sin cerrar o sin coincidir (avisa, no frena). */
+  function ojoParcialesSg() {
+    var p = parcialSg(), mal = p.cer.filter(function (x) { return !x.ok; }).length, t = '';
+    if (!p.cer.length) return '';
+    if (p.esc > 0) t += '\n\nOjo: el parcial ' + (p.cer.length + 1) + ' no lo cerraste (' + (p.esc === 1 ? 'una prenda' : num(p.esc) + ' prendas') + ').';
+    if (p.esc < 0) t += '\n\nOjo: sacaste ' + (p.esc === -1 ? 'una prenda' : num(-p.esc) + ' prendas') + ' de parciales ya cerrados.';
+    if (mal) t += '\n\nOjo: ' + (mal === 1 ? 'un parcial no coincidió' : num(mal) + ' parciales no coincidieron') + '.';
+    return t;
   }
 
   /* ════════════════════════════════════════════════════════════════════
