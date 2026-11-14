@@ -1742,6 +1742,16 @@ button.dp-r[aria-pressed="true"] { background: var(--surface-2); box-shadow: ins
 .tg-elegido { margin: 6px 0 10px; font-size: 14px; }
 .tg-elegido:empty { display: none; }
 .pos-tabla tr.tg-vieja td { color: var(--txt-3); text-decoration: line-through; }
+/* v514: los testigos que sortea el sistema en el stock general, de a uno */
+.tg-sorteo { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 6px; }
+.tg-sorteo li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 14px; }
+.tg-sorteo li.tg-ahora { border-color: var(--warn); background: var(--warn-soft); }
+.tg-sorteo li.tg-si { border-color: transparent; background: var(--ok-soft); }
+.tg-sorteo li.tg-no { border-color: transparent; background: var(--bad-soft); }
+.tg-sorteo .tg-i { flex: 0 0 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface-2); font: 700 12px/20px var(--sans); text-align: center; color: var(--txt-2); }
+.tg-sorteo .tg-cual { flex: 1; min-width: 0; }
+.tg-sorteo .pill { flex: none; }
+.tg-otra { color: var(--bad-txt); }
 
 /* SQL 196: las ventas por productos. La lista con el Top 10 al costado (como Ventas por vendedor) y, al tocar un producto, sus ventas una por una con lo de cada talle y color. */
 /* Los filtros entran en un renglón a 1366 con el menú abierto; «Mostrar talle y color» va arriba, con el Excel. */
@@ -1912,8 +1922,6 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 
 /* ── SQL 222: el stock general (el cuadro de los módulos del croquis) ── */
 .sg-nota { margin: 0 0 10px; font-size: 13.5px; color: var(--txt-2); }
-.sg-de { margin: 0 0 8px; font-size: 14px; color: var(--txt-2); }
-.sg-de b { color: var(--txt); }
 .sg-avance { display: flex; align-items: center; gap: 12px; margin: 0 0 10px; }
 .sg-barra { display: flex; flex: 0 1 420px; height: 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
 .sg-barra i { display: block; height: 100%; }
@@ -1962,6 +1970,10 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .sg-fila .pos-f { width: 150px; }
 .sg-fin .pos-check { display: flex; margin: 2px 0 0; }
 .sg-fin .pos-pie { margin-top: 8px; justify-content: flex-start; }
+/* v514: el depósito origen y el destino, fijos al lado de la Sucursal (y en el módulo, los seis datos en una fila) */
+.sg-deps { display: contents; }
+.pos-filtros .pos-f.sg-empezo { min-width: 190px; }
+@media (min-width: 1000px) { .tk-datos.rn-datos.sg-datos > * { grid-column: span 2; } }
 @media (max-width: 520px) {
   .sg-avance { flex-wrap: wrap; }
   .sg-grilla { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
