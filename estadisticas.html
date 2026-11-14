@@ -890,14 +890,29 @@
   var rolAplicado = null, zonaAplicada = null, deUnLocalAplicado = null;
   function localFijo() {
     var y = persona.yo();
+    /* SQL 297: el que además cubre otro local elige entre los suyos (ver zonaCodigos). */
+    if (cubreCodigos()) { return ''; }
     /* SQL 135: el que además atiende clientes ve todos los locales, como Atención. */
     return y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion && y.local ? y.local : '';
+  }
+  /* SQL 297 (14/11): el vendedor o encargado que está en la planilla de Ventas de otro local
+     (nc_yo le trae 'cubre') ve el suyo y esos, de a uno, como el supervisor de varios locales;
+     primero el de esta compu (Karen, de San Justo Shopping, en la compu de San Justo). */
+  function cubreCodigos() {
+    var y = persona.yo();
+    if (!(y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion && y.local && y.cubre && y.cubre.length)) { return null; }
+    var cods = [y.local].concat(y.cubre.map(function (z) { return z.codigo; }));
+    var aca = persona.localDeLaCompu ? persona.localDeLaCompu() : '', i = cods.indexOf(aca);
+    if (i > 0) { cods.splice(i, 1); cods.unshift(aca); }
+    return cods;
   }
   /* SQL 141: el supervisor de varios locales ve los suyos, de a uno: el selector y la tabla
      traen sólo esos (nc_yo le trae 'zona', con el código de cada uno). */
   var zonaCod = null;
   function zonaCodigos() {
     var y = persona.yo();
+    var c = cubreCodigos();
+    if (c) { return c; }
     if (!(y && y.rol === 'supervisor' && !y.local && !y.tambien_atencion && y.zona && y.zona.length)) { return null; }
     return y.zona.map(function (z) { return z.codigo; });
   }

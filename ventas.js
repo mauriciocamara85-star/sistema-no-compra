@@ -259,9 +259,12 @@
     var guardado = leer(K_LOCAL), codCaja = String(leer('nc_caja_local') || '').trim().toUpperCase();
     var y = persona.yo(), elegido = null;
     function buscar(f) { for (var i = 0; i < ST.locales.length; i++) if (f(ST.locales[i])) return ST.locales[i]; return null; }
+    /* SQL 297: quien cubre otro local (está en su planilla) y está en la compu de ese local, abre ese. */
+    var aca = y && y.cubre && y.cubre.length && persona.localDeLaCompu ? String(persona.localDeLaCompu() || '').trim().toUpperCase() : '';
     /* El que eligió antes en este aparato; si no, el de la compu; si no, el de su usuario; si no, el primero. */
     elegido = buscar(function (l) { return l.id === guardado; }) ||
       (codCaja && caja() ? buscar(function (l) { return String(l.codigo || '').toUpperCase() === codCaja; }) : null) ||
+      (aca ? buscar(function (l) { return String(l.codigo || '').toUpperCase() === aca; }) : null) ||
       (y && y.local_id ? buscar(function (l) { return l.id === y.local_id; }) : null) ||
       ST.locales[0];
     if (!ST.local || ST.local.id !== elegido.id) ST.temp = null;

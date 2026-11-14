@@ -310,6 +310,8 @@ var persona = (function () {
     var clave = function () {
       return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion) +
         '|' + (_yo && _yo.zona ? _yo.zona.map(function (z) { return z.codigo; }).join(',') : '') +
+        /* SQL 297: y los locales donde cubre (su planilla de Ventas): Estadísticas y Ventas le abren esos también. */
+        '|' + (_yo && _yo.cubre ? _yo.cubre.map(function (z) { return z.codigo; }).join(',') : '') +
         /* SQL 190: si le prendieron (o apagaron) el POS, la barra y el acceso a pos.html cambian. */
         '|' + !!(_yo && _yo.pos) +
         /* SQL 229: lo mismo con la Gestión. */
@@ -1855,6 +1857,8 @@ var persona = (function () {
     ponerEnFicha: function (fn) { _enFicha = fn; },
     /** Hay una sesión en este aparato (aunque esté esperando el OK). */
     hay: function () { return !!(_ses && _yo); },
+    /** El código del local de este aparato: el de la llave de la compu o, si no, el elegido en la Carga ('' si ninguno). */
+    localDeLaCompu: codDelLocal,
     puede: puede,
     token: token,
     tokenSiHay: tokenSiHay,
