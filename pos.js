@@ -7628,7 +7628,10 @@
         /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
         '<p class="cj-res-pie">' + enLista([x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets')].concat(anuladasCaja(d.detalle),   // SQL 260: «y 1 nota de crédito»
           [nc ? nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : ''])) +
-          (cent((d.ventas || {}).giftcard || 0) ? '. Pagado con gift card: ' + p(d.ventas.giftcard) + ', ya sumado en las ventas' : '') +   // SQL 200: no es efectivo
+          /* SQL 200: no es efectivo. SQL 296 (Mauricio, 13/11: «también tiene que dejar de sumar en las ventas totales, que
+             sería como un cambio»): no suma en las ventas, la Gift Card sumó el día que se vendió. */
+          (cent((d.ventas || {}).giftcard || 0) ? '. <span title="La Gift Card sumó el día que se vendió: lo que se paga con ella no vuelve a sumar">Pagado con Gift Card: ' +
+            p(d.ventas.giftcard) + ', no suma en las ventas</span>' : '') +
           '. Los descuentos ya están restados de las ventas.</p>';
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
       $('cjSalidas').onclick = function () { abrirMovsCaja('otras'); };
@@ -8630,7 +8633,7 @@
   var DET_CAJA = {
     tarjeta: ['Ventas Tarjeta', 'con tarjeta'], transferencia: ['Ventas Transferencia', 'por transferencia'],
     efectivo: ['Ventas Efectivo', 'en efectivo'], mercadopago: ['Ventas Mercado Pago', 'con Mercado Pago'],
-    modo: ['Ventas MODO', 'con MODO'], go_cuotas: ['Ventas Go Cuotas', 'con Go Cuotas'], giftcard: ['Ventas Gift card', 'con gift card'],
+    modo: ['Ventas MODO', 'con MODO'], go_cuotas: ['Ventas Go Cuotas', 'con Go Cuotas'], giftcard: ['Pagado con Gift Card', 'con Gift Card'],   // SQL 296: no suma en las ventas
     total: ['Ventas totales del día', ''], descuentos: ['Descuentos', 'con descuento'], cambios: ['Cobrado en cambios', '']
   };
   /** «a», «a y b», «a, b y c» (lo vacío no cuenta). */
@@ -8660,6 +8663,13 @@
     return g.cupon ? 'op. ' + g.cupon : '';
   }
   function mediosDeCaja(pagos) { return (pagos || []).map(function (g) { return MEDIOS_VENTA[g.medio] || g.medio; }).join(' + '); }
+  /** SQL 296: lo pagado con Gift Card en una venta (no suma en «Ventas totales»: la tarjeta sumó el día que se vendió). */
+  function gcDeCaja(pagos) { return (pagos || []).reduce(function (s, g) { return s + (g.medio === 'giftcard' ? Number(g.monto) || 0 : 0); }, 0); }
+  /** El renglón de una venta en «Ventas totales»: lo que suma (sin lo pagado con Gift Card) y por qué. */
+  function totalDeCaja(v) {
+    var gc = gcDeCaja(v.pagos), t = Number(v.total) || 0;
+    return { monto: t - gc, det: mediosDeCaja(v.pagos) + (!gc ? '' : gc >= t ? ' · no suma: la Gift Card sumó cuando se vendió' : ' · lo pagado con Gift Card (' + plata(cent(gc)) + ') no suma') };
+  }
   /** Los renglones del detalle: uno por pago de ese medio (dos tarjetas en un ticket, dos renglones) o, en el total y los
       descuentos, uno por venta. Los cambios entran con lo que se cobró de diferencia. */
   function filasDetCaja(que, det) {
@@ -8667,7 +8677,7 @@
     function con(base, x) { var r = {}, k; for (k in base) r[k] = base[k]; for (k in x) r[k] = x[k]; return r; }
     (det.ventas || []).forEach(function (v) {
       var base = { tipo: 'v', id: v.id, ref: refEnCaja(v), tit: (LETRAS[v.letra] || v.letra) + ' ' + ref(v), fecha: v.fecha, vendedor: v.vendedor, cliente: v.cliente, anulada: !!v.anulada };
-      if (que === 'total') f.push(con(base, { det: mediosDeCaja(v.pagos), monto: v.total }));
+      if (que === 'total') f.push(con(base, totalDeCaja(v)));   // SQL 296: sin lo pagado con Gift Card
       else if (que === 'descuentos') { if (cent(v.descuentos || 0)) f.push(con(base, { det: 'ticket de ' + plata(cent(v.total)), monto: v.descuentos })); }
       else if (que !== 'cambios') (v.pagos || []).forEach(function (g) {
         if (g.medio !== que) return;
@@ -8692,7 +8702,7 @@
                     tit: n ? 'Nota de crédito ' + refNota(n) + ': anula el ticket ' + ref(a) : 'La anulación de ' + ref(a),
                     det: [(n ? 'Nota de crédito · anula ' : 'Anulación de ') + r, quien ? (n ? 'la hizo ' : 'la anuló ') + quien : '', por ? '«' + por + '»' : ''].filter(Boolean).join(' · ') };
       function par(dt, monto) { f.push(con(venta, { det: dt, monto: monto })); f.push(con(anula, { monto: -Number(monto) })); }
-      if (que === 'total') par(mediosDeCaja(a.pagos), a.total);
+      if (que === 'total') { var tc = totalDeCaja(a); par(tc.det, tc.monto); }   // SQL 296
       else if (que === 'descuentos') { if (cent(a.descuentos || 0)) par('ticket de ' + plata(cent(a.total)), a.descuentos); }
       else if (que !== 'cambios') (a.pagos || []).forEach(function (g) {
         if (g.medio !== que) return;
@@ -8801,12 +8811,14 @@
             fd('tarjeta', 'Ventas Tarjeta', p(c.ventas_tarjeta)) + fd('transferencia', 'Ventas Transferencia', p(c.ventas_transferencia)) +
             fd('efectivo', 'Ventas Efectivo', p(c.ventas_efectivo)) + fd('mercadopago', 'Ventas Mercado Pago', p(c.ventas_mercadopago)) +
             fd('modo', 'Ventas MODO', p(c.ventas_modo)) + fd('go_cuotas', 'Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
-            (Number(c.ventas_giftcard) ? fd('giftcard', 'Ventas Gift card', p(c.ventas_giftcard)) : '') +   // SQL 200
             fd('total', 'Ventas totales del día', p(c.ventas_total), 'barra') +
             /* 7/11: como en el Nuevo cierre, «Otras salidas» con los movimientos de salida (SQL 180) y los retiros de la caja chica (SQL 191). */
             filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', plata(otrasSalidas(c))) +
             fd('descuentos', 'Descuentos', p(c.descuentos), 'info') +
             (c.cambios ? fd('cambios', 'Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
+            /* SQL 200; SQL 296: aparte, como los descuentos y los cambios (hasta el 13/11 iba arriba, como un medio más): no
+               suma en las ventas, la Gift Card sumó el día que se vendió. */
+            (Number(c.ventas_giftcard) ? fd('giftcard', 'Pagado con Gift Card', p(c.ventas_giftcard), 'info') : '') +
             filaRes('Otros ingresos', p(c.otros_ingresos)) +
             filaRes('Saldo final en efectivo', p(c.esperado), 'barra') + '</div>' +
           '<div class="cj-det-der">' +
@@ -8918,7 +8930,7 @@
          desde el SQL 180 es siempre el Nuevo saldo. Si no entra (montos grandes, el celular), se desliza adentro con el cierre quieto a la izquierda. */
       $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla ci-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
         '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
-        '<th class="n" title="MODO, Go Cuotas, transferencias y gift cards">Otros</th><th class="n" title="Gastos y otras salidas de la caja chica">Gastos</th>' +
+        '<th class="n" title="MODO, Go Cuotas y transferencias (lo pagado con Gift Card no suma en las ventas)">Otros</th><th class="n" title="Gastos y otras salidas de la caja chica">Gastos</th>' +
         '<th class="n" title="Movimientos de salida: lo que pasó de la caja chica a la caja fuerte">Mov. de salida</th>' +
         '<th class="n" title="Los retiros de fondos de la caja chica (los de la caja fuerte no entran en el cierre)">Retiro de fondos</th>' +
         '<th class="n" title="Lo que tendría que haber en la caja chica: el inicial y el efectivo, menos los gastos, los movimientos de salida y los retiros de fondos">Saldo final</th>' +
@@ -8934,7 +8946,7 @@
             '<td>' + esc(bonito(f.local)) + '<small>' + esc(f.responsable_nombre || '—') + '</small></td>' +
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
-            '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia) + Number(f.ventas_giftcard || 0)) + '</td>' +
+            '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia)) + '</td>' +   // SQL 296: sin la Gift Card (no suma)
             '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas)) + '</td>' +
             '<td class="n">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td>' +   // SQL 180: el Paso 2 de antes y los movimientos de salida
             '<td class="n">' + p(f.retiros_fondos) + '</td>' +   // SQL 191

@@ -15121,3 +15121,288 @@ $function$;
 COMMENT ON FUNCTION public.ventas_pos_hechos(uuid,date,date) IS 'SQL 295: lo pagado con Gift Card no suma en Ventas; la venta pagada entera con una no es una venta.';
 
 NOTIFY pgrst, 'reload schema';
+
+-- ════════════════════════════════════════════════════════════════════
+-- ═══ SQL 296 · En el cierre de caja, lo pagado con Gift Card no suma en «Ventas totales» (13/11/2026) ═══
+-- Mauricio (13/11, después del SQL 295): «también tiene que dejar de sumar en las ventas totales, que sería como un cambio».
+--
+-- La misma regla del SQL 295, ahora en el cierre de caja: la Gift Card suma una sola vez, el día que se vende. Lo que
+-- después se paga con ella no suma en «Ventas totales del día» (como un cambio: sólo suma lo que se paga de más).
+--   · La venta de la Gift Card suma entera, como cualquier venta (con el medio con que la pagaron).
+--   · La venta pagada entera con una Gift Card suma $0; la pagada con una Gift Card y algo más suma sólo ese algo más.
+--   · «Pagado con Gift Card» se sigue viendo aparte (no es plata de la caja: no entra en el efectivo ni en el saldo).
+--
+-- Qué cambia (dos funciones; ningún dato, ninguna tabla, ningún cierre ya hecho):
+--   1. pos_caja_dia: la caja abierta («Nuevo cierre» y su detalle). La usan pos_caja y pos_caja_contar.
+--   2. pos_caja_cerrar: lo que se guarda en el cierre al cerrar (ventas_total).
+-- No cambia: el efectivo, la tarjeta y los demás medios, el saldo final, lo que tendría que haber, los cierres ya hechos
+-- (ninguno tiene Gift Card: se revisó el 13/11), el IVA Ventas, ARCA ni el Club.
+--
+-- Frena sin hacer nada si ya está corrido o si alguna de las dos funciones cambió desde que se armó (13/11).
+-- Se deshace con deshacer-296.sql (vuelven las dos como estaban). Corre entero o nada.
+
+do $$
+declare x record;
+begin
+  if coalesce(obj_description('public.pos_caja_cerrar(jsonb)'::regprocedure, 'pg_proc'), '') like 'SQL 296%' then
+    raise exception 'El SQL 296 ya está corrido.';
+  end if;
+  for x in select * from (values
+      ('public.pos_caja_dia(uuid,boolean,date)', '7038db6930cc14e3a09d0aa23bc6e5a7'),
+      ('public.pos_caja_cerrar(jsonb)', 'be556497475c2f4cb064068063fabcd0')) t(f, m)
+  loop
+    if (select md5(replace(prosrc, chr(13), '')) from pg_proc where oid = x.f::regprocedure) is distinct from x.m then
+      raise exception 'La función % cambió desde que se armó el SQL 296 (13/11): no corro nada. Hay que rehacerlo sobre la de ahora.', x.f;
+    end if;
+  end loop;
+end $$;
+
+-- ── 1) La caja abierta: «Ventas totales del día» del Nuevo cierre ─────────
+CREATE OR REPLACE FUNCTION public.pos_caja_dia(p_local uuid, p_prueba boolean, p_dia date)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  u        pos_cierres;
+  v_dia    date := coalesce(p_dia, orden_dia_caja(p_local));
+  v_corte  timestamptz;
+  v_hasta  timestamptz := case when p_dia is null then 'infinity'::timestamptz else pos_caja_dia_fin(p_local, p_dia) end;
+  r        jsonb;
+begin
+  select * into u from pos_cierres c
+   where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'
+   order by c.fecha desc limit 1;
+  v_corte := coalesce((select min(c.desde) from pos_cierres c
+                        where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'),
+                      '-infinity'::timestamptz);
+  with v as (
+    select x.* from pos_ventas x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'cobrada'
+       and x.fecha >= v_corte and x.fecha < v_hasta
+  ), cb as (
+    select x.* from pos_cambios x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'hecho'
+       and x.fecha >= v_corte and x.fecha < v_hasta
+  ), g as (
+    select z.medio, sum(z.monto) monto from (
+      select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+      union all
+      select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+     group by z.medio
+  ), m as (
+    select x.* from pos_caja_movimientos x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'ok'
+       and coalesce(x.caja, 'chica') = 'chica' and x.fecha < v_hasta
+  )
+  select jsonb_build_object(
+    'dia', v_dia,
+    'desde', coalesce(u.fecha, orden_en_hora(p_local, v_dia, '00:00')),
+    'primer', u.id is null,
+    'ultimo', case when u.id is null then null
+                   else jsonb_build_object('id', u.id, 'numero', u.numero, 'fecha', u.fecha, 'queda', u.queda, 'dia', u.dia) end,
+    'saldo_inicial', u.queda,
+    'tickets', (select count(*) from v),
+    'ventas', jsonb_build_object(
+      'efectivo',      coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+      'tarjeta',       coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+      'mercadopago',   coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+      'modo',          coalesce((select g.monto from g where g.medio = 'modo'), 0),
+      'go_cuotas',     coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+      'transferencia', coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
+      'giftcard',      coalesce((select g.monto from g where g.medio = 'giftcard'), 0)),
+    /* SQL 296 (Mauricio, 13/11: «también tiene que dejar de sumar en las ventas totales, que sería como un cambio»): lo
+       pagado con una Gift Card no suma (se contó el día que se vendió la tarjeta); sí lo que se paga de más. */
+    'ventas_total', coalesce((select sum(v.total) from v), 0) - coalesce((select g.monto from g where g.medio = 'giftcard'), 0)
+                    + coalesce((select sum(cb.diferencia) from cb), 0),
+    'descuentos', coalesce((select sum(v.descuentos) from v), 0),
+    'cambios', (select count(*) from cb),
+    'cambios_diferencia', coalesce((select sum(cb.diferencia) from cb), 0),
+    'gastos', coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    'otras_salidas', coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    'otros_ingresos', coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    'a_caja_fuerte', coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0),
+    'retiros_fondos', coalesce((select sum(m.monto) from m where m.tipo = 'retiro'), 0),
+    'conteos', (select count(*) from pos_caja_conteos k
+                 where k.local_id = p_local and k.prueba = p_prueba and k.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+                   and (p_dia is null or k.dia = p_dia)),
+    'tolerancia', coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = p_local), 100)
+  ) into r;
+  return r;
+end $function$;
+COMMENT ON FUNCTION public.pos_caja_dia(uuid,boolean,date) IS 'SQL 296: lo pagado con Gift Card no suma en Ventas totales.';
+
+-- ── 2) Al cerrar: lo que se guarda en el cierre ──────────────────────────
+CREATE OR REPLACE FUNCTION public.pos_caja_cerrar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_local    uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba   boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_cont     numeric := round(nullif(p->>'contado', '')::numeric, 2);
+  v_retiro   numeric := round(coalesce(nullif(p->>'retiro', '')::numeric, 0), 2);
+  v_clave    text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_obs      text := nullif(trim(coalesce(p->>'observaciones', '')), '');
+  v_sin      boolean := coalesce(nullif(p->>'sin_contar', '')::boolean, false);   -- SQL 247
+  v_pide     date := nullif(p->>'dia', '')::date;   -- SQL 247
+  v_ini      numeric := round(nullif(p->>'saldo_inicial', '')::numeric, 2);   -- SQL 247: el primer cierre, sin contar
+  u          pos_cierres;
+  c          pos_cierres;
+  k          pos_caja_conteos;
+  v_hoy      date;
+  v_dia      date;
+  v_hasta    timestamptz;
+  v_corte    timestamptz;
+  v_id       uuid;
+  v_num      int;
+  v_n        int;
+  v_primero  numeric;
+begin
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(v_local);
+
+  if v_clave is not null then
+    select * into c from pos_cierres where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                                'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'dia', c.dia, 'sin_contar', c.sin_contar, 'ya', true);
+    end if;
+  end if;
+
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_sin then
+    if v_retiro <> 0 then raise exception 'Sin contar no se pasa nada a la caja fuerte.'; end if;
+    v_cont := null;
+  else
+    if v_cont is null or v_cont < 0 then raise exception 'Falta el efectivo que contaste (Paso 1).'; end if;
+    if v_retiro < 0 then raise exception 'Lo que pasa a la caja fuerte no puede ser negativo.'; end if;
+    if v_retiro > v_cont then
+      raise exception 'No se puede pasar a la caja fuerte más de lo que hay ($%).', to_char(v_cont, 'FM999G999G990D00');
+    end if;
+  end if;
+  if length(v_obs) > 500 then raise exception 'Las observaciones son demasiado largas.'; end if;
+
+  /* Un cierre por vez en cada caja: si dos la cierran al mismo tiempo, el segundo espera y frena abajo. */
+  perform pg_advisory_xact_lock(hashtext('pos_caja:' || v_local::text || ':' || v_prueba::text));
+
+  v_hoy := pos_caja_dia_de(v_local);
+  v_dia := pos_caja_a_cerrar(v_local, v_prueba);
+  if v_pide is not null and v_pide <> v_dia then
+    raise exception 'Ahora toca cerrar el %, no el %: tocá «Actualizar» (arriba a la derecha).', pos_dia_texto(v_dia), pos_dia_texto(v_pide);
+  end if;
+  v_hasta := pos_caja_dia_fin(v_local, v_dia);
+
+  select * into u from pos_cierres x
+   where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'
+   order by x.fecha desc limit 1;
+  select * into k from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.dia = v_dia and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha desc, x.id desc limit 1;
+  if v_dia >= v_hoy then
+    /* Hoy: como siempre. */
+    if v_sin then raise exception 'La caja de hoy se cuenta: escribí el efectivo y tocá «Ver la cuenta» (Paso 1).'; end if;
+    if k.id is null then raise exception 'Primero contá el efectivo y tocá «Ver la cuenta» (Paso 1).'; end if;
+    if k.contado <> v_cont then raise exception 'El efectivo no es el que contaste: tocá «Ver la cuenta» de nuevo.'; end if;
+  else
+    /* Un día anterior. Si después de contar entró o salió efectivo de ese día, ese conteo ya no sirve. */
+    if k.id is not null and pos_caja_efectivo_entre(v_local, v_prueba, k.fecha, v_hasta) is not null then
+      k := null;
+    end if;
+    if k.id is not null then
+      if v_sin then raise exception 'Ese día ya se contó: tocá «Actualizar» para cerrarlo con lo que contaron.'; end if;
+      if k.contado <> v_cont then raise exception 'El efectivo no es el que contaron: tocá «Actualizar».'; end if;
+    else
+      if not v_sin then raise exception 'Ese día no tiene un conteo que sirva: tocá «Actualizar».'; end if;
+      /* El primer cierre de la sucursal no tiene un cierre anterior: el saldo inicial lo escriben. */
+      if u.id is null and (v_ini is null or v_ini < 0 or v_ini >= 1000000000) then
+        raise exception 'Escribí el saldo inicial (con cuánto efectivo arrancó la caja).';
+      end if;
+    end if;
+  end if;
+  select count(*) into v_n from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.dia = v_dia and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz);
+  select x.contado into v_primero from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.dia = v_dia and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha, x.id limit 1;
+
+  v_corte := coalesce((select min(x.desde) from pos_cierres x
+                        where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'),
+                      '-infinity'::timestamptz);
+  select coalesce(max(x.numero), 0) + 1 into v_num from pos_cierres x where x.local_id = v_local and x.prueba = v_prueba;
+
+  insert into pos_cierres (local_id, numero, prueba, dia, desde, responsable, responsable_nombre, saldo_inicial,
+                           contado, retiro, conteos, primer_conteo, observaciones, clave, sin_contar, contado_en)
+  values (v_local, v_num, v_prueba, v_dia, coalesce(u.fecha, orden_en_hora(v_local, v_dia, '00:00')), orden_yo_id(),
+          (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()),
+          case when u.id is null then coalesce(k.saldo_inicial, v_ini) else u.queda end,
+          coalesce(v_cont, 0), v_retiro, v_n, v_primero, v_obs, v_clave, v_sin, k.fecha)
+  returning id into v_id;
+
+  /* Lo que entra en este cierre: todo lo que no tenía hasta el fin de ese día (también lo anulado, que no suma). */
+  update pos_ventas set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte and fecha < v_hasta;
+  update pos_caja_movimientos set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null
+     and coalesce(caja, 'chica') = 'chica'   -- SQL 191: el retiro de la caja fuerte no es de esta caja
+     and fecha < v_hasta;
+  update pos_cambios set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte and fecha < v_hasta;
+
+  with v as (select * from pos_ventas where cierre_id = v_id and estado = 'cobrada'),
+       cb as (select * from pos_cambios where cierre_id = v_id and estado = 'hecho'),
+       g as (select z.medio, sum(z.monto) monto from (
+               select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+               union all
+               select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+              group by z.medio),
+       m as (select * from pos_caja_movimientos where cierre_id = v_id and estado = 'ok')
+  update pos_cierres set
+    tickets              = (select count(*) from v),
+    ventas_efectivo      = coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+    ventas_tarjeta       = coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+    ventas_mercadopago   = coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+    ventas_modo          = coalesce((select g.monto from g where g.medio = 'modo'), 0),
+    ventas_go_cuotas     = coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+    ventas_transferencia = coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
+    ventas_giftcard      = coalesce((select g.monto from g where g.medio = 'giftcard'), 0),   -- SQL 200
+    /* SQL 296 (Mauricio, 13/11: «también tiene que dejar de sumar en las ventas totales, que sería como un cambio»): lo
+       pagado con una Gift Card no suma (se contó el día que se vendió la tarjeta); sí lo que se paga de más. */
+    ventas_total         = coalesce((select sum(v.total) from v), 0) - coalesce((select g.monto from g where g.medio = 'giftcard'), 0)
+                           + coalesce((select sum(cb.diferencia) from cb), 0),
+    descuentos           = coalesce((select sum(v.descuentos) from v), 0),
+    cambios              = (select count(*) from cb),
+    cambios_diferencia   = coalesce((select sum(cb.diferencia) from cb), 0),
+    gastos               = coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    otras_salidas        = coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    a_caja_fuerte        = coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0),   -- SQL 180
+    retiros_fondos       = coalesce((select sum(m.monto) from m where m.tipo = 'retiro'), 0)   -- SQL 191
+  where id = v_id;
+  update pos_cierres set esperado = saldo_inicial + ventas_efectivo + otros_ingresos - gastos - otras_salidas - a_caja_fuerte
+                                  - retiros_fondos   -- SQL 191
+   where id = v_id
+  returning * into c;
+  /* SQL 247: sin contar, queda lo que tendría que haber. */
+  if v_sin then
+    if c.esperado < 0 then
+      raise exception 'Lo que tendría que haber da negativo ($%): así no se puede cerrar sin contar.', to_char(c.esperado, 'FM999G999G990D00');
+    end if;
+    update pos_cierres set contado = esperado where id = v_id returning * into c;
+  end if;
+  /* SQL 180: hoy, lo que tendría que haber es lo mismo que cuando contaron; si no, algo entró o salió en el medio. */
+  if v_dia >= v_hoy and c.esperado <> k.esperado then
+    raise exception 'La caja cambió después de contar (una venta en efectivo, un gasto, un pase a la caja fuerte o un retiro): contá de nuevo y tocá «Ver la cuenta».';
+  end if;
+
+  return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                            'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'dia', c.dia, 'sin_contar', c.sin_contar, 'ya', false);
+end $function$;
+COMMENT ON FUNCTION public.pos_caja_cerrar(jsonb) IS 'SQL 296: lo pagado con Gift Card no suma en Ventas totales.';
+
+NOTIFY pgrst, 'reload schema';
