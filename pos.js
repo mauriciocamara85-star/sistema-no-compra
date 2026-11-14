@@ -3283,7 +3283,7 @@
     /* SQL 281 y 284: «Mandar la factura», con la factura aprobada. o.venta: el id de la venta; o.para: { mail, tel, envio } del
        cliente, lo que tenga. */
     if (o.arca) pedirFacturaEn(caja, o.arca, false, o.para);
-    else if (o.arcaNota) pedirFacturaEn(caja, o.arcaNota, true);   // SQL 279: el CAE de la nota de crédito
+    else if (o.arcaNota) pedirFacturaEn(caja, o.arcaNota, true, null, o.alCae);   // SQL 279: el CAE de la nota de crédito
     else botonMailEn(caja, o.venta, o.factura, o.para);
     return caja;
   }
@@ -3296,7 +3296,8 @@
       return f && f.cae ?
         '<div class="vg-fac"><b>Nota de crédito electrónica' + (deP ? ' de prueba' : '') + '</b><span>' +
           (deP ? 'La aprobó el ARCA de prueba: no tiene valor fiscal.' : 'Se creó correctamente la nota de crédito electrónica.') + '</span><dl>' +
-          (comp ? '<dt>Comprobante</dt><dd>' + esc(comp) + '</dd>' : '') +
+          /* 14/11: «Nota de crédito A 00034-00000001», no sólo el número: la factura que anula puede tener el mismo. */
+          (comp ? '<dt>Comprobante</dt><dd>Nota de crédito ' + esc(comp) + '</dd>' : '') +
           '<dt>CAE</dt><dd>' + esc(f.cae) + '</dd>' +
           (vence ? '<dt>Vence</dt><dd>' + esc(vence) + '</dd>' : '') + '</dl></div>' :
         fError ? '<div class="pos-cartel mal"><b>No se pudo crear la nota de crédito electrónica.</b> ' + esc(conPunto(fError)) +
@@ -3329,8 +3330,10 @@
   function facturaReal(f) { return !!f && f.ambiente !== 'homologacion'; }
   /** ¿El error de ARCA se arregla pidiéndola de nuevo? (no contestó, estaba ocupado, se cortó). */
   function facturaOtraVez(x) { return !x.codigo || ['sin_respuesta', 'ocupado', 'base', 'wsaa', 'wsfe', 'interno'].indexOf(x.codigo) >= 0; }
-  /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta. */
-  function pedirFacturaEn(caja, id, nota, para) {
+  /** La venta ya está guardada: el servidor le pide la factura a ARCA y el recuadro de la ventana se llena con lo que contesta.
+      alCae (14/11): con el CAE aprobado, vuelve a cargar la lista de atrás (Tickets o el cierre), que se cargó cuando la nota
+      todavía estaba «pendiente» y si no seguiría diciendo «Sin CAE». */
+  function pedirFacturaEn(caja, id, nota, para, alCae) {
     var lugar = caja.querySelector('.vg-fac-lugar'), listo = false, que = nota ? 'Nota de crédito electrónica' : 'Factura electrónica';
     setTimeout(function () {
       if (!listo && lugar && lugar.isConnected) {
@@ -3339,6 +3342,7 @@
     }, 500);
     (nota ? pedirNota(id) : pedirFactura(id)).then(function (x) {
       listo = true;
+      if (x.factura && alCae) alCae();
       if (lugar && lugar.isConnected) {
         lugar.innerHTML = x.factura ? htmlFactura(x.factura, null, false, nota) : x.no_va ? '' : htmlFactura(null, x.error, facturaOtraVez(x), nota);
         if (!nota) botonMailEn(caja, id, x.factura, para);   // SQL 281 y 284: «Mandar la factura» recién aprobada
@@ -4420,7 +4424,7 @@
     var f = n && n.factura, deT = !!(t.factura && t.factura.ambiente === 'homologacion');
     var dePrueba = 'De prueba, sin valor fiscal: la que vale, hacela en BlueSoft.';
     if (f && f.cae) {
-      return '<b>' + esc(compArca(f)) + '</b> · CAE ' + esc(f.cae) + (f.cae_vence ? ' · vence ' + esc(fechaCae(f.cae_vence)) : '') +
+      return '<b>Nota de crédito ' + esc(compArca(f)) + '</b> · CAE ' + esc(f.cae) + (f.cae_vence ? ' · vence ' + esc(fechaCae(f.cae_vence)) : '') +
         (f.ambiente === 'homologacion' ? '<br><small>' + dePrueba + '</small>' : '');
     }
     var arca = n ? n.arca : t.factura && t.factura.cae ? 'pendiente' : t.prueba ? 'no_va' : 'sin_factura';
@@ -4481,7 +4485,7 @@
         ventanaHecho({ titulo: 'Nota de crédito ' + refNota(r) + ' guardada', datos: [bonito(t.local), plata(cent(t.total))],
           notas: ['Anuló la venta ' + ref(t) + '.'], factura: r && r.factura, facturaError: r && r.factura_error,
           /* SQL 279: el ticket tenía factura electrónica: la nota quedó «pendiente» y se le pide el CAE ahora. */
-          arcaNota: r && r.arca === 'pendiente' ? r.id : null,
+          arcaNota: r && r.arca === 'pendiente' ? r.id : null, alCae: alCambiar,
           despues: function () { abrirNota(t.id, alCambiar, true); } });
       }).catch(function (e) {
         bt.disabled = false;
