@@ -12378,13 +12378,15 @@
   }
 
   /* ── SQL 193: el envío entre depósitos de la sucursal (un módulo del stock de todo el local) ──
-     El control con testigos: alguien elige dos productos del módulo, cuenta todas sus prendas ahí (todos
+     El control con testigos: alguien elige un producto del módulo (dos hasta la v514), cuenta todas sus prendas ahí (todos
      los talles y colores) y lo anota a ciegas; la base dice si coincide con el envío (vale lo último de
      cada producto). Si no coincide, el módulo se rehace: se anula el envío y se pasa de nuevo. */
   var TESTIGOS = { mal: 'Rehacer', ok: 'Controlado', uno: 'Falta un testigo', sin: 'Sin controlar' };
-  /** hace: cuántos testigos que coinciden lo dan por controlado. v514: 2, o 1 si el pase tiene un solo producto (antes no
+  /** hace: cuántos testigos que coinciden lo dan por controlado. v515 (Mauricio, 14/11: «yo haría uno solo… para que sea más
+      rápido, más ágil y más eficiente»): UNO, en el stock general y en todo envío entre depósitos (el mismo pase se ve en las dos
+      pantallas y tiene que decir lo mismo). En la v514 eran 2, o 1 si el pase tenía un solo producto (antes no
       llegaba nunca a «Controlado»: un segundo testigo de otro producto no puede coincidir). haceTestigos(f.productos). */
-  function haceTestigos(productos) { return Number(productos) === 1 ? 1 : 2; }
+  function haceTestigos() { return 1; }
   function estadoTestigos(f, hace) { var ok = Number(f.testigos_ok) || 0; hace = hace || 2; return Number(f.testigos_mal) > 0 ? 'mal' : ok >= hace ? 'ok' : ok >= 1 ? 'uno' : 'sin'; }
   function pillTestigos(f, hace) {
     var e = estadoTestigos(f, hace);
@@ -12392,7 +12394,7 @@
   }
   function ultimosTestigos(ts) { var m = {}; (ts || []).forEach(function (t) { m[t.codigo] = t; }); return Object.keys(m).map(function (k) { return m[k]; }); }
   function contarTestigos(ts) { var u = ultimosTestigos(ts), mal = u.filter(function (t) { return !t.coincide; }).length; return { testigos_ok: u.length - mal, testigos_mal: mal }; }
-  /** v514 (Mauricio, 14/11: «los testigos los elige el sistema, me gusta eso»): en el stock general los dos productos testigo
+  /** v514 (Mauricio, 14/11: «los testigos los elige el sistema, me gusta eso»): en el stock general el producto testigo (v515: uno; en la v514, dos)
       los sortea el sistema entre los del módulo (uno si tiene uno solo), con más chance para los que tienen más prendas.
       El sorteo sale del pase mismo: da lo mismo en cualquier compu y al volver a abrirlo (no se puede sortear de nuevo
       hasta que toque uno fácil). Rehecho el módulo, el pase es otro y el sorteo también. */
@@ -12400,7 +12402,7 @@
     return (r.productos || []).map(function (p) {
       var u = (p.celdas || []).reduce(function (s, x) { return s + (Number(x.cantidad) || 0); }, 0);
       return { codigo: p.codigo, descripcion: p.descripcion, k: Math.pow(azarFijo(r.id + '|' + p.codigo), 1 / Math.max(u, 1)) };   // a más prendas, más chance
-    }).sort(function (a, b) { return b.k - a.k || (a.codigo < b.codigo ? -1 : 1); }).slice(0, 2);
+    }).sort(function (a, b) { return b.k - a.k || (a.codigo < b.codigo ? -1 : 1); }).slice(0, 1);   // v515: uno
   }
   /** Un número entre 0 y 1 que sale siempre igual de un texto (FNV-1a y la mezcla final de MurmurHash3). */
   function azarFijo(s) {
@@ -12416,7 +12418,7 @@
     var caja = ventana('<h3 id="posVentTit">Envío entre depósitos</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_remito', { p_id: id, p_completo: true }).then(function (r) {
       if (!caja.isConnected) return;
-      var hace = haceTestigos((r.productos || []).length);   // v514: con un solo producto, un testigo
+      var hace = haceTestigos((r.productos || []).length);   // v515: un testigo (siempre)
       var an = r.estado === 'anulado', ts = r.testigos || [], ult = ultimosTestigos(ts), ct = contarTestigos(ts), est = estadoTestigos(ct, hace), unid = 0;
       var prods = (r.productos || []).map(function (p) {
         var cel = (p.celdas || []).map(function (x) { unid += Number(x.cantidad || 0); return { talle: x.talle, color: x.color, cantidad: x.cantidad }; });
@@ -12439,8 +12441,8 @@
          est === 'mal' ? '<div class="pos-cartel mal">Un testigo no coincide con el envío. Contalo de nuevo; si sigue sin coincidir, rehacé el módulo: anulá este envío (las prendas vuelven a «' + deDonde + '») y pasalo de nuevo.</div>' :
          est === 'ok' ? '<div class="pos-cartel st-ok">Controlado: los testigos coinciden con el envío.</div>' :
          '<div class="pos-cartel">' + (est === 'uno' ? 'Falta un testigo. ' : 'Todavía no se controló. ') +
-           (op.general ? 'Tocá «Controlar con testigos»: el sistema elige ' + (hace === 1 ? 'el producto' : 'dos productos') + ' del módulo para contar y te dice si coincide' + (hace === 1 ? '' : 'n') + ' con lo que se pasó.</div>'
-                       : 'Elegí ' + (hace === 1 ? 'el producto' : 'dos productos') + ' del módulo, contá todas sus prendas y anotalas con «Controlar con testigos»: el sistema te dice si coincide' + (hace === 1 ? '' : 'n') + ' con el envío.</div>')) +
+           (op.general ? 'Tocá «Controlar con testigos»: el sistema elige un producto del módulo para contar y te dice si coincide con lo que se pasó.</div>'
+                       : 'Elegí un producto del módulo, contá todas sus prendas y anotalas con «Controlar con testigos»: el sistema te dice si coincide con el envío.</div>')) +
         (ts.length ? '<p class="pos-lbl rm-leyenda">Testigos</p><div class="pos-marco-tabla"><table class="pos-tabla tg-tabla"><thead><tr><th>Producto</th><th class="n">Contaron</th><th>Resultado</th><th>Quién</th><th>Cuándo</th></tr></thead><tbody>' +
             ts.slice().reverse().map(function (t) {
               var vale = ult.indexOf(t) >= 0;
@@ -12492,7 +12494,7 @@
     var caja = ventana('<h3 id="posVentTit">Controlar ' + esc(refRemito(r)) + ' con testigos</h3>' +
       /* v514: «MÓDULO 1» (así lo guarda la base) decía «Módulo MÓDULO 1» */
       '<p class="pos-bajada">Módulo ' + esc(String(r.modulo || '—').replace(/^m[oó]dulo\s+/i, '')) + ' · de «' + esc(r.origen_deposito || '') + '» a «' + esc(r.destino_deposito || '') + '». ' +
-        (sorteo ? (hace === 1 ? 'El sistema eligió el producto testigo: es el único que se pasó. ' : 'El sistema eligió dos productos testigo del módulo. ') +
+        (sorteo ? ((r.productos || []).length === 1 ? 'El sistema eligió el producto testigo: es el único que se pasó. ' : 'El sistema eligió el producto testigo del módulo. ') +
                   'Contá todas sus prendas ahí (todos los talles y colores) y escribí cuántas hay: te dice si coincide con lo que se pasó.'
                 : 'Elegí un producto del módulo, contá todas sus prendas ahí (todos los talles y colores) y escribí cuántas hay. El sistema te dice si coincide con el envío.') + '</p>' +
       (sorteo ? '<ol class="tg-sorteo" id="tgSorteo" aria-label="Los testigos que eligió el sistema"></ol>' : '') +
@@ -12539,7 +12541,7 @@
       if (ahora >= 0) {
         var p = sorteo[ahora];
         elegido = p.codigo;
-        el.innerHTML = 'Testigo ' + (ahora + 1) + (sorteo.length > 1 ? ' de ' + sorteo.length : '') + ': <b>' + esc(p.codigo) + '</b> ' + esc(nombreProd(p.codigo, p.descripcion)) +
+        el.innerHTML = 'Testigo' + (sorteo.length > 1 ? ' ' + (ahora + 1) + ' de ' + sorteo.length : '') + ': <b>' + esc(p.codigo) + '</b> ' + esc(nombreProd(p.codigo, p.descripcion)) +
           (u[p.codigo] ? ' <span class="tg-otra">· contalo de nuevo</span>' : '');
       } else if (otro) {
         elegido = otro.codigo;
@@ -16086,7 +16088,7 @@
         (faltan.length > 4 ? '…' : '') + '). Si lo pasás igual, ahí queda en negativo.' : '';
     }, function () { return ''; }).then(function (extra) {
       if (!confirm('¿Pasar el módulo ' + mod + ' de «' + o.nombre + '» a «' + d.nombre + '» (' + nombreLocal(lo) + ') con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
-                   ' Se pasan ahora; después controlalo con dos productos testigo.' + extra)) return;
+                   ' Se pasan ahora; después controlalo con un producto testigo.' + extra)) return;
       S.guardando = true;
       var b = $('rnGuardar');
       if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
@@ -16281,7 +16283,7 @@
      ════════════════════════════════════════════════════════════════════ */
   var LUGARES_SG = [['pared', 'Salón · paredes'], ['centro', 'Salón · centro'], ['deposito', 'Depósito del local']];
   var ESTADO_SG = { no: 'Sin pasar', sin: 'Para controlar', uno: 'Falta un testigo', ok: 'Controlado', mal: 'Rehacer' };
-  function estadoSg(pase) { return pase ? estadoTestigos(pase, haceTestigos(pase.productos)) : 'no'; }   // v514: con un solo producto, un testigo
+  function estadoSg(pase) { return pase ? estadoTestigos(pase, haceTestigos(pase.productos)) : 'no'; }   // v515: un testigo (siempre)
   /** El nombre corto de un módulo para el cuadro: el número («7») si se llama «Módulo 7» o «Depósito 3»; si no, su nombre. */
   function tituloSg(m) { return m.lugar !== 'centro' && /^(m[oó]dulo|dep[oó]sito)\s+\d+$/i.test(m.nombre || '') ? String(m.numero) : m.nombre || String(m.numero); }
   function nombreSg(m) { return m.lugar === 'deposito' && /^dep[oó]sito\s+\d+$/i.test(m.nombre || '') ? 'Depósito ' + m.numero + ' (atrás)' : m.nombre || 'Módulo ' + m.numero; }
@@ -16307,7 +16309,7 @@
     var c = $('cuerpo'), l = localStock();
     var F = S.sgF = S.sgF || { local: l.id };
     if (F.local && !localMio(F.local)) F.local = l.id;
-    c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero del depósito de origen al de la temporada nueva y se controla con dos productos testigo que elige el sistema. Mientras tanto se sigue vendiendo del de origen.') +   // el «Actualizar» con letras es ahora el botón común (5/11)
+    c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero del depósito de origen al de la temporada nueva y se controla con un producto testigo que elige el sistema. Mientras tanto se sigue vendiendo del de origen.') +   // el «Actualizar» con letras es ahora el botón común (5/11)
       /* v514 (Mauricio, 14/11: «acá no me aparecen ni el depósito origen ni el depósito destino»): los dos, fijos, al lado de la Sucursal, como el envío entre depósitos de BlueSoft. */
       '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="sgLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(F.local) + '</select>') + '<span class="sg-deps" id="sgDeps"></span></div>' +
       '<div id="sgCuerpo"><p class="cargando">Cargando…</p></div>';
@@ -16392,7 +16394,7 @@
       }
       var k = cuentasSg(d), q = d.queda || {};
       var html = (hecho ? '<div class="pos-cartel st-ok"><b>' + esc(hecho.nombre) + '</b> pasó a «' + esc(d.nuevo.nombre) + '» (' + num(hecho.unidades) + (hecho.unidades === 1 ? ' prenda' : ' prendas') + '). ' +
-                          'Ahora se controla con los productos testigo que elige el sistema: mejor que lo haga otra persona. <button type="button" class="pos-link" id="sgYa">Controlarlo ahora</button></div>' : '') +
+                          'Ahora se controla con el producto testigo que elige el sistema: mejor que lo haga otra persona. <button type="button" class="pos-link" id="sgYa">Controlarlo ahora</button></div>' : '') +
         '<div class="sg-avance">' + barraSg(k) + '</div>' +
         '<div class="pos-totales">' +
           '<div class="pos-kpi"><span>Sin pasar</span><b>' + miles(k.no) + '</b></div>' +
@@ -16496,7 +16498,7 @@
     guardarBorradorRn();
     var c = $('cuerpo'), nom = g.mod.otro ? 'Otro lugar' : nombreSg(g.mod), loc = localDe(g.local);
     c.innerHTML = cabeza(esc(nom) + ' <span class="pos-tag">Stock general</span>',
-        'Cargá todas las prendas ' + (g.mod.otro ? 'de ese lugar' : 'del módulo') + ': disparale a cada etiqueta o buscá el producto. Al guardar pasan de «' + esc(g.viejo.nombre) + '» a «' + esc(g.nuevo.nombre) + '»; después se controla con dos testigos que elige el sistema.',
+        'Cargá todas las prendas ' + (g.mod.otro ? 'de ese lugar' : 'del módulo') + ': disparale a cada etiqueta o buscá el producto. Al guardar pasan de «' + esc(g.viejo.nombre) + '» a «' + esc(g.nuevo.nombre) + '»; después se controla con un testigo que elige el sistema.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="general">‹ Stock general</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar ' + (g.mod.otro ? 'el lugar' : 'el módulo') + '</button>') +
